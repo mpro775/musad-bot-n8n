@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:6-alpine
+    container_name: musaidbot-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backnet
+
+  mongo:
+    image: mongo:5
+    container_name: musaidbot-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backnet
+
+  api:
+    build: .
+    container_name: musaidbot-api
+    ports:
+      - "3000:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./:/usr/src/app
+    networks:
+      - backnet
+
+volumes:
+  mongo_data:
+  redis_data:
+
+networks:
+  backnet:
+    driver: bridge
