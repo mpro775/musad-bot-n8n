@@ -67,8 +67,8 @@ export class N8nWorkflowService {
   ) {
     const keyName = 'X-N8N-API-KEY';
     const apiKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4ODNjNzk4ZS0wZTcyLTQ5ZDgtODA1Zi0yYmE2NDUyNWYwZjQiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzUwMTg2MzM3LCJleHAiOjE3NTI3NjgwMDB9.33H2-Oqv4W8qi2jfDHdc0xgwc2dAX01uCX7BNAVWIFA';
-    const baseUrl = 'https://abdulsalam-n8n.up.railway.app'.replace(/\/+$/, '');
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiZWExMTI3Yi0zZDg3LTQ1ODAtODlhNi00ZmZkOTU0ZTg1YWUiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzUwMjAzODk3fQ.eSJGKYsoQ3ZY4FLUF1fmuHgSM3uxTDyQAkPavpzJcnY';
+    const baseUrl = 'https://n8n.smartagency-ye.com'.replace(/\/+$/, '');
 
     this.logger.log(`▶️ [n8n.baseURL] = ${baseUrl}`);
     this.logger.log(`▶️ [n8n.header]  = ${keyName}: ${apiKey}`);
