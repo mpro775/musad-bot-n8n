@@ -1,54 +1,82 @@
 // src/modules/offers/dto/create-offer.dto.ts
+
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsString,
   IsNotEmpty,
+  IsEnum,
   IsOptional,
-  IsNumber,
   IsArray,
+  IsDate,
+  IsNumber,
+  ArrayUnique,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export enum OfferType {
+  PERCENT = 'percent',
+  FIXED = 'fixed',
+  BOGO = 'bogo',
+  COUPON = 'coupon',
+  CUSTOM = 'custom',
+}
 
 export class CreateOfferDto {
-  @ApiProperty({
-    description: 'رابط العرض الأصلي',
-    example: 'https://example.com/offer/abc',
-  })
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
-  originalUrl: string;
+  name: string;
+
+  @ApiProperty({ enum: OfferType })
+  @IsEnum(OfferType)
+  type: OfferType;
+
+  @ApiProperty()
+  @IsNumber()
+  value: number;
 
   @ApiPropertyOptional({
-    description: 'عنوان العرض',
-    example: 'خصم 20% على العطور',
+    type: [String],
+    description: 'منتجات العرض (Product IDs)',
   })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  products?: string[];
+
+  @ApiPropertyOptional({ description: 'تصنيف (category) العرض' })
   @IsOptional()
   @IsString()
-  name?: string;
+  category?: string;
 
-  @ApiPropertyOptional({ description: 'نسبة الخصم', example: 20 })
-  @IsOptional()
-  @IsNumber()
-  price?: number;
-
-  @ApiPropertyOptional({
-    description: 'وصف العرض',
-    example: 'خصم حصري لفترة محدودة',
-  })
+  @ApiPropertyOptional({ description: 'وصف العرض' })
   @IsOptional()
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({
-    description: 'روابط الصور',
-    example: ['https://…/1.jpg'],
+  @ApiProperty({
+    description: 'تاريخ بداية العرض',
+    type: String,
+    example: new Date().toISOString(),
   })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  images?: string[];
+  @IsDate()
+  startDate: Date;
 
-  @ApiPropertyOptional({ description: 'المنصة المصدر', example: 'Salla' })
+  @ApiProperty({
+    description: 'تاريخ نهاية العرض',
+    type: String,
+    example: new Date().toISOString(),
+  })
+  @IsDate()
+  endDate: Date;
+
+  @ApiPropertyOptional({ description: 'كود الكوبون (اختياري)' })
   @IsOptional()
   @IsString()
-  platform?: string;
+  code?: string;
+
+  @ApiPropertyOptional({ description: 'أقصى عدد مرات استخدام العرض' })
+  @IsOptional()
+  @IsNumber()
+  usageLimit?: number;
 }

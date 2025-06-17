@@ -1,177 +1,116 @@
 // src/modules/offers/offers.controller.ts
+
 import {
   Controller,
-  Post,
   Get,
-  Put,
+  Post,
+  Patch,
   Delete,
   Param,
   Body,
   Query,
   UseGuards,
   Request,
-  ForbiddenException,
   HttpCode,
   HttpStatus,
-  UseInterceptors,
-  ClassSerializerInterceptor,
-  BadRequestException,
 } from '@nestjs/common';
-import { Types } from 'mongoose';
-import { plainToInstance } from 'class-transformer';
 import { OffersService } from './offers.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
-import { OfferResponseDto } from './dto/offer-response.dto';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
-  ApiCreatedResponse,
-  ApiOkResponse,
+  ApiResponse,
   ApiParam,
-  ApiNotFoundResponse,
-  ApiUnauthorizedResponse,
-  ApiForbiddenResponse,
-  ApiBadRequestResponse,
+  ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 
 @ApiTags('العروض')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
-@UseInterceptors(ClassSerializerInterceptor)
 @Controller('offers')
 export class OffersController {
   constructor(private readonly offersService: OffersService) {}
 
   @Post()
   @ApiOperation({ summary: 'إنشاء عرض جديد' })
-  @ApiCreatedResponse({ type: OfferResponseDto })
-  @ApiUnauthorizedResponse({ description: 'توكن JWT غير صالح أو مفقود' })
-  @ApiForbiddenResponse({ description: 'دور المستخدم غير كافٍ' })
-  @HttpCode(HttpStatus.CREATED)
-  async create(
-    @Request() req: RequestWithUser,
-    @Body() dto: CreateOfferDto,
-  ): Promise<OfferResponseDto> {
-    if (!['MERCHANT', 'ADMIN'].includes(req.user.role)) {
-      throw new ForbiddenException('Insufficient role');
-    }
-
-    const merchantObjectId = new Types.ObjectId(req.user.merchantId);
-    const offerDoc = await this.offersService.create({
-      merchantId: merchantObjectId,
-      originalUrl: dto.originalUrl,
-      name: dto.name ?? '',
-      price: dto.price ?? 0,
-      description: dto.description ?? '',
-      images: dto.images ?? [],
-      platform: dto.platform ?? '',
-      errorState: 'queued',
-    });
-
-    await this.offersService.enqueueScrapeJob({
-      offerId: offerDoc._id.toString(),
-      url: dto.originalUrl,
-      merchantId: req.user.merchantId,
-      mode: 'full',
-    });
-
-    return plainToInstance(OfferResponseDto, offerDoc, {
-      excludeExtraneousValues: true,
-    });
+  @ApiBody({ type: CreateOfferDto })
+  @ApiResponse({ status: 201, description: 'تم إنشاء العرض' })
+  async create(@Body() dto: CreateOfferDto, @Request() req: any) {
+    const merchantId = req.user.merchantId;
+    return this.offersService.create(dto, merchantId);
   }
 
   @Get()
-  @ApiOperation({ summary: 'جلب جميع العروض لتاجر معين' })
-  @ApiOkResponse({ type: OfferResponseDto, isArray: true })
-  @ApiBadRequestResponse({ description: 'merchantId is required' })
-  @ApiUnauthorizedResponse({ description: 'توكن JWT غير صالح أو مفقود' })
+  @ApiOperation({ summary: 'جلب جميع العروض الخاصة بالتاجر' })
+  @ApiQuery({ name: 'active', required: false, type: Boolean })
+  @ApiQuery({ name: 'type', required: false, type: String })
   async findAll(
-    @Query('merchantId') merchantId: string,
-  ): Promise<OfferResponseDto[]> {
-    if (!merchantId) {
-      throw new BadRequestException('merchantId is required');
-    }
-
-    const merchantObjectId = new Types.ObjectId(merchantId);
-    const docs = await this.offersService.findAllByMerchant(merchantObjectId);
-    return plainToInstance(OfferResponseDto, docs, {
-      excludeExtraneousValues: true,
-    });
+    @Request() req: any,
+    @Query('active') active?: boolean,
+    @Query('type') type?: string,
+  ) {
+    const merchantId = req.user.merchantId;
+    const filter: any = { merchantId };
+    if (typeof active !== 'undefined') filter.active = active;
+    if (type) filter.type = type;
+    return this.offersService.findAllByMerchant(merchantId, filter);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'جلب عرض واحد حسب المعرّف' })
-  @ApiParam({ name: 'id', type: 'string', description: 'معرّف العرض' })
-  @ApiOkResponse({ type: OfferResponseDto })
-  @ApiNotFoundResponse({ description: 'العرض غير موجود' })
-  @ApiUnauthorizedResponse({ description: 'توكن JWT غير صالح أو مفقود' })
-  @ApiForbiddenResponse({ description: 'ليس مالك العرض' })
-  async findOne(
-    @Param('id') id: string,
-    @Request() req: RequestWithUser,
-  ): Promise<OfferResponseDto> {
-    const offer = await this.offersService.findOne(id);
-    if (
-      req.user.role !== 'ADMIN' &&
-      offer.merchantId.toString() !== req.user.merchantId
-    ) {
-      throw new ForbiddenException('Not allowed');
-    }
-    return plainToInstance(OfferResponseDto, offer, {
-      excludeExtraneousValues: true,
-    });
+  @ApiOperation({ summary: 'جلب تفاصيل عرض واحد' })
+  @ApiParam({ name: 'id', required: true, description: 'معرّف العرض' })
+  async findOne(@Param('id') id: string, @Request() req: any) {
+    const merchantId = req.user.merchantId;
+    return this.offersService.findOne(id, merchantId);
   }
 
-  @Put(':id')
-  @ApiOperation({ summary: 'تحديث عرض (لصاحب العرض فقط)' })
-  @ApiParam({ name: 'id', type: 'string', description: 'معرّف العرض' })
-  @ApiCreatedResponse({ type: OfferResponseDto })
-  @ApiNotFoundResponse({ description: 'العرض غير موجود' })
-  @ApiUnauthorizedResponse({ description: 'توكن JWT غير صالح أو مفقود' })
-  @ApiForbiddenResponse({ description: 'ليس مالك العرض' })
+  @Patch(':id')
+  @ApiOperation({ summary: 'تحديث عرض' })
+  @ApiParam({ name: 'id', required: true })
+  @ApiBody({ type: UpdateOfferDto })
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateOfferDto,
-    @Request() req: RequestWithUser,
-  ): Promise<OfferResponseDto> {
-    const existing = await this.offersService.findOne(id);
-    if (
-      req.user.role !== 'ADMIN' &&
-      existing.merchantId.toString() !== req.user.merchantId
-    ) {
-      throw new ForbiddenException('Not allowed');
-    }
+    @Request() req: any,
+  ) {
+    const merchantId = req.user.merchantId;
+    return this.offersService.update(id, dto, merchantId);
+  }
 
-    const updated = await this.offersService.update(id, dto);
-    return plainToInstance(OfferResponseDto, updated, {
-      excludeExtraneousValues: true,
-    });
+  @Patch(':id/active')
+  @ApiOperation({ summary: 'تفعيل/تعطيل عرض' })
+  @ApiParam({ name: 'id', required: true })
+  @ApiBody({ schema: { example: { active: true } } })
+  async setActive(
+    @Param('id') id: string,
+    @Body('active') active: boolean,
+    @Request() req: any,
+  ) {
+    const merchantId = req.user.merchantId;
+    return this.offersService.setActive(id, merchantId, active);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'حذف عرض' })
-  @ApiParam({ name: 'id', type: 'string', description: 'معرّف العرض' })
-  @ApiOkResponse({
-    schema: { example: { message: 'Offer deleted successfully' } },
-  })
-  @ApiNotFoundResponse({ description: 'العرض غير موجود' })
-  @ApiUnauthorizedResponse({ description: 'توكن JWT غير صالح أو مفقود' })
-  @ApiForbiddenResponse({ description: 'ليس مالك العرض' })
-  async remove(
-    @Param('id') id: string,
-    @Request() req: RequestWithUser,
-  ): Promise<{ message: string }> {
-    const existing = await this.offersService.findOne(id);
-    if (
-      req.user.role !== 'ADMIN' &&
-      existing.merchantId.toString() !== req.user.merchantId
-    ) {
-      throw new ForbiddenException('Not allowed');
-    }
-    return this.offersService.remove(id);
+  @ApiParam({ name: 'id', required: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Param('id') id: string, @Request() req: any) {
+    const merchantId = req.user.merchantId;
+    await this.offersService.remove(id, merchantId);
+  }
+
+  @Get('/product/:productId')
+  @ApiOperation({ summary: 'جلب كل العروض النشطة لمنتج معيّن' })
+  @ApiParam({ name: 'productId', required: true })
+  async findByProduct(
+    @Param('productId') productId: string,
+    @Request() req: any,
+  ) {
+    const merchantId = req.user.merchantId;
+    return this.offersService.findOffersByProduct(productId, merchantId);
   }
 }

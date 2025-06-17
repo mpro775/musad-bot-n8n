@@ -16,6 +16,6 @@ import { ScraperModule } from '../scraper/scraper.module';
   ],
   providers: [ProductsService, ScrapeQueue],
   controllers: [ProductsController],
-  exports: [ProductsService],
+  exports: [ProductsService, MongooseModule], // ← هُنا صدّر MongooseModule
 })
 export class ProductsModule {}

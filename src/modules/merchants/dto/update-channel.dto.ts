@@ -1,4 +1,3 @@
-// src/modules/merchants/dto/update-channel.dto.ts
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsOptional,
@@ -9,49 +8,93 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-class WhatsAppConfigDto {
+class WhatsAppChannelDto {
   @ApiPropertyOptional({
     description: 'رقم واتساب المرتبط بالحساب',
     example: '+970599123456',
   })
+  @IsOptional()
   @IsString()
   @Matches(/^\+?\d{7,15}$/)
-  phone: string;
+  phone?: string;
+
+  @ApiPropertyOptional({
+    description: 'توكن واتساب السحابي',
+    example: 'EAA...',
+  })
+  @IsOptional()
+  @IsString()
+  token?: string;
+
+  @ApiPropertyOptional({
+    description: 'معرّف رقم واتساب السحابي',
+    example: '123456789',
+  })
+  @IsOptional()
+  @IsString()
+  phoneNumberId?: string;
+
+  @ApiPropertyOptional({ description: 'هل القناة مفعّلة؟', example: true })
+  @IsOptional()
+  enabled?: boolean;
 }
 
-class TelegramConfigDto {
+class TelegramChannelDto {
   @ApiPropertyOptional({
     description: 'توكن بوت تيليجرام',
     example: '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11',
   })
+  @IsOptional()
   @IsString()
-  token: string;
+  botToken?: string;
 
   @ApiPropertyOptional({
     description: 'معرّف الشات في تيليجرام',
     example: '7730412580',
   })
+  @IsOptional()
   @IsString()
-  chatId: string;
+  chatId?: string;
+
+  @ApiPropertyOptional({ description: 'هل القناة مفعّلة؟', example: true })
+  @IsOptional()
+  enabled?: boolean;
 }
 
-class ChannelConfigDto {
-  @ApiPropertyOptional({ type: WhatsAppConfigDto })
-  @ValidateNested()
-  @Type(() => WhatsAppConfigDto)
+class WebchatChannelDto {
+  @ApiPropertyOptional({ description: 'هل القناة مفعّلة؟', example: true })
   @IsOptional()
-  whatsapp?: WhatsAppConfigDto;
+  enabled?: boolean;
 
-  @ApiPropertyOptional({ type: TelegramConfigDto })
-  @ValidateNested()
-  @Type(() => TelegramConfigDto)
+  @ApiPropertyOptional({ description: 'إعدادات الويب شات', type: Object })
   @IsOptional()
-  telegram?: TelegramConfigDto;
+  widgetSettings?: Record<string, any>;
+}
+
+export class ChannelsDto {
+  @ApiPropertyOptional({ type: WhatsAppChannelDto })
+  @ValidateNested()
+  @Type(() => WhatsAppChannelDto)
+  @IsOptional()
+  whatsapp?: WhatsAppChannelDto;
+
+  @ApiPropertyOptional({ type: TelegramChannelDto })
+  @ValidateNested()
+  @Type(() => TelegramChannelDto)
+  @IsOptional()
+  telegram?: TelegramChannelDto;
+
+  @ApiPropertyOptional({ type: WebchatChannelDto })
+  @ValidateNested()
+  @Type(() => WebchatChannelDto)
+  @IsOptional()
+  webchat?: WebchatChannelDto;
+  // أضف قنوات أخرى بنفس النمط
 }
 
 export class UpdateChannelDto {
   @ApiPropertyOptional({
-    description: 'رابط Webhook للبوت (مثلاً /webhooks/telegram)',
+    description: 'رابط Webhook للبوت',
     example: 'https://n8n-1-jvkv.onrender.com/webhooks/telegram',
   })
   @IsOptional()
@@ -67,13 +110,13 @@ export class UpdateChannelDto {
   apiToken?: string;
 
   @ApiPropertyOptional({
-    description: 'إعدادات القنوات (واتساب وتيليجرام)',
-    type: ChannelConfigDto,
+    description: 'إعدادات القنوات (كل قناة بكائن خاص)',
+    type: ChannelsDto,
   })
   @ValidateNested()
-  @Type(() => ChannelConfigDto)
+  @Type(() => ChannelsDto)
   @IsOptional()
-  channelConfig?: ChannelConfigDto;
+  channels?: ChannelsDto;
 
   @ApiPropertyOptional({
     description: 'فئة النشاط التجاري',

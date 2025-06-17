@@ -38,6 +38,8 @@ import { WorkflowHistoryModule } from './modules/workflow-history/workflow-histo
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 
 @Module({
   imports: [
@@ -59,7 +61,10 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     }),
     // Config
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
-
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'uploads'),
+      serveRoot: '/uploads',
+    }),
     // Prometheus – يفتح endpoint تحت /api/metrics
     PrometheusModule.register({
       path: '/api/metrics',

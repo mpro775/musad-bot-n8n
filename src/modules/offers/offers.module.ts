@@ -1,3 +1,4 @@
+import { ProductsModule } from './../products/products.module';
 // src/modules/offers/offers.module.ts
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -12,6 +13,8 @@ import { ScrapeQueue } from './scrape.queue';
   imports: [
     MongooseModule.forFeature([{ name: Offer.name, schema: OfferSchema }]),
     forwardRef(() => ScraperModule),
+    ProductsModule, // ← هنا نجلب ProductModel عبر الـ exports
+
     BullModule.registerQueue({ name: 'offer-scrape' }), // طابور خاص بالعروض
   ],
   providers: [OffersService, ScrapeQueue], // نسخ ScrapeQueue مع تغيير الاسم داخله إن احتاجت

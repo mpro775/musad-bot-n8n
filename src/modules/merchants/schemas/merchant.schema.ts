@@ -1,6 +1,6 @@
 // src/modules/merchants/schemas/merchant.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import mongoose, { Document, Types } from 'mongoose';
 import { buildPromptFromMerchant } from '../utils/prompt-builder';
 
 export type MerchantDocument = Merchant & Document;
@@ -9,11 +9,13 @@ export type MerchantDocument = Merchant & Document;
 export class Merchant {
   @Prop({ required: true })
   name: string;
-  @Prop() workflowId: string; // رابط الورك فلو الخاص به في n8n
 
+  @Prop({ type: [String], default: [] })
+  categories?: string[];
   @Prop({ required: false, unique: true, sparse: true })
   email?: string;
 
+  planName: string;
   @Prop({ required: false })
   phone?: string;
 
@@ -36,8 +38,8 @@ export class Merchant {
   @Prop({ default: false })
   isActive: boolean;
 
-  @Prop({ default: 'free' })
-  planName: string;
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Plan' })
+  plan: Types.ObjectId;
 
   @Prop({ default: () => new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) })
   trialEndsAt: Date;
@@ -45,6 +47,29 @@ export class Merchant {
   @Prop({ default: false })
   planPaid: boolean;
 
+  @Prop({
+    type: Object,
+    default: {},
+  })
+  channels?: {
+    whatsapp?: {
+      phone?: string;
+      webhookUrl?: string;
+      token?: string;
+      enabled?: boolean;
+    };
+    telegram?: {
+      botToken?: string;
+      chatId?: string;
+      webhookUrl?: string;
+      enabled?: boolean;
+    };
+    webchat?: {
+      enabled?: boolean;
+      widgetSettings?: Record<string, any>;
+    };
+    // SMS, Messenger, إلخ ...
+  };
   // هنا قمنا بتعريف البنية لتطابق updateData exactly:
   @Prop({
     type: {
@@ -54,8 +79,8 @@ export class Merchant {
     _id: false,
   })
   channelConfig?: {
-    telegram?: { token: string; chatId: string };
-    whatsapp?: { token: string; phone: string };
+    telegram?: { chatId?: string; token?: string };
+    whatsapp?: { phone?: string };
   };
 
   @Prop({ required: false })
@@ -80,6 +105,16 @@ export class Merchant {
   @Prop({ default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
   subscriptionExpiresAt: Date;
 
+  // سياسات المتجر:
+  @Prop({ required: false })
+  returnPolicy?: string; // سياسة الإرجاع
+
+  @Prop({ required: false })
+  exchangePolicy?: string; // سياسة الاستبدال
+
+  @Prop({ required: false })
+  shippingPolicy?: string; // سياسة الشحن والتوصيل
+
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 
@@ -88,6 +123,7 @@ export class Merchant {
 
   @Prop({ required: false })
   businessDescription?: string;
+  @Prop() workflowId: string; // رابط الورك فلو الخاص به في n8n
 
   @Prop({ default: 'formal' })
   preferredDialect: string;
@@ -95,11 +131,13 @@ export class Merchant {
 
 export const MerchantSchema = SchemaFactory.createForClass(Merchant);
 MerchantSchema.pre<MerchantDocument>('save', function (next) {
-  // إذا تغيرت الـ name أو الـ promptConfig أو الحقل جديد
   if (
     this.isNew ||
     this.isModified('name') ||
-    this.isModified('promptConfig')
+    this.isModified('promptConfig') ||
+    this.isModified('returnPolicy') ||
+    this.isModified('exchangePolicy') ||
+    this.isModified('shippingPolicy')
   ) {
     this.finalPromptTemplate = buildPromptFromMerchant(this);
   }

@@ -31,6 +31,13 @@ export class OnboardingDto {
   @MaxLength(200)
   businessDescription: string;
 
+  @ApiPropertyOptional({
+    description: 'رابط المتجر (اختياري)',
+    example: 'https://mystore.example.com',
+  })
+  @IsOptional()
+  @IsUrl()
+  storeurl?: string;
   @ApiProperty({ description: 'رقم الجوال الرسمي', example: '+970599123456' })
   @Matches(/^\+?\d{7,15}$/)
   phone: string;
@@ -51,6 +58,10 @@ export class OnboardingDto {
   @IsUrl()
   webhookUrl?: string;
 
+  @ApiProperty({
+    description: 'رابط Webhook للبوت',
+    example: 'https://…/webhook',
+  })
   @ApiPropertyOptional({
     description: 'توكن بوت التليجرام (اختياري)',
     example: '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11',

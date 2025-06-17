@@ -11,11 +11,14 @@ import {
   Request,
   HttpException,
   HttpStatus,
+  BadRequestException,
+  HttpCode,
+  Req,
 } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
-import { UpdateChannelDto } from './dto/update-channel.dto';
+import { ChannelsDto } from './dto/update-channel.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
 import {
@@ -32,6 +35,8 @@ import {
   ApiNotFoundResponse,
 } from '@nestjs/swagger';
 import { Public } from 'src/common/decorators/public.decorator';
+import { OnboardingResponseDto } from './dto/onboarding-response.dto';
+import { OnboardingDto } from './dto/onboarding.dto';
 
 @ApiTags('التجار')
 @ApiBearerAuth()
@@ -45,29 +50,6 @@ export class MerchantsController {
   @ApiBody({ type: CreateMerchantDto })
   @ApiCreatedResponse({
     description: 'تم إنشاء التاجر بنجاح',
-    schema: {
-      example: {
-        _id: '6631ee7fa41377dc5cf730e0',
-        name: 'متجر وردة',
-        email: 'flower@example.com',
-        phone: '9665xxxxxxx',
-        userId: '6623...',
-        status: 'trial',
-        channelConfig: {
-          whatsapp: { phone: '9665xxxxxxx' },
-          telegram: { chatId: '12345678', botToken: 'bot123' },
-        },
-        promptConfig: {
-          dialect: 'gulf',
-          tone: 'ودّي',
-          template: '',
-        },
-        apiToken: 'sk-xxxxx',
-        trialEndsAt: '2025-06-24T00:00:00.000Z',
-        subscriptionExpiresAt: '2025-07-10T00:00:00.000Z',
-        planName: 'free',
-      },
-    },
   })
   @ApiBadRequestResponse({ description: 'بيانات ناقصة أو غير صحيحة' })
   @ApiUnauthorizedResponse({ description: 'التوثيق مطلوب' })
@@ -81,37 +63,44 @@ export class MerchantsController {
   findAll() {
     return this.svc.findAll();
   }
+  @Get('actions/onboarding')
+  @Public()
+  test() {
+    console.log('▶️ test endpoint reached');
+    return { ok: true };
+  }
+  // src/modules/merchants/merchants.controller.ts
+  @Put('actions/onboarding')
+  @HttpCode(HttpStatus.OK)
+  async completeOnboarding(
+    @Req() { user }: RequestWithUser,
+    @Body() dto: OnboardingDto, // ← dto أصبح مُلزَماً، لا علامة ?
+  ): Promise<{ message: string } & OnboardingResponseDto> {
+    console.log('▶️ reached completeOnboarding', {
+      merchantId: user.merchantId,
+      dto,
+    });
+    const { merchant, webhookInfo } = await this.svc.completeOnboarding(
+      user.merchantId,
+      dto,
+    );
+    return {
+      message: 'Onboarding completed',
+      merchant,
+      webhookInfo,
+    };
+  }
 
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'جلب بيانات تاجر واحد حسب المعرّف' })
   @ApiParam({ name: 'id', description: 'معرّف التاجر (Mongo ObjectId)' })
-  @ApiOkResponse({
-    description: 'تفاصيل التاجر',
-    schema: {
-      example: {
-        _id: '6631ee7fa41377dc5cf730e0',
-        name: 'متجر تجميل',
-        phone: '9665xxxxxxx',
-        status: 'active',
-        apiToken: 'sk-merchant-token',
-        promptConfig: {
-          dialect: 'formal',
-          tone: 'احترافي',
-          template: '',
-        },
-        channelConfig: {
-          whatsapp: { phone: '9665xxxxxxx' },
-          telegram: { chatId: '12345678', botToken: 'bot:XXX' },
-        },
-      },
-    },
-  })
+  @ApiOkResponse()
   @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
-  @ApiUnauthorizedResponse({ description: 'صلاحية الدخول غير كافية' })
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
+
   @Put(':id')
   @ApiOperation({ summary: 'تحديث بيانات التاجر بالكامل' })
   update(
@@ -120,12 +109,10 @@ export class MerchantsController {
     @Request() req: RequestWithUser,
   ) {
     const user = req.user;
-
     return this.svc.findOne(id).then((merchant) => {
       if (user.role !== 'ADMIN' && user.userId !== merchant.userId.toString()) {
         throw new HttpException('ممنوع', HttpStatus.FORBIDDEN);
       }
-
       return this.svc.update(id, dto);
     });
   }
@@ -165,15 +152,14 @@ export class MerchantsController {
     }));
   }
 
-  @Post(':id/channel')
-  @ApiOperation({ summary: 'تحديث إعدادات القنوات' })
+  @Post(':id/channels')
+  @ApiOperation({ summary: 'تحديث إعدادات القنوات (واتساب/تلجرام)' })
   @ApiParam({ name: 'id', type: String })
-  @ApiBody({ type: UpdateChannelDto })
+  @ApiBody({ type: ChannelsDto })
   @ApiOkResponse()
   @ApiNotFoundResponse()
-  @Post(':id/channel')
-  updateChannel(@Param('id') id: string, @Body() dto: UpdateChannelDto) {
-    return this.svc.updateChannelConfig(id, dto);
+  updateChannels(@Param('id') id: string, @Body() dto: ChannelsDto) {
+    return this.svc.updateChannels(id, dto);
   }
 
   @Get(':id/status')
@@ -184,13 +170,22 @@ export class MerchantsController {
   getStatus(@Param('id') id: string) {
     return this.svc.getStatus(id);
   }
+
   /**
-   * يفعّل ويب هوك تلجرام لتاجر معيّن
-   * @param id معرّف التاجر
+   * يفعّل ويب هوك تلجرام لتاجر معيّن. يجب إرسال botToken إما عبر Body أو أن يكون محفوظاً بقنوات التاجر.
    */
-  @Post(':id/webhook')
-  async registerTelegramWebhook(@Param('id') id: string) {
-    const result = await this.svc.registerTelegramWebhook(id);
-    return { success: true, ...result };
+  @Post(':id/telegram-webhook')
+  @ApiOperation({ summary: 'تفعيل Webhook تلجرام للتاجر' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiBody({ schema: { example: { botToken: '12345:ABCDEF...' } } })
+  async registerTelegram(
+    @Param('id') id: string,
+    @Body('botToken') botToken: string,
+  ) {
+    if (!botToken) {
+      throw new BadRequestException('botToken مطلوب في جسم الطلب');
+    }
+    const result = await this.svc.registerTelegramWebhook(id, botToken);
+    return { message: 'تم تسجيل الويبهوك بنجاح', ...result };
   }
 }

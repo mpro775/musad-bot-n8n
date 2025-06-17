@@ -1,151 +1,246 @@
 // src/modules/offers/offers.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { Offer, OfferDocument } from './schemas/offer.schema';
-import { ScrapeQueue } from './scrape.queue';
+import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
-
-export interface OfferJobData {
-  offerId: string;
-  url: string;
-  merchantId: string;
-  mode: 'full' | 'minimal';
-}
+import { Product, ProductDocument } from '../products/schemas/product.schema';
 
 @Injectable()
 export class OffersService {
   constructor(
     @InjectModel(Offer.name)
     private readonly offerModel: Model<OfferDocument>,
-    private readonly scrapeQueue: ScrapeQueue,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
   ) {}
 
-  /**
-   * إنشاء عرض جديد مع إضافة مهمة Scrape
-   */
+  // 🟢 إنشاء عرض جديد
   async create(
-    data: Partial<Offer> & { merchantId: string | Types.ObjectId },
+    dto: CreateOfferDto,
+    merchantId: string,
   ): Promise<OfferDocument> {
-    const dto = {
-      ...data,
-      merchantId:
-        typeof data.merchantId === 'string'
-          ? new Types.ObjectId(data.merchantId)
-          : data.merchantId,
-    };
-    const offer = await this.offerModel.create(dto);
+    // حماية: منع تجاوز الحد الأقصى للعروض حسب خطة التاجر
+    const offersCount = await this.offerModel
+      .countDocuments({ merchantId })
+      .exec();
+    // TODO: اجلب الحد من خطة التاجر بدلاً من رقم ثابت!
+    const MAX_OFFERS_PER_MERCHANT = 50;
+    if (offersCount >= MAX_OFFERS_PER_MERCHANT) {
+      throw new ForbiddenException('تم تجاوز الحد الأقصى لعدد العروض في خطتك');
+    }
 
-    // عند الإنشاء، أضف مهمة Scrape بنمط "full"
-    await this.enqueueScrapeJob({
-      offerId: offer._id.toString(),
-      url: offer.originalUrl,
-      merchantId: offer.merchantId.toString(),
-      mode: 'full',
+    // تحقق من عدم تكرار اسم العرض أو الكود لنفس التاجر
+    if (dto.code) {
+      const exists = await this.offerModel
+        .findOne({ merchantId, code: dto.code })
+        .exec();
+      if (exists) throw new BadRequestException('كود الكوبون مستخدم بالفعل');
+    }
+    const nameExists = await this.offerModel
+      .findOne({ merchantId, name: dto.name })
+      .exec();
+    if (nameExists) throw new BadRequestException('اسم العرض مستخدم بالفعل');
+
+    // تحقق أن كل المنتجات تخص التاجر
+    let productIds: Types.ObjectId[] = [];
+    if (dto.products && dto.products.length) {
+      const foundProducts = await this.productModel
+        .find({
+          _id: { $in: dto.products.map((id) => new Types.ObjectId(id)) },
+          merchantId,
+        })
+        .exec();
+      if (foundProducts.length !== dto.products.length) {
+        throw new BadRequestException('منتجات غير صالحة أو لا تتبع التاجر');
+      }
+      productIds = foundProducts.map((p) => p._id);
+    }
+
+    // حماية التواريخ
+    if (dto.startDate >= dto.endDate) {
+      throw new BadRequestException('تاريخ النهاية يجب أن يكون بعد البداية');
+    }
+
+    // بناء وثيقة العرض
+    const offer = new this.offerModel({
+      merchantId,
+      name: dto.name,
+      type: dto.type,
+      value: dto.value,
+      products: productIds,
+      category: dto.category || null,
+      description: dto.description || '',
+      startDate: dto.startDate,
+      endDate: dto.endDate,
+      code: dto.code || null,
+      usageLimit: dto.usageLimit || 0,
+      usedCount: 0,
+      active: true,
+      meta: {},
     });
 
+    await offer.save();
+    return offer;
+  }
+  async searchOffers(merchantId: string, query: string) {
+    const mId =
+      typeof merchantId === 'string'
+        ? new Types.ObjectId(merchantId)
+        : merchantId;
+
+    return this.offerModel
+      .find({
+        merchantId: mId,
+        isActive: true,
+        $or: [
+          { name: { $regex: query, $options: 'i' } },
+          { description: { $regex: query, $options: 'i' } },
+        ],
+      })
+      .sort({ validUntil: 1 })
+      .limit(10)
+      .lean();
+  }
+
+  // 🟢 جلب كل العروض الخاصة بتاجر
+  // في OffersService
+  async findAllByMerchant(
+    merchantId: string,
+    filter: any = {},
+  ): Promise<OfferDocument[]> {
+    return this.offerModel
+      .find({ merchantId, ...filter })
+      .populate('products')
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  // 🟢 جلب عرض واحد
+  async findOne(id: string, merchantId: string): Promise<OfferDocument> {
+    const offer = await this.offerModel
+      .findById(id)
+      .populate('products')
+      .exec();
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (offer.merchantId.toString() !== merchantId)
+      throw new ForbiddenException('ليس لديك صلاحية');
     return offer;
   }
 
-  /**
-   * إضافة مهمة إلى طابور السكربنج
-   */
-  async enqueueScrapeJob(jobData: OfferJobData): Promise<void> {
-    await this.scrapeQueue.addJob(jobData);
-  }
-
-  /**
-   * جلب جميع العروض لتاجر محدد
-   */
-  async findAllByMerchant(merchantObjectId: Types.ObjectId): Promise<any[]> {
-    const docs = await this.offerModel
-      .find({ merchantId: merchantObjectId })
-      .lean()
-      .exec();
-
-    // حول حقول الـ ObjectId إلى strings
-    return docs.map((doc) => ({
-      ...doc,
-      _id: doc._id.toString(),
-      merchantId: doc.merchantId.toString(),
-    }));
-  }
-
-  /**
-   * جلب عرض واحد حسب المعرّف
-   */
-  async findOne(id: string): Promise<OfferDocument> {
-    const offer = await this.offerModel.findById(id).exec();
-    if (!offer) {
-      throw new NotFoundException('Offer not found');
-    }
-    return offer;
-  }
-
-  /**
-   * تحديث بيانات عرض
-   */
-  async update(id: string, dto: UpdateOfferDto): Promise<OfferDocument> {
-    const updated = await this.offerModel
-      .findByIdAndUpdate(id, dto, { new: true })
-      .exec();
-    if (!updated) {
-      throw new NotFoundException('Offer not found');
-    }
-    return updated;
-  }
-
-  /**
-   * حذف عرض
-   */
-  async remove(id: string): Promise<{ message: string }> {
-    const removed = await this.offerModel.findByIdAndDelete(id).exec();
-    if (!removed) {
-      throw new NotFoundException('Offer not found');
-    }
-    return { message: 'Offer deleted successfully' };
-  }
-
-  /**
-   * تحديث البيانات بعد عملية السكربنج
-   */
-  async updateAfterScrape(
-    offerId: string,
-    updateData: Partial<Offer>,
+  // 🟢 تحديث عرض
+  async update(
+    id: string,
+    dto: UpdateOfferDto,
+    merchantId: string,
   ): Promise<OfferDocument> {
-    const updated = await this.offerModel
-      .findByIdAndUpdate(offerId, updateData, { new: true })
-      .exec();
-    if (!updated) {
-      throw new NotFoundException('Offer not found');
+    const offer = await this.offerModel.findById(id).exec();
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (offer.merchantId.toString() !== merchantId)
+      throw new ForbiddenException('ليس لديك صلاحية');
+
+    // حماية: لا يسمح بتغيير المنتجات إلى منتجات من تاجر آخر
+    let productIds: Types.ObjectId[] | undefined = undefined;
+    if (dto.products && dto.products.length) {
+      const foundProducts = await this.productModel
+        .find({
+          _id: { $in: dto.products.map((id) => new Types.ObjectId(id)) },
+          merchantId,
+        })
+        .exec();
+      if (foundProducts.length !== dto.products.length) {
+        throw new BadRequestException('منتجات غير صالحة أو لا تتبع التاجر');
+      }
+      productIds = foundProducts.map((p) => p._id);
     }
+
+    // حماية التواريخ
+    if (dto.startDate && dto.endDate && dto.startDate >= dto.endDate) {
+      throw new BadRequestException('تاريخ النهاية يجب أن يكون بعد البداية');
+    }
+
+    // تحديث العرض
+    Object.assign(offer, {
+      ...dto,
+      ...(productIds && { products: productIds }),
+    });
+    await offer.save();
+    return offer;
+  }
+
+  // 🟢 حذف عرض
+  async remove(id: string, merchantId: string): Promise<void> {
+    const offer = await this.offerModel.findById(id).exec();
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (offer.merchantId.toString() !== merchantId)
+      throw new ForbiddenException('ليس لديك صلاحية');
+    await this.offerModel.findByIdAndDelete(id).exec();
+  }
+
+  // 🟢 تفعيل/تعطيل عرض يدويًا
+  async setActive(
+    id: string,
+    merchantId: string,
+    active: boolean,
+  ): Promise<OfferDocument> {
+    const offer = await this.offerModel.findById(id).exec();
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (offer.merchantId.toString() !== merchantId)
+      throw new ForbiddenException('ليس لديك صلاحية');
+    offer.active = active;
+    await offer.save();
+    return offer;
+  }
+
+  // 🟢 تحديث العداد عند استخدام العرض (ممكن ربطها بخدمة الطلبات)
+  async incrementUsedCount(id: string): Promise<void> {
+    await this.offerModel
+      .findByIdAndUpdate(id, { $inc: { usedCount: 1 } })
+      .exec();
+  }
+
+  async updateAfterScrape(
+    productId: string,
+    updateData: Partial<Product>,
+  ): Promise<ProductDocument> {
+    const updated = await this.productModel
+      .findByIdAndUpdate(productId, updateData, { new: true })
+      .exec();
+
+    if (!updated) throw new NotFoundException('Product not found');
+
     return updated;
   }
 
-  /**
-   * Cron لتحديث البيانات بشكل دوري (minimal) كل 10 دقائق
-   */
-  @Cron(CronExpression.EVERY_10_MINUTES)
-  async scheduleMinimalScrape(): Promise<void> {
-    const offers = await this.offerModel
-      .find()
-      .select('_id originalUrl merchantId lastFetchedAt')
+  // 🟢 جلب العروض المرتبطة بمنتج
+  async findOffersByProduct(
+    productId: string,
+    merchantId: string,
+  ): Promise<OfferDocument[]> {
+    return this.offerModel
+      .find({
+        merchantId,
+        products: productId,
+        active: true,
+        startDate: { $lte: new Date() },
+        endDate: { $gte: new Date() },
+      })
       .exec();
-    const now = Date.now();
-
-    for (const o of offers) {
-      if (
-        !o.lastFetchedAt ||
-        now - o.lastFetchedAt.getTime() > 10 * 60 * 1000
-      ) {
-        await this.enqueueScrapeJob({
-          offerId: o._id.toString(),
-          url: o.originalUrl,
-          merchantId: o.merchantId.toString(),
-          mode: 'minimal',
-        });
-      }
-    }
   }
+
+  // 🟢 عند حذف منتج يجب إزالة مرجعه من كل العروض
+  async removeProductFromOffers(productId: string): Promise<void> {
+    await this.offerModel
+      .updateMany({ products: productId }, { $pull: { products: productId } })
+      .exec();
+  }
+
+  // 🟢 جدولة تعطيل العروض المنتهية تلقائيًا (يمكن عملها بـ @Cron)
 }

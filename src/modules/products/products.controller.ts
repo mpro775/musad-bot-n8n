@@ -19,7 +19,7 @@ import {
 import { plainToInstance } from 'class-transformer';
 import { Types } from 'mongoose';
 import { ProductsService } from './products.service';
-import { CreateProductDto } from './dto/create-product.dto';
+import { CreateProductDto, ProductSource } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -80,34 +80,37 @@ export class ProductsController {
     @Request() req: RequestWithUser,
     @Body() dto: CreateProductDto,
   ): Promise<ProductResponseDto> {
-    if (req.user.role !== 'MERCHANT' && req.user.role !== 'ADMIN') {
-      throw new ForbiddenException('Insufficient role');
-    }
-
-    const merchantId = req.user.merchantId;
-    const merchantObjectId = new Types.ObjectId(merchantId);
-
-    // 1) إنشاء الوثيقة في الـ DB
-    const productDoc = await this.productsService.create({
-      merchantId: merchantObjectId,
+    // Build input for service
+    const input = {
+      merchantId: req.user.merchantId,
       originalUrl: dto.originalUrl,
-      name: dto.name ?? '',
-      price: dto.price ?? 0,
+      source: dto.source,
+      sourceUrl: dto.sourceUrl,
+      externalId: dto.externalId,
+      name: dto.name || '',
+      price: dto.price || 0,
       isAvailable: dto.isAvailable ?? true,
-      keywords: dto.keywords ?? [],
+      keywords: dto.keywords || [],
+      platform: dto.platform || '',
+      description: dto.description || '',
+      images: dto.images || [],
+      category: dto.category || '',
+      lowQuantity: dto.lowQuantity || '',
+      specsBlock: dto.specsBlock || [],
+      // alerts
       errorState: 'queued',
-    });
-
-    // 2) إرسال مهمة السكريبنغ مع تحديد الـ mode
-    await this.productsService.enqueueScrapeJob({
-      productId: productDoc._id.toString(),
-      url: dto.originalUrl,
-      merchantId,
-      mode: 'full', // أو 'minimal' حسب حاجتك
-    });
-
-    // 3) ترحيل الـ Document إلى DTO
-    return plainToInstance(ProductResponseDto, productDoc, {
+    };
+    const product = await this.productsService.create(input);
+    // enqueue scrape job for api/scraper
+    if (dto.source !== ProductSource.MANUAL) {
+      await this.productsService.enqueueScrapeJob({
+        productId: product._id.toString(),
+        url: dto.sourceUrl || dto.originalUrl,
+        merchantId: req.user.merchantId,
+        mode: 'minimal',
+      });
+    }
+    return plainToInstance(ProductResponseDto, product, {
       excludeExtraneousValues: true,
     });
   }
@@ -202,6 +205,20 @@ export class ProductsController {
       excludeExtraneousValues: true,
     });
   }
+  @Post('import-link')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async importByLink(
+    @Request() req: RequestWithUser,
+    @Body('url') url: string,
+  ) {
+    if (!url) throw new BadRequestException('URL is required');
+    await this.productsService.create({
+      merchantId: req.user.merchantId,
+      originalUrl: url,
+      source: ProductSource.SCRAPER, // أو ProductSource.API حسب الحالة
+    });
+    return { status: 'queued' };
+  }
 
   @Put(':id')
   @ApiParam({ name: 'id', type: 'string', description: 'معرّف المنتج' })
@@ -236,6 +253,40 @@ export class ProductsController {
     }
     const updated = await this.productsService.update(id, dto);
     return plainToInstance(ProductResponseDto, updated, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  @Post(':id/availability')
+  async updateAvailability(
+    @Param('id') id: string,
+    @Body('isAvailable') isAvailable: boolean,
+  ) {
+    return this.productsService.setAvailability(id, isAvailable);
+  }
+
+  @Post(':id/sync')
+  @ApiParam({ name: 'id', description: 'معرّف المنتج' })
+  @ApiOperation({ summary: 'مزامنة يدوية للمنتجات الآلية' })
+  @ApiOkResponse({ type: ProductResponseDto })
+  @ApiForbiddenResponse({ description: 'لا يمكن مزامنة المنتجات اليدوية' })
+  @ApiNotFoundResponse({ description: 'المنتج غير موجود' })
+  async triggerSync(
+    @Param('id') id: string,
+    @Request() req: RequestWithUser,
+  ): Promise<ProductResponseDto> {
+    const product = await this.productsService.findOne(id);
+    if (
+      product.merchantId.toString() !== req.user.merchantId &&
+      req.user.role !== 'ADMIN'
+    ) {
+      throw new ForbiddenException('ليس لديك صلاحية مزامنة هذا المنتج');
+    }
+    if (product.source === 'manual') {
+      throw new BadRequestException('لا يمكن مزامنة المنتجات اليدوية');
+    }
+    const synced = await this.productsService.triggerSync(id);
+    return plainToInstance(ProductResponseDto, synced, {
       excludeExtraneousValues: true,
     });
   }

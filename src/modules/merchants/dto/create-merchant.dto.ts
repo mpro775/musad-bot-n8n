@@ -1,4 +1,3 @@
-// src/modules/merchants/dto/create-merchant.dto.ts
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsString,
@@ -6,24 +5,31 @@ import {
   Matches,
   IsUrl,
   ValidateNested,
+  IsArray,
 } from 'class-validator';
 import { PromptConfigDto } from './prompt-config.dto';
-import { Type } from 'class-transformer'; // ✅ مهمة جداً!
+import { Type } from 'class-transformer';
+import { ChannelsDto } from './update-channel.dto'; // استوردها
 
 export class CreateMerchantDto {
+  @ApiPropertyOptional({ description: 'اسم التاجر' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
   @ApiPropertyOptional({ description: 'البريد الإلكتروني' })
   @IsOptional()
   @IsString()
   email?: string;
 
-  @IsOptional()
-  @IsString()
-  workflowId?: string;
-
   @ApiPropertyOptional({ description: 'رقم الجوال' })
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  workflowId?: string;
 
   @ApiPropertyOptional({ description: 'رقم واتساب' })
   @IsOptional()
@@ -35,12 +41,11 @@ export class CreateMerchantDto {
   @IsUrl()
   webhookUrl?: string;
 
-  @ApiPropertyOptional({ description: 'إعدادات القنوات' })
+  @ApiPropertyOptional({ description: 'إعدادات القنوات (كل قناة بكائن خاص)' })
+  @ValidateNested()
+  @Type(() => ChannelsDto)
   @IsOptional()
-  channelConfig?: {
-    telegram?: { chatId?: string; token?: string };
-    whatsapp?: { phone?: string };
-  };
+  channels?: ChannelsDto;
 
   @ApiPropertyOptional({ description: 'تكوين الردود' })
   @IsOptional()
@@ -53,10 +58,40 @@ export class CreateMerchantDto {
   @IsString()
   businessType?: string;
 
+  @ApiPropertyOptional({ description: 'رابط المتجر ' })
+  @IsOptional()
+  @IsString()
+  storeurl?: string;
+
+  @IsOptional()
+  @IsString()
+  apiToken?: string;
+
   @ApiPropertyOptional({ description: 'وصف المتجر' })
   @IsOptional()
   @IsString()
   businessDescription?: string;
+
+  @ApiPropertyOptional({ description: 'سياسة الإرجاع (اختياري)' })
+  @IsOptional()
+  @IsString()
+  returnPolicy?: string;
+
+  @ApiPropertyOptional({ description: 'سياسة الاستبدال (اختياري)' })
+  @IsOptional()
+  @IsString()
+  exchangePolicy?: string;
+
+  @ApiPropertyOptional({ description: 'الفئات / أقسام المنتجات' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  categories?: string[];
+
+  @ApiPropertyOptional({ description: 'سياسة الشحن والتوصيل (اختياري)' })
+  @IsOptional()
+  @IsString()
+  shippingPolicy?: string;
 
   @ApiPropertyOptional({ description: 'اللهجة المفضلة' })
   @IsOptional()

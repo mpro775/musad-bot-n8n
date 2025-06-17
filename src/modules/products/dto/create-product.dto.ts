@@ -7,10 +7,17 @@ import {
   IsNumber,
   IsBoolean,
   IsDate,
+  ValidateIf,
+  IsUrl,
+  IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
+export enum ProductSource {
+  MANUAL = 'manual',
+  API = 'api',
+  SCRAPER = 'scraper',
+}
 export class CreateProductDto {
   @ApiProperty({
     description: 'الرابط الأصلي للمنتج (من المتجر)',
@@ -19,6 +26,14 @@ export class CreateProductDto {
   @IsString()
   @IsNotEmpty()
   originalUrl: string;
+
+  @ApiProperty({
+    description: 'معرّف التاجر',
+    example: '60f7e1a2b4c3d2e1f0a9b8c7',
+  })
+  @IsString()
+  @IsNotEmpty()
+  merchantId: string;
 
   @ApiPropertyOptional({ description: 'اسم المنتج', example: 'عطر فاخر' })
   @IsOptional()
@@ -35,6 +50,28 @@ export class CreateProductDto {
   @IsBoolean()
   isAvailable?: boolean;
 
+  @ApiProperty({ description: 'مصدر المنتج', enum: ProductSource })
+  @IsEnum(ProductSource)
+  source: ProductSource;
+  // للرابط أو endpoint الخاص بالـ API أو صفحة المنتج (لـ scraper)
+  @ApiPropertyOptional({
+    description: 'رابط المنتج أو API URL',
+    example: 'https://...',
+  })
+  @ValidateIf(
+    (o) => o.source === ProductSource.API || o.source === ProductSource.SCRAPER,
+  )
+  @IsUrl()
+  sourceUrl?: string;
+
+  // معرّف المنتج في الـ API الخارجي
+  @ApiPropertyOptional({
+    description: 'معرّف المنتج في API خارجي',
+    example: '12345',
+  })
+  @ValidateIf((o) => o.source === ProductSource.API)
+  @IsString()
+  externalId?: string;
   @ApiPropertyOptional({
     description: 'كلمات مفتاحية مرتبطة بالمنتج',
     example: ['عطر', 'فرنسي', 'فاخر'],

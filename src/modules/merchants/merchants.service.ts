@@ -1,8 +1,8 @@
-// src/modules/merchants/merchants.service.ts
 import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -11,222 +11,214 @@ import { Model } from 'mongoose';
 import { Merchant, MerchantDocument } from './schemas/merchant.schema';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
-import { UpdateChannelDto } from './dto/update-channel.dto';
+import { ChannelsDto } from './dto/update-channel.dto';
 import { firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
+import { buildPromptFromMerchant } from './utils/prompt-builder';
+import { N8nWorkflowService } from '../n8n-workflow/n8n-workflow.service'; // ← استورد الخدمة
+import { OnboardingDto } from './dto/onboarding.dto';
 
 @Injectable()
 export class MerchantsService {
+  private readonly logger = new Logger(MerchantsService.name);
+
   constructor(
     @InjectModel(Merchant.name)
     private readonly merchantModel: Model<MerchantDocument>,
     private http: HttpService,
+
+    private readonly n8n: N8nWorkflowService, // ← حقن الخدمة
   ) {}
 
-  // إنشاء تاجر جديد
+  /** إنشاء تاجر جديد مع تهيئة workflow وإعداد القنوات */
   async create(createDto: CreateMerchantDto): Promise<MerchantDocument> {
-    // 1) أنشئ التاجر أولاً
-    const created = new this.merchantModel(createDto);
+    // 1) احفظ بيانات التاجر
+    // 1) احفظ بيانات التاجر
+    const doc = { ...createDto, channels: createDto.channels ?? {} };
+    const created = new this.merchantModel(doc);
     await created.save();
 
-    // 2) لو العميل أعطى توكن تلجرام، جهّز URL الويبهوك
-    const token = createDto.channelConfig?.telegram?.token;
-    if (token) {
-      // ثابت عندك:
-      const N8N_BASE = 'https://abdulsalam-n8n.up.railway.app';
-      const WORKFLOW_ID = '8ae43b54-0ebe-4b1c-8824-bace684c6573';
+    try {
+      // 2) أنشئ الـ workflow واحفظ الـ workflowId
+      const workflowId = await this.n8n.createForMerchant(
+        created.id.toString(),
+      );
+      created.workflowId = workflowId;
+      await created.save();
 
-      const hookUrl = `${N8N_BASE}/webhook/${WORKFLOW_ID}/webhooks/telegram_incoming/${created.id}`;
-
-      try {
-        // 3) سجّل الـ webhook في Telegram API
-        const telegramApi = `https://api.telegram.org/bot${token}/setWebhook`;
-        await firstValueFrom(
-          this.http.post(telegramApi, { params: { url: hookUrl } }),
+      // 3) سجّل webhook إذا وُجد botToken
+      const botToken = created.channels?.telegram?.botToken;
+      if (botToken) {
+        const { hookUrl } = await this.registerTelegramWebhook(
+          created.id.toString(),
+          botToken,
         );
 
-        // 4) احفظه في الحقل webhookUrl
+        // 4) هيّئ channels لو كانت undefined ثم حدّثها
+        const channels = created.channels ?? {};
+        channels.telegram = {
+          ...(channels.telegram ?? {}),
+          webhookUrl: hookUrl,
+        };
+
+        created.channels = channels;
         created.webhookUrl = hookUrl;
         await created.save();
-      } catch (err) {
-        // لو فشل تسجيل الويبهوك، إحذف التاجر أو أرجع خطأ مناسب
-        throw new InternalServerErrorException(
-          `فشل إنشاء webhook في تلجرام: ${err.message}`,
-        );
       }
-    }
 
-    return created;
+      return created;
+    } catch (err) {
+      await this.merchantModel.findByIdAndDelete(created.id).exec();
+      throw new InternalServerErrorException(`فشل التهيئة: ${err.message}`);
+    }
   }
 
-  // جلب كل التجار
+  /** تحديث بيانات التاجر وتحديث إعدادات القنوات عبر channels فقط */
+  async update(id: string, dto: UpdateMerchantDto): Promise<MerchantDocument> {
+    const merchant = await this.merchantModel.findById(id).exec();
+    if (!merchant) throw new NotFoundException('Merchant not found');
+
+    // تحديث إعدادات القنوات في حال ورودها
+    if ((dto as any).channels) {
+      merchant.channels = {
+        ...merchant.channels,
+        ...(dto as any).channels,
+      };
+    }
+
+    // تحديث بقية البيانات (مع استبعاد channels لمنع الاستبدال الكامل بالخطأ)
+    const fieldsToUpdate = { ...dto };
+    delete (fieldsToUpdate as any).channels;
+    Object.assign(merchant, fieldsToUpdate);
+
+    merchant.finalPromptTemplate = buildPromptFromMerchant(merchant);
+    await merchant.save();
+
+    return merchant;
+  }
+
+  /** جلب كل التجار */
   async findAll(): Promise<MerchantDocument[]> {
     return this.merchantModel.find().exec();
   }
 
-  async registerTelegramWebhook(
-    merchantId: string,
-  ): Promise<{ hookUrl: string; telegramResponse: any }> {
-    const merchant = await this.merchantModel.findById(merchantId).exec();
-    if (!merchant) {
-      throw new NotFoundException(`التاجر بالـ ID ${merchantId} غير موجود`);
-    }
-
-    // تأكد من وجود توكن تلجرام مُخزّن
-    const token = merchant.channelConfig?.telegram?.token;
-    if (!token) {
-      throw new BadRequestException(`لا يوجد Telegram token لهذا التاجر`);
-    }
-
-    // بناء URL للويب هوك على n8n
-    const N8N_BASE =
-      process.env.N8N_BASE_URL || 'https://abdulsalam-n8n.up.railway.app';
-    const WORKFLOW_ID =
-      process.env.N8N_WORKFLOW_ID || '8ae43b54-0ebe-4b1c-8824-bace684c6573';
-    const hookUrl = `${N8N_BASE}/webhook/${WORKFLOW_ID}/webhooks/telegram_incoming/${merchant.id}`;
-
-    try {
-      // إرسال طلب إلى Telegram API
-      const telegramApi = `https://api.telegram.org/bot${token}/setWebhook`;
-      const resp = await firstValueFrom(
-        this.http.post(telegramApi, null, { params: { url: hookUrl } }),
-      );
-
-      // حفظ الـ webhookUrl في قاعدة البيانات
-      merchant.webhookUrl = hookUrl;
-      await merchant.save();
-
-      return {
-        hookUrl,
-        telegramResponse: resp.data,
-      };
-    } catch (err) {
-      throw new InternalServerErrorException(
-        `فشل تسجيل الويب هوك في تلجرام: ${err.message}`,
-      );
-    }
-  }
-  async setWorkflowId(merchantId: string, workflowId: string): Promise<void> {
-    const updated = await this.merchantModel
-      .findOneAndUpdate({ merchantId }, { workflowId }, { new: true })
-      .exec();
-    if (!updated) {
-      throw new NotFoundException(`Merchant ${merchantId} not found`);
-    }
-  }
-  // جلب تاجر واحد
+  /** جلب تاجر واحد */
   async findOne(
     id: string,
   ): Promise<MerchantDocument & { finalPromptTemplate: string }> {
     const merchant = await this.merchantModel.findById(id).exec();
     if (!merchant) throw new NotFoundException('Merchant not found');
-
-    // إضافة الحقل كخاصية افتراضية (بدون التأثير على قاعدة البيانات)
-    merchant.finalPromptTemplate = this.buildPromptFromConfig(merchant);
-
+    merchant.finalPromptTemplate = buildPromptFromMerchant(merchant);
     return merchant;
   }
 
-  private buildPromptFromConfig(merchant: any): string {
-    const shopName = merchant.name || 'متجرنا';
-    const dialect = merchant.promptConfig?.dialect || 'فصحى';
-    const tone = merchant.promptConfig?.tone || 'احترافية';
-
-    let prompt = `أنت مساعد ذكي لخدمة العملاء في ${shopName}. مهمتك الرئيسية هي تقديم خدمة عملاء استثنائية مع الحفاظ على الصورة المهنية للمتجر.`;
-
-    // المعلومات الأساسية عن المتجر
-    prompt += `\n\n## معلومات المتجر:`;
-    prompt += `\n- اسم المتجر: ${shopName}`;
-    if (merchant.businessType) {
-      prompt += `\n- التخصص: ${merchant.businessType}`;
-    }
-    if (merchant.businessDescription) {
-      prompt += `\n- الوصف: ${merchant.businessDescription}`;
-    }
-
-    // أسلوب التواصل
-    prompt += `\n\n## أسلوب التواصل:`;
-    prompt += `\n- اللهجة: ${dialect}`;
-    prompt += `\n- النغمة: ${tone}`;
-    prompt += `\n- المستوى المهني: دائمًا محترف ولبق`;
-
-    // نظام الوصول إلى بيانات المنتجات
-    prompt += `\n\n## نظام بيانات المنتجات:`;
-    prompt += `\n- لديك وصول إلى نظام إدارة المنتجات عبر API`;
-    prompt += `\n- عند سؤال العميل عن منتج:`;
-    prompt += `\n  1. استخدم وظيفة search_products(اسم_المنتج) للحصول على البيانات`;
-    prompt += `\n  2. قدم للعميل المعلومات التالية:`;
-    prompt += `\n     * اسم المنتج الدقيق`;
-    prompt += `\n     * السعر الحالي`;
-    prompt += `\n     * الكمية المتاحة`;
-    prompt += `\n     * الرمز (SKU) إن وجد`;
-    prompt += `\n  3. إذا لم تجد المنتج: اعتذر واقترح بدائل مشابهة`;
-    prompt += `\n  4. عند طلب تفاصيل أكثر: قدم روابط أو صورًا من خلال generate_product_link(رمز_المنتج)`;
-
-    // التعليمات التشغيلية
-    prompt += `\n\n## التعليمات الأساسية:`;
-    prompt += `\n1. رحب بالعميل باسم المتجر وقدم المساعدة`;
-    prompt += `\n2. استخدم وظيفة البحث عن المنتجات للإجابة على الاستفسارات`;
-    prompt += `\n3. تأكد من تحديث الأسعار والكميات مباشرة من النظام`;
-    prompt += `\n4. عند عدم وجود إجابة: تعهد بالتواصل مع الفريق المختص`;
-    prompt += `\n5. حافظ على إجابات دقيقة ومحدثة`;
-
-    // معلومات اضافية
-    if (merchant.promptConfig?.template) {
-      prompt += `\n\n## تعليمات خاصة من صاحب المتجر:\n${merchant.promptConfig.template}`;
-    }
-
-    // التوقيع المهني
-    prompt += `\n\n===\nدائمًا أنهِ ردك بتوقيع المتجر: "${shopName} - فريق خدمة العملاء"`;
-
-    return prompt;
-  }
-
-  // تحديث بيانات التاجر
-  async update(id: string, dto: UpdateMerchantDto): Promise<MerchantDocument> {
-    console.log('🟡 تحديث التاجر', id, dto);
-
-    const updated = await this.merchantModel
-      .findByIdAndUpdate(id, dto, { new: true })
-      .exec();
-
-    if (!updated) {
-      console.error('🔴 لم يتم العثور على التاجر');
-      throw new NotFoundException('Merchant not found');
-    }
-
-    updated.set('finalPromptTemplate', this.buildPromptFromConfig(updated));
-    await updated.save();
-
-    return updated;
-  }
-
-  // حذف التاجر
+  /** حذف التاجر */
   async remove(id: string): Promise<{ message: string }> {
     const deleted = await this.merchantModel.findByIdAndDelete(id).exec();
     if (!deleted) throw new NotFoundException('Merchant not found');
     return { message: 'Merchant deleted successfully' };
   }
 
-  // فحص حالة الاشتراك
+  /** فحص حالة الاشتراك */
   async isSubscriptionActive(id: string): Promise<boolean> {
     const merchant = await this.findOne(id);
     return merchant.subscriptionExpiresAt.getTime() > Date.now();
   }
 
-  // تحديث إعدادات القنوات (فقط تخزين config، دون إرسال فعلي)
-  async updateChannelConfig(
+  /** تحديث القنوات بشكل احترافي */
+  async updateChannels(
     id: string,
-    dto: UpdateChannelDto,
+    channelsDto: ChannelsDto,
   ): Promise<MerchantDocument> {
-    const merchant = await this.merchantModel
-      .findByIdAndUpdate(id, { channelConfig: dto }, { new: true })
-      .exec();
+    const merchant = await this.merchantModel.findById(id).exec();
     if (!merchant) throw new NotFoundException('Merchant not found');
+
+    merchant.channels = {
+      ...merchant.channels,
+      ...channelsDto,
+    };
+
+    await merchant.save();
     return merchant;
   }
 
-  // استعلام حالة الاشتراك بتفصيل أكبر
+  async completeOnboarding(
+    merchantId: string,
+    dto: OnboardingDto,
+  ): Promise<{ merchant: MerchantDocument; webhookInfo?: any }> {
+    // 1) احضار التاجر
+    const merchant = await this.merchantModel.findById(merchantId).exec();
+    if (!merchant) throw new NotFoundException('Merchant not found');
+
+    // 2) إنشاء workflow إذا كان مفقوداً
+    if (!merchant.workflowId) {
+      const wfId = await this.n8n.createForMerchant(merchantId);
+      merchant.workflowId = wfId;
+      await merchant.save();
+    }
+
+    // 3) تجهيز DTO للتحديث
+    const updateDto: UpdateMerchantDto = {
+      name: dto.name,
+      businessType: dto.businessType,
+      businessDescription: dto.businessDescription,
+      phone: dto.phone,
+      whatsappNumber: dto.whatsappNumber,
+      storeurl: dto.storeurl,
+      apiToken: dto.apiToken,
+      webhookUrl: dto.webhookUrl,
+    };
+
+    // 4) نفّذ التحديث باستخدام الدالة العامة update()
+    const updatedMerchant = await this.update(merchantId, updateDto);
+
+    // 5) تسجيل ويبهوك تيليجرام إذا وُجد توكن
+    let webhookInfo;
+    if (dto.telegramToken) {
+      webhookInfo = await this.registerTelegramWebhook(
+        merchantId,
+        dto.telegramToken,
+      );
+    }
+
+    return { merchant: updatedMerchant, webhookInfo };
+  }
+
+  /** تفعيل Webhook لقناة تيليجرام باستخدام حقل channels */
+  public async registerTelegramWebhook(
+    merchantId: string,
+    botToken: string,
+  ): Promise<{ hookUrl: string; telegramResponse: any }> {
+    const merchant = await this.merchantModel.findById(merchantId).exec();
+    if (!merchant) throw new NotFoundException('...');
+    if (!merchant.workflowId) throw new BadRequestException('...');
+
+    let base = 'https://primary-production-d3222.up.railway.app';
+    if (!base.startsWith('http')) base = `https://${base}`;
+    const cleanBase = base.replace(/\/+$/, '');
+    const hookUrl = `${cleanBase}/webhook/webhooks/incoming/${merchantId}`;
+    this.logger.log(`▶️ Using hookUrl: ${hookUrl}`);
+
+    const telegramApi = `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(hookUrl)}`;
+    this.logger.log(`▶️ Calling Telegram setWebhook: ${telegramApi}`);
+    const resp = await firstValueFrom(this.http.get(telegramApi));
+
+    // حفظ رابط الويبهوك
+    await this.merchantModel
+      .findByIdAndUpdate(
+        merchantId,
+        {
+          'channels.telegram.webhookUrl': hookUrl,
+          webhookUrl: hookUrl,
+        },
+        { new: true },
+      )
+      .exec();
+
+    return { hookUrl, telegramResponse: resp.data };
+  }
+
+  /** استعلام حالة الاشتراك بتفصيل أكبر */
   async getStatus(id: string) {
     const m = await this.findOne(id);
     const now = Date.now();
@@ -234,15 +226,14 @@ export class MerchantsService {
       0,
       Math.ceil((m.trialEndsAt.getTime() - now) / (24 * 60 * 60 * 1000)),
     );
-    const channelsConnected = Object.entries(m.channelConfig || {})
-      .filter(([, cfg]) => Boolean(cfg))
+    const channelsConnected = Object.entries(m.channels || {})
+      .filter(([, cfg]) => Boolean(cfg && (cfg as any).enabled))
       .map(([k]) => k);
     return {
       merchantId: id,
       isActive: m.subscriptionExpiresAt.getTime() > now,
       trialEndsAt: m.trialEndsAt,
       subscriptionExpiresAt: m.subscriptionExpiresAt,
-      planName: m.planName,
       planPaid: m.planPaid,
       trialDaysLeft,
       channelsConnected,

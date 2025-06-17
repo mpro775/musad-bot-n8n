@@ -1,6 +1,7 @@
 // src/modules/offers/schemas/offer.schema.ts
+
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { Types, HydratedDocument, Schema as MongooseSchema } from 'mongoose';
 
 export type OfferDocument = HydratedDocument<Offer>;
 
@@ -10,31 +11,49 @@ export class Offer {
   merchantId: Types.ObjectId;
 
   @Prop({ required: true })
-  originalUrl: string;
+  name: string;
 
-  @Prop({ default: '' })
-  name: string; // بدل name
+  @Prop({
+    required: true,
+    enum: ['percent', 'fixed', 'bogo', 'coupon', 'custom'],
+  })
+  type: 'percent' | 'fixed' | 'bogo' | 'coupon' | 'custom';
+
+  @Prop()
+  value: number; // نسبة أو مبلغ (للخصم)
+
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Product' }], default: [] })
+  products: Types.ObjectId[]; // المنتجات المرتبطة بهذا العرض
+
+  @Prop({ default: null })
+  category: string; // يمكن الربط بفئة بدل منتج (اختياري)
 
   @Prop({ default: '' })
   description: string;
 
+  @Prop({ required: true })
+  startDate: Date;
+
+  @Prop({ required: true })
+  endDate: Date;
+
+  @Prop({ default: true })
+  active: boolean;
+
+  @Prop({ default: null })
+  code: string; // إذا كان العرض كوبون
+
   @Prop({ default: 0 })
-  price: number; // بدل price
+  usageLimit: number; // أقصى عدد مرات استخدام
 
-  @Prop({ default: [] })
-  images: string[];
+  @Prop({ default: 0 })
+  usedCount: number; // عدد مرات الاستخدام الفعلي
 
-  @Prop({ default: '' })
-  platform: string;
-
-  @Prop({ default: null })
-  lastFetchedAt: Date;
-
-  @Prop({ default: null })
-  lastFullScrapedAt: Date;
-
-  @Prop({ default: null })
-  errorState: string;
+  @Prop({
+    type: MongooseSchema.Types.Mixed,
+    default: {},
+  })
+  meta: Record<string, any>;
 }
 
 export const OfferSchema = SchemaFactory.createForClass(Offer);

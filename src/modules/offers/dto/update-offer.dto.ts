@@ -1,54 +1,6 @@
-// src/modules/offers/dto/create-offer.dto.ts
-import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  IsNumber,
-  IsArray,
-} from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+// src/modules/offers/dto/update-offer.dto.ts
 
-export class UpdateOfferDto {
-  @ApiProperty({
-    description: 'رابط العرض الأصلي',
-    example: 'https://example.com/offer/abc',
-  })
-  @IsString()
-  @IsNotEmpty()
-  originalUrl: string;
+import { PartialType } from '@nestjs/swagger';
+import { CreateOfferDto } from './create-offer.dto';
 
-  @ApiPropertyOptional({
-    description: 'عنوان العرض',
-    example: 'خصم 20% على العطور',
-  })
-  @IsOptional()
-  @IsString()
-  title?: string;
-
-  @ApiPropertyOptional({ description: 'نسبة الخصم', example: 20 })
-  @IsOptional()
-  @IsNumber()
-  discount?: number;
-
-  @ApiPropertyOptional({
-    description: 'وصف العرض',
-    example: 'خصم حصري لفترة محدودة',
-  })
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @ApiPropertyOptional({
-    description: 'روابط الصور',
-    example: ['https://…/1.jpg'],
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  images?: string[];
-
-  @ApiPropertyOptional({ description: 'المنصة المصدر', example: 'Salla' })
-  @IsOptional()
-  @IsString()
-  platform?: string;
-}
+export class UpdateOfferDto extends PartialType(CreateOfferDto) {}

@@ -23,7 +23,16 @@ export class PlansService {
     if (!plan) throw new NotFoundException('Plan not found');
     return plan;
   }
-
+  async findById(id: string): Promise<Plan> {
+    const plan = await this.planModel.findById(id).exec();
+    if (!plan) throw new NotFoundException('Plan not found');
+    return plan;
+  }
+  async findByName(name: string): Promise<Plan> {
+    const plan = await this.planModel.findOne({ name }).exec();
+    if (!plan) throw new NotFoundException('Plan not found');
+    return plan;
+  }
   async update(id: string, updateDto: UpdatePlanDto): Promise<Plan> {
     const plan = await this.planModel
       .findByIdAndUpdate(id, updateDto, { new: true })

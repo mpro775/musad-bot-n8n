@@ -1,6 +1,13 @@
 // src/modules/n8n-workflow/n8n-workflow.service.ts
 
-import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  HttpException,
+  HttpStatus,
+  Logger,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 
 import templateJson from './workflow-template.json';
@@ -55,12 +62,13 @@ export class N8nWorkflowService {
 
   constructor(
     private readonly history: WorkflowHistoryService,
+    @Inject(forwardRef(() => MerchantsService))
     private readonly merchants: MerchantsService,
   ) {
     const keyName = 'X-N8N-API-KEY';
     const apiKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwYjE4MTg2Zi1lZDczLTQ0YWMtOGU2Yy02ZTcxYTJlYzI5MDUiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzUwMTA4NTEwLCJleHAiOjE3NTI2Mzg0MDB9.CM_31vOe2weOEnE-qAsmQKLJ43tX2my9-OXQ5Hr40VQeyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhYmFlMzgwZS1jZDJkLTQxMTItYWQzZS01Njg0YzZkZDNlNmEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzUwMTEyOTU5LCJleHAiOjE3NTI2Mzg0MDB9._CuijthbNJYvy-mdXsqg3JNYlpBNTPMbiJQnUhsvhtg';
-    const baseUrl = 'https://n8n-latest-2ny7.onrender.com'.replace(/\/+$/, '');
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4ODNjNzk4ZS0wZTcyLTQ5ZDgtODA1Zi0yYmE2NDUyNWYwZjQiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzUwMTg2MzM3LCJleHAiOjE3NTI3NjgwMDB9.33H2-Oqv4W8qi2jfDHdc0xgwc2dAX01uCX7BNAVWIFA';
+    const baseUrl = 'https://abdulsalam-n8n.up.railway.app'.replace(/\/+$/, '');
 
     this.logger.log(`▶️ [n8n.baseURL] = ${baseUrl}`);
     this.logger.log(`▶️ [n8n.header]  = ${keyName}: ${apiKey}`);
@@ -139,12 +147,12 @@ export class N8nWorkflowService {
     // clone
     const raw = JSON.parse(JSON.stringify(templateJson));
     raw.name = `wf-${merchantId}`;
-    raw.nodes[0].parameters.path = `/webhooks/incoming/${merchantId}`;
+    // ✔️ هكذا Route سيكون صحيحاً: /webhook/webhooks/incoming/...
+    raw.nodes[0].parameters.path = `webhooks/incoming/${merchantId}`;
 
     const payload = this.sanitizeTemplate(raw);
 
     this.logger.log('▶️ Payload to n8n:', JSON.stringify(payload, null, 2));
-    await this.api.post('/workflows', payload);
 
     try {
       const resp = await this.api.post('/workflows', payload);
@@ -164,7 +172,6 @@ export class N8nWorkflowService {
       this.wrapError(err, 'CREATE');
     }
   }
-
   /** جلب الـ JSON الكامل */
   async get(workflowId: string): Promise<WorkflowDefinition> {
     try {

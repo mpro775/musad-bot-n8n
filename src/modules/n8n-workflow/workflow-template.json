@@ -16,7 +16,7 @@
     },
     {
       "parameters": {
-        "url": "=https://musaidbot-backend.onrender.com/api/merchants/{{ $json.params.merchantId }}",
+        "url": "=https://musad-bot-n8n.onrender.com/api/merchants/{{ $json.params.merchantId }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -137,7 +137,7 @@
     {
       "parameters": {
         "toolDescription": "Prodcut",
-        "url": "=https://musaidbot-backend.onrender.com/api/products?merchantId={{ $json._id }}",
+        "url": "=https://musad-bot-n8n.onrender.com/api/products?merchantId={{ $json._id }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequestTool",
