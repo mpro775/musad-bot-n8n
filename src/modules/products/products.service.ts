@@ -7,6 +7,7 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { ScrapeQueue } from './scrape.queue';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CreateProductDto, ProductSource } from './dto/create-product.dto';
+import { VectorService } from '../vector/vector.service';
 
 @Injectable()
 export class ProductsService {
@@ -14,6 +15,7 @@ export class ProductsService {
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
     private readonly scrapeQueue: ScrapeQueue,
+    private readonly vectorService: VectorService,
   ) {}
 
   async create(
@@ -23,6 +25,7 @@ export class ProductsService {
     const uniqueKey = `${dto.merchantId}|${
       dto.source === ProductSource.API ? dto.externalId : dto.originalUrl
     }`;
+
     const product = new this.productModel({
       merchantId,
       originalUrl: dto.originalUrl,
@@ -57,6 +60,16 @@ export class ProductsService {
         mode: dto.source === ProductSource.API ? 'full' : 'minimal',
       });
     }
+    await this.vectorService.upsertProducts([
+      {
+        id: product._id.toString(),
+        name: product.name,
+        description: product.description,
+        category: product.category,
+        specsBlock: product.specsBlock,
+        keywords: product.keywords,
+      },
+    ]);
     return product;
   }
   async countByMerchant(merchantId: string): Promise<number> {
@@ -184,12 +197,24 @@ export class ProductsService {
   }
 
   async update(id: string, dto: UpdateProductDto): Promise<ProductDocument> {
-    // Prevent source change
     delete (dto as any).source;
     const updated = await this.productModel
       .findByIdAndUpdate(id, dto, { new: true })
       .exec();
     if (!updated) throw new NotFoundException('Product not found');
+
+    // صحّحنا هنا: استخدمنا 'updated' بدل 'product'
+    await this.vectorService.upsertProducts([
+      {
+        id: updated._id.toString(),
+        description: updated.description,
+        name: updated.name,
+        category: updated.category,
+        specsBlock: updated.specsBlock,
+        keywords: updated.keywords,
+      },
+    ]);
+
     return updated;
   }
 

@@ -12,6 +12,7 @@ import { Offer, OfferDocument } from './schemas/offer.schema';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
+import { VectorService } from '../vector/vector.service';
 
 @Injectable()
 export class OffersService {
@@ -20,6 +21,7 @@ export class OffersService {
     private readonly offerModel: Model<OfferDocument>,
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
+    private readonly vectorService: VectorService,
   ) {}
 
   // 🟢 إنشاء عرض جديد
@@ -86,7 +88,15 @@ export class OffersService {
       active: true,
       meta: {},
     });
-
+    await this.vectorService.upsertOffers([
+      {
+        id: offer._id.toString(),
+        name: offer.name,
+        description: offer.description,
+        type: offer.type,
+        code: offer.code,
+      },
+    ]);
     await offer.save();
     return offer;
   }
@@ -172,6 +182,15 @@ export class OffersService {
       ...(productIds && { products: productIds }),
     });
     await offer.save();
+    await this.vectorService.upsertOffers([
+      {
+        id: offer._id.toString(),
+        name: offer.name,
+        description: offer.description,
+        type: offer.type,
+        code: offer.code,
+      },
+    ]);
     return offer;
   }
 

@@ -1,6 +1,6 @@
 FROM node:18-alpine
 
-# تثبيت تبعيات Playwright
+# تثبيت تبعيات النظام الضرورية (Playwright والأدوات)
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -14,30 +14,23 @@ RUN apk add --no-cache \
 
 WORKDIR /usr/src/app
 
-# نسخ جميع الملفات الضرورية
+# نسخ ملفات تعريف الاعتماديات أولاً للحفاظ على الكاش
 COPY package*.json ./
 COPY tsconfig*.json ./
 COPY nest-cli.json ./
-COPY src/ src/
 
-# تثبيت التبعيات
+# تثبيت الاعتماديات قبل نسخ الشيفرة لتجنب إعادة التثبيت عند تغيّر الكود
 RUN npm ci
 RUN npx playwright install
 
-# فحص الإعدادات
-RUN echo "🔍 فحص ملفات التكوين:"
-RUN cat tsconfig.json || echo "لا يوجد tsconfig.json"
-RUN cat tsconfig.build.json || echo "لا يوجد tsconfig.build.json"
-RUN cat nest-cli.json || echo "لا يوجد nest-cli.json"
+# ثم نسخ باقي الشيفرة
+COPY src/ ./src
 
 # البناء
 RUN npm run build -- --webpack=false
 
-# أو: RUN npx tsc -p tsconfig.build.json
-
-# تشخيص النتيجة
-RUN echo "✅ محتويات dist:" && ls -l dist
-RUN echo "🔎 البحث عن main.js:" && find . -name main.js
-
+# ضبط بيئة التشغيل
 ENV NODE_ENV=production
+
+# نقطة الدخول للتطبيق
 CMD ["node", "dist/main.js"]

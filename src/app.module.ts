@@ -40,6 +40,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
+import { VectorModule } from './modules/vector/vector.module';
 
 @Module({
   imports: [
@@ -112,6 +113,8 @@ import { join } from 'path';
     MerchantsModule,
     PlansModule,
     OffersModule,
+    VectorModule,
+
     N8nWorkflowModule,
     WorkflowHistoryModule,
     WebhooksModule,

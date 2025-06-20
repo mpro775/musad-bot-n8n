@@ -193,7 +193,7 @@ export class MerchantsService {
     if (!merchant) throw new NotFoundException('...');
     if (!merchant.workflowId) throw new BadRequestException('...');
 
-    let base = 'https://primary-production-d3222.up.railway.app';
+    let base = 'https://https://n8n.smartagency-ye.com/';
     if (!base.startsWith('http')) base = `https://${base}`;
     const cleanBase = base.replace(/\/+$/, '');
     const hookUrl = `${cleanBase}/webhook/webhooks/incoming/${merchantId}`;
