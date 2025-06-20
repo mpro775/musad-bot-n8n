@@ -24,7 +24,8 @@ services:
       - "6333:6333"
     volumes:
       - ./qdrant_data:/qdrant/storage
-      
+    networks:
+      - backnet   
   mongo:
     image: mongo:5
     container_name: musaidbot-mongo
