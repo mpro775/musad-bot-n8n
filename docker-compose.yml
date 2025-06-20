@@ -18,7 +18,7 @@ services:
       - backnet
 
   qdrant:
-    image: qdrant/qdrant:v1.2.3
+    image: qdrant/qdrant:latest
     restart: always
     ports:
       - "6333:6333"
