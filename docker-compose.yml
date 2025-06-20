@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # Redis الرئيسي
   redis:
     image: redis:6-alpine
     container_name: musaidbot-redis
@@ -9,28 +10,64 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - backnet
 
+  # MongoDB
   mongo:
     image: mongo:5
     container_name: musaidbot-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: strongpassword
     ports:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongo --eval 'db.adminCommand(\"ping\")'"]
+      test: ["CMD-SHELL", "mongo --quiet --eval \"db.adminCommand('ping')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - backnet
 
+  # mongo-express لإدارة MongoDB عبر الويب
+  mongo-express:
+    image: mongo-express:latest
+    container_name: musaidbot-mongo-express
+    environment:
+      ME_CONFIG_MONGODB_SERVER: "mongo"
+      ME_CONFIG_MONGODB_ADMINUSERNAME: "${MONGO_INITDB_ROOT_USERNAME}"
+      ME_CONFIG_MONGODB_ADMINPASSWORD: "${MONGO_INITDB_ROOT_PASSWORD}"
+      ME_CONFIG_MONGODB_AUTH_DATABASE: "admin"
+      ME_CONFIG_MONGODB_URL: "mongodb://mongo:27017"
+    ports:
+      - "8081:8081"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - backnet
+
+  # Redis Commander لإدارة Redis عبر الويب
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: musaidbot-redis-commander
+    environment:
+      REDIS_HOSTS: "local:redis:6379"
+    ports:
+      - "8082:8081"
+    depends_on:
+      - redis
+    networks:
+      - backnet
+
+  # الـ API الخاص بتطبيقك
   api:
     build: .
     container_name: musaidbot-api
@@ -49,11 +86,10 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-    volumes:
-      - ./:/usr/src/app
     networks:
       - backnet
 
+  # n8n الأتمتة
   n8n:
     image: n8nio/n8n:latest
     container_name: musaidbot-n8n
@@ -74,37 +110,12 @@ services:
     networks:
       - backnet
 
-  mongo-express:
-    image: mongo-express:latest
-    container_name: musaidbot-mongo-express
-    environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: "${MONGO_INITDB_ROOT_USERNAME}"
-      ME_CONFIG_MONGODB_ADMINPASSWORD: "${MONGO_INITDB_ROOT_PASSWORD}"
-      ME_CONFIG_MONGODB_URL: "mongodb://mongo:27017"
-    ports:
-      - "8081:8081"
-    depends_on:
-      - mongo
-    networks:
-      - backnet
-
-  redis-commander:
-    image: rediscommander/redis-commander:latest
-    container_name: musaidbot-redis-commander
-    environment:
-      - REDIS_HOSTS=local:redis:6379
-    ports:
-      - "8082:8081"
-    depends_on:
-      - redis
-    networks:
-      - backnet
-
 volumes:
-  mongo_data:
   redis_data:
+  mongo_data:
   n8n_data:
 
 networks:
   backnet:
     driver: bridge
+
