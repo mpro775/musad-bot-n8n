@@ -16,8 +16,15 @@ services:
       retries: 5
     networks:
       - backnet
-<<<<<<< HEAD
->>>>>>> fcff0f277e200f801675a3cd0a144c798f4dd456
+
+  qdrant:
+    image: qdrant/qdrant:v1.2.3
+    restart: always
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./qdrant_data:/qdrant/storage
+      
   mongo:
     image: mongo:5
     container_name: musaidbot-mongo
