@@ -22,6 +22,7 @@ async function bootstrap() {
     // نعرف كائن crypto عالمي يستخدم دالة randomUUID من Node
     (globalThis as any).crypto = { randomUUID };
   }
+
   app.use(helmet());
   app.enableCors({
     origin: process.env.FRONTEND_ORIGIN || '*',
