@@ -130,8 +130,6 @@ services:
       N8N_PORT: 5678
       # البروتوكول المستخدم
       N8N_PROTOCOL: https
-      # إذا كان لديك مسار مخصَّص للويبهوك (مثال /webhook-test)، اكتبه هنا
-      N8N_PATH: /webhook-test
     ports:
       - '5678:5678'
     depends_on:
