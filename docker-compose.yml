@@ -27,18 +27,6 @@ services:
       - ./qdrant_data:/qdrant/storage
     networks:
       - backnet
-  qdrant-ui:
-    image: qdrant/ui:latest
-    ports:
-      - '6334:3000'
-    environment:
-      # أو grpc://qdrant:6333
-      QDRANT_GRPC_URL: 'http://qdrant:6333'
-      QDRANT_HTTP_URL: 'http://qdrant:6333'
-    depends_on:
-      - qdrant
-    networks:
-      - backnet
 
   mongo:
     image: mongo:5
