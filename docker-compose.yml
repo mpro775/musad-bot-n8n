@@ -123,13 +123,6 @@ services:
     container_name: musaidbot-n8n
     env_file:
       - .env
-    environment:
-      # عنوان الدومين الذي تريد أن يظهر في Webhook URLs
-      N8N_HOST: n8n.smartagency-ye.com
-      # المنفذ الخارجي (HTTPS) — 443 لأننا نحوّل HTTP→HTTPS على 80 ونخدم SSL على 443
-      N8N_PORT: 5678
-      # البروتوكول المستخدم
-      N8N_PROTOCOL: https
     ports:
       - '5678:5678'
     depends_on:
