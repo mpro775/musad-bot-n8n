@@ -124,7 +124,7 @@ services:
     env_file:
       - .env
     ports:
-      - '5678:5678'
+      - '443:5678'
     depends_on:
       mongo:
         condition: service_healthy
