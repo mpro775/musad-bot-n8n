@@ -9,19 +9,27 @@ export class VectorController {
 
   // POST endpoint for semantic search on products
   @Post('products')
-  async semanticSearchProducts(@Body() body: SemanticRequestDto) {
-    const recs = await this.vector.querySimilarProducts(body.text, 5);
+  async semanticSProducts(@Body() dto: SemanticRequestDto) {
+    const recs = await this.vector.querySimilarProducts(
+      dto.text,
+      dto.merchantId,
+      dto.topK ?? 5,
+    );
     return { recommendations: recs };
   }
-
   // GET endpoint with optional topK parameter
   @Get('products')
   async semanticSearchProductsByQuery(
     @Query('text') text: string,
+    @Query('merchantId') merchantId: string,
     @Query('topK') topK = '5',
   ) {
     const count = parseInt(topK, 10);
-    const recs = await this.vector.querySimilarProducts(text, count);
+    const recs = await this.vector.querySimilarProducts(
+      text,
+      merchantId,
+      count,
+    );
     return { recommendations: recs };
   }
 

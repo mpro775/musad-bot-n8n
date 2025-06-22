@@ -63,6 +63,8 @@ export class ProductsService {
     await this.vectorService.upsertProducts([
       {
         id: product._id.toString(),
+        merchantId: product.merchantId.toString(), // ← هنا
+
         name: product.name,
         description: product.description,
         category: product.category,
@@ -207,6 +209,8 @@ export class ProductsService {
     await this.vectorService.upsertProducts([
       {
         id: updated._id.toString(),
+        merchantId: updated.merchantId.toString(), // ← هنا
+
         description: updated.description,
         name: updated.name,
         category: updated.category,

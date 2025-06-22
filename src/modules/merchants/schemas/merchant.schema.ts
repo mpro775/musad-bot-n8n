@@ -2,6 +2,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import mongoose, { Document, Types } from 'mongoose';
 import { buildPromptFromMerchant } from '../utils/prompt-builder';
+import { PromptConfigDto } from '../dto/prompt-config.dto';
 
 export type MerchantDocument = Merchant & Document;
 
@@ -93,15 +94,20 @@ export class Merchant {
       dialect: { type: String, default: 'خليجي' },
       tone: { type: String, default: 'ودّي' },
       template: { type: String, default: '' },
+      include: {
+        type: {
+          products: { type: Boolean, default: true },
+          instructions: { type: Boolean, default: true },
+          categories: { type: Boolean, default: true },
+          policies: { type: Boolean, default: true },
+          custom: { type: Boolean, default: true },
+        },
+        default: {},
+      },
     },
     _id: false,
   })
-  promptConfig?: {
-    dialect: string;
-    tone: string;
-    template: string;
-  };
-
+  promptConfig?: PromptConfigDto;
   @Prop({ default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
   subscriptionExpiresAt: Date;
 

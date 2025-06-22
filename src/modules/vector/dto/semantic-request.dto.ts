@@ -1,7 +1,15 @@
-import { IsString, MinLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber } from 'class-validator';
 
 export class SemanticRequestDto {
   @IsString()
-  @MinLength(1)
+  @IsNotEmpty()
   text: string;
+
+  @IsString()
+  @IsNotEmpty()
+  merchantId: string; // ← ضيف هذا الحقل
+
+  @IsOptional()
+  @IsNumber()
+  topK?: number;
 }

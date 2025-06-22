@@ -4,7 +4,8 @@ import { QdrantClient } from '@qdrant/js-client-rest';
 import { EmbeddableOffer, EmbeddableProduct } from './types';
 import { firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
-import { v4 as uuidv4 } from 'uuid';
+import { v5 as uuidv5 } from 'uuid';
+const PRODUCT_NAMESPACE = 'd94a5f5a-2bfc-4c2d-9f10-1234567890ab';
 
 @Injectable()
 export class VectorService implements OnModuleInit {
@@ -22,10 +23,16 @@ export class VectorService implements OnModuleInit {
 
   private async ensureCollections(): Promise<void> {
     const existing = await this.qdrant.getCollections();
-    // Ensure products collection
-    await this.recreateIfMismatch(existing.collections, this.collection);
-    // Ensure offers collection
-    await this.recreateIfMismatch(existing.collections, this.offerCollection);
+    if (!existing.collections.find((c) => c.name === this.collection)) {
+      await this.qdrant.createCollection(this.collection, {
+        vectors: { size: 384, distance: 'Cosine' },
+      });
+    }
+    if (!existing.collections.find((c) => c.name === this.offerCollection)) {
+      await this.qdrant.createCollection(this.offerCollection, {
+        vectors: { size: 384, distance: 'Cosine' },
+      });
+    }
   }
 
   private async recreateIfMismatch(
@@ -63,10 +70,13 @@ export class VectorService implements OnModuleInit {
 
   public async upsertProducts(products: EmbeddableProduct[]) {
     const points = await Promise.all(
-      products.map(async (product) => ({
-        id: uuidv4(),
-        vector: await this.embed(this.buildTextForEmbedding(product)),
-        payload: { mongoId: product.id },
+      products.map(async (p) => ({
+        id: uuidv5(p.id, PRODUCT_NAMESPACE),
+        vector: await this.embed(this.buildTextForEmbedding(p)),
+        payload: {
+          mongoId: p.id,
+          merchantId: p.merchantId, // ← ضفنا هنا
+        },
       })),
     );
     return this.qdrant.upsert(this.collection, { wait: true, points });
@@ -74,6 +84,7 @@ export class VectorService implements OnModuleInit {
 
   public async querySimilarProducts(
     text: string,
+    merchantId: string,
     topK = 5,
   ): Promise<{ id: string; score: number }[]> {
     const vector = await this.embed(text);
@@ -81,9 +92,12 @@ export class VectorService implements OnModuleInit {
       vector,
       limit: topK,
       with_payload: true,
+      filter: {
+        must: [{ key: 'merchantId', match: { value: merchantId } }],
+      },
     });
     return result.map((item) => ({
-      id: item.payload?.mongoId as string,
+      id: item.payload!.mongoId as string,
       score: item.score,
     }));
   }
@@ -91,7 +105,7 @@ export class VectorService implements OnModuleInit {
   public async upsertOffers(offers: EmbeddableOffer[]) {
     const points = await Promise.all(
       offers.map(async (offer) => ({
-        id: uuidv4(),
+        id: uuidv5(),
         vector: await this.embed(this.buildTextForOffer(offer)),
         payload: { mongoId: offer.id },
       })),

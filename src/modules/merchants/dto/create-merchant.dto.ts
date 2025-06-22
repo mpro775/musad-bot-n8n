@@ -7,9 +7,9 @@ import {
   ValidateNested,
   IsArray,
 } from 'class-validator';
-import { PromptConfigDto } from './prompt-config.dto';
 import { Type } from 'class-transformer';
 import { ChannelsDto } from './update-channel.dto'; // استوردها
+import { PromptConfigDto } from './prompt-config.dto';
 
 export class CreateMerchantDto {
   @ApiPropertyOptional({ description: 'اسم التاجر' })

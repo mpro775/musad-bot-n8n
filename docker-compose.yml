@@ -30,11 +30,11 @@ services:
   qdrant-ui:
     image: qdrant/qdrant-ui:latest
     ports:
-      - "6334:3000"
+      - '6334:3000'
     environment:
       # أو grpc://qdrant:6333
-      QDRANT_GRPC_URL: "http://qdrant:6333"
-      QDRANT_HTTP_URL: "http://qdrant:6333"
+      QDRANT_GRPC_URL: 'http://qdrant:6333'
+      QDRANT_HTTP_URL: 'http://qdrant:6333'
     depends_on:
       - qdrant
     networks:
@@ -135,6 +135,15 @@ services:
     container_name: musaidbot-n8n
     env_file:
       - .env
+    environment:
+      # عنوان الدومين الذي تريد أن يظهر في Webhook URLs
+      N8N_HOST: n8n.smartagency-ye.com
+      # المنفذ الخارجي (HTTPS) — 443 لأننا نحوّل HTTP→HTTPS على 80 ونخدم SSL على 443
+      N8N_PORT: 443
+      # البروتوكول المستخدم
+      N8N_PROTOCOL: https
+      # إذا كان لديك مسار مخصَّص للويبهوك (مثال /webhook-test)، اكتبه هنا
+      N8N_PATH: /webhook-test
     ports:
       - '5678:5678'
     depends_on:

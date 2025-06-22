@@ -17,6 +17,7 @@ import { HttpService } from '@nestjs/axios';
 import { buildPromptFromMerchant } from './utils/prompt-builder';
 import { N8nWorkflowService } from '../n8n-workflow/n8n-workflow.service'; // ← استورد الخدمة
 import { OnboardingDto } from './dto/onboarding.dto';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class MerchantsService {
@@ -26,7 +27,7 @@ export class MerchantsService {
     @InjectModel(Merchant.name)
     private readonly merchantModel: Model<MerchantDocument>,
     private http: HttpService,
-
+    private readonly config: ConfigService,
     private readonly n8n: N8nWorkflowService, // ← حقن الخدمة
   ) {}
 
@@ -157,7 +158,6 @@ export class MerchantsService {
       await merchant.save();
     }
 
-    // 3) تجهيز DTO للتحديث
     const updateDto: UpdateMerchantDto = {
       name: dto.name,
       businessType: dto.businessType,
@@ -167,14 +167,26 @@ export class MerchantsService {
       storeurl: dto.storeurl,
       apiToken: dto.apiToken,
       webhookUrl: dto.webhookUrl,
+      // لا تضع telegramToken هنا
     };
 
-    // 4) نفّذ التحديث باستخدام الدالة العامة update()
+    // 4) حدّث البيانات العامة
     const updatedMerchant = await this.update(merchantId, updateDto);
 
-    // 5) تسجيل ويبهوك تيليجرام إذا وُجد توكن
     let webhookInfo;
     if (dto.telegramToken) {
+      // —— أضف هذا القسم قبل تسجيل الويبهوك —— //
+      // خزّن التوكن في القناة
+      updatedMerchant.channels = {
+        ...updatedMerchant.channels,
+        telegram: {
+          ...(updatedMerchant.channels?.telegram ?? {}),
+          botToken: dto.telegramToken,
+        },
+      };
+      await updatedMerchant.save();
+
+      // ثمّ سجّل الويبهوك
       webhookInfo = await this.registerTelegramWebhook(
         merchantId,
         dto.telegramToken,
@@ -189,21 +201,35 @@ export class MerchantsService {
     merchantId: string,
     botToken: string,
   ): Promise<{ hookUrl: string; telegramResponse: any }> {
+    // 1) جلب التاجر والتأكد من وجود workflowId
     const merchant = await this.merchantModel.findById(merchantId).exec();
-    if (!merchant) throw new NotFoundException('...');
-    if (!merchant.workflowId) throw new BadRequestException('...');
+    if (!merchant || !merchant.workflowId) {
+      throw new BadRequestException('Workflow غير مُهيّأ للتاجر');
+    }
 
-    let base = 'https://https://n8n.smartagency-ye.com/';
-    if (!base.startsWith('http')) base = `https://${base}`;
+    // 2) استخراج الــ base من المتغيّر البيئي
+    const base = this.config.get<string>('N8N_WEBHOOK_BASE');
+    if (!base) {
+      throw new InternalServerErrorException('N8N_WEBHOOK_BASE غير مُهيّأ');
+    }
+
+    // 3) بناء رابط الويبهوك بالصيغة:
+    //    {base}/webhook/{workflowId}/webhooks/incoming/{merchantId}
     const cleanBase = base.replace(/\/+$/, '');
-    const hookUrl = `${cleanBase}/webhook/webhooks/incoming/${merchantId}`;
-    this.logger.log(`▶️ Using hookUrl: ${hookUrl}`);
+    const hookUrl =
+      `${cleanBase}` +
+      `/webhook/${merchant.workflowId}` +
+      `/webhooks/incoming/${merchantId}`;
 
-    const telegramApi = `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(hookUrl)}`;
-    this.logger.log(`▶️ Calling Telegram setWebhook: ${telegramApi}`);
+    this.logger.log(`▶️ Setting Telegram webhook to: ${hookUrl}`);
+
+    // 4) استدعاء Telegram API لتعيين الويبهوك
+    const telegramApi =
+      `https://api.telegram.org/bot${botToken}/setWebhook` +
+      `?url=${encodeURIComponent(hookUrl)}`;
     const resp = await firstValueFrom(this.http.get(telegramApi));
 
-    // حفظ رابط الويبهوك
+    // 5) حفظ رابط الويبهوك في قاعدة البيانات
     await this.merchantModel
       .findByIdAndUpdate(
         merchantId,

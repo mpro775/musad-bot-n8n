@@ -46,11 +46,13 @@ export class UpdateProductDto {
     description: 'حالة المنتج',
     enum: ['active', 'inactive', 'out_of_stock'],
   })
+  @IsOptional()
   @IsEnum(['active', 'inactive', 'out_of_stock'])
   status?: 'active' | 'inactive' | 'out_of_stock';
 
   @ApiPropertyOptional({ description: 'تاريخ آخر مزامنة' })
   @IsDate()
+  @IsOptional()
   lastSync?: Date;
   @ApiPropertyOptional({ description: 'السعر' })
   @IsOptional()

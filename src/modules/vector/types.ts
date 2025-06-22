@@ -6,6 +6,7 @@ export interface EmbeddableProduct {
   category?: string;
   specsBlock?: string[];
   keywords?: string[];
+  merchantId: string;
 }
 export interface EmbeddableOffer {
   id: string;
