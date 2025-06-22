@@ -28,7 +28,7 @@ services:
     networks:
       - backnet
   qdrant-ui:
-    image: qdrant/qdrant-ui:latest
+    image: qdrant/ui:latest
     ports:
       - '6334:3000'
     environment:
