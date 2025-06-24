@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { WebhooksService } from './webhooks.service';
 import { HandleWebhookDto } from './dto/handle-webhook.dto';
@@ -16,7 +17,11 @@ import {
   ApiBody,
   ApiCreatedResponse,
   ApiBadRequestResponse,
+  ApiOkResponse,
 } from '@nestjs/swagger';
+import { TrialGuard } from 'src/common/guards/trial.guard';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { BotReplyDto } from './dto/bot-reply.dto';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -63,5 +68,18 @@ export class WebhooksController {
       messageText,
       metadata,
     });
+  }
+  @Post('reply/:merchantId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'استقبال ردود البوت من n8n وتخزينها' })
+  @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
+  @ApiBody({ type: BotReplyDto })
+  @ApiOkResponse({ description: 'تم تسجيل رد البوت بنجاح' })
+  @UseGuards(JwtAuthGuard, TrialGuard)
+  async receiveBotReply(
+    @Param('merchantId') merchantId: string,
+    @Body() dto: BotReplyDto,
+  ) {
+    return this.webhooksService.handleBotReply(merchantId, dto);
   }
 }

@@ -1,146 +1,114 @@
-// src/modules/merchants/schemas/merchant.schema.ts
+// src/merchants/schemas/merchant.schema.ts
+
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import mongoose, { Document, Types } from 'mongoose';
+import { Document } from 'mongoose';
 import { buildPromptFromMerchant } from '../utils/prompt-builder';
-import { PromptConfigDto } from '../dto/prompt-config.dto';
 
-export type MerchantDocument = Merchant & Document;
+import { QuickConfig, QuickConfigSchema } from './quick-config.schema';
+import { AdvancedConfig, AdvancedConfigSchema } from './advanced-config.schema';
+import { ChannelConfig, ChannelConfigSchema } from './channel.schema';
+import { WorkingHour, WorkingHourSchema } from './working-hours.schema';
+import { Address, AddressSchema } from './address.schema';
+import {
+  SubscriptionPlan,
+  SubscriptionPlanSchema,
+} from './subscription-plan.schema';
 
+export interface MerchantDocument extends Merchant, Document {
+  createdAt: Date;
+  updatedAt: Date;
+}
 @Schema({ timestamps: true })
 export class Merchant {
-  @Prop({ required: true })
+  // — Core fields —
+  @Prop({ required: true, unique: true })
   name: string;
 
-  @Prop({ type: [String], default: [] })
-  categories?: string[];
-  @Prop({ required: false, unique: true, sparse: true })
-  email?: string;
+  @Prop({ required: false })
+  storefrontUrl?: string;
 
-  planName: string;
-  @Prop({ required: false })
-  phone?: string;
-
-  @Prop({ required: false })
-  whatsappNumber?: string;
-
-  @Prop({ required: false })
-  webhookUrl?: string; // ← أضفناه لكي تُخزّن قيمة الـ webhookUrl
-  @Prop({ required: false })
-  storeurl?: string;
   @Prop({ required: false })
   logoUrl?: string;
 
-  @Prop({ required: false })
-  address?: string;
+  @Prop({ type: AddressSchema, default: () => ({}) })
+  address: Address;
 
-  @Prop({ enum: ['trial', 'active', 'banned'], default: 'trial' })
-  status: 'trial' | 'active' | 'banned';
+  @Prop({ type: SubscriptionPlanSchema, required: true })
+  subscription: SubscriptionPlan;
 
-  @Prop({ default: false })
-  isActive: boolean;
+  @Prop({ type: [String], default: [] })
+  categories: string[];
 
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Plan' })
-  plan: Types.ObjectId;
-
-  @Prop({ default: () => new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) })
-  trialEndsAt: Date;
-
-  @Prop({ default: false })
-  planPaid: boolean;
-
-  @Prop({
-    type: Object,
-    default: {},
-  })
-  channels?: {
-    whatsapp?: {
-      phone?: string;
-      webhookUrl?: string;
-      token?: string;
-      enabled?: boolean;
-    };
-    telegram?: {
-      botToken?: string;
-      chatId?: string;
-      webhookUrl?: string;
-      enabled?: boolean;
-    };
-    webchat?: {
-      enabled?: boolean;
-      widgetSettings?: Record<string, any>;
-    };
-    // SMS, Messenger, إلخ ...
-  };
-  // هنا قمنا بتعريف البنية لتطابق updateData exactly:
-  @Prop({
-    type: {
-      whatsapp: { phone: String },
-      telegram: { chatId: String, token: String },
-    },
-    _id: false,
-  })
-  channelConfig?: {
-    telegram?: { chatId?: string; token?: string };
-    whatsapp?: { phone?: string };
-  };
-
-  @Prop({ required: false })
-  apiToken?: string;
-
-  @Prop({ required: false })
-  finalPromptTemplate: string;
-  @Prop({
-    type: {
-      dialect: { type: String, default: 'خليجي' },
-      tone: { type: String, default: 'ودّي' },
-      template: { type: String, default: '' },
-      include: {
-        type: {
-          products: { type: Boolean, default: true },
-          instructions: { type: Boolean, default: true },
-          categories: { type: Boolean, default: true },
-          policies: { type: Boolean, default: true },
-          custom: { type: Boolean, default: true },
-        },
-        default: {},
-      },
-    },
-    _id: false,
-  })
-  promptConfig?: PromptConfigDto;
-  @Prop({ default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
-  subscriptionExpiresAt: Date;
-
-  // سياسات المتجر:
-  @Prop({ required: false })
-  returnPolicy?: string; // سياسة الإرجاع
-
-  @Prop({ required: false })
-  exchangePolicy?: string; // سياسة الاستبدال
-
-  @Prop({ required: false })
-  shippingPolicy?: string; // سياسة الشحن والتوصيل
-
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  userId: Types.ObjectId;
+  @Prop({ required: false, unique: true, sparse: true })
+  domain?: string;
 
   @Prop({ required: false })
   businessType?: string;
 
   @Prop({ required: false })
   businessDescription?: string;
-  @Prop() workflowId: string; // رابط الورك فلو الخاص به في n8n
 
-  @Prop({ default: 'formal' })
-  preferredDialect: string;
+  @Prop({ required: false })
+  workflowId?: string;
+
+  // — Prompt settings —
+  @Prop({ type: QuickConfigSchema, default: () => ({}) })
+  quickConfig: QuickConfig;
+
+  @Prop({ type: AdvancedConfigSchema, default: () => ({}) })
+  currentAdvancedConfig: AdvancedConfig;
+  @Prop({
+    enum: ['active', 'inactive', 'suspended'],
+    default: 'active',
+  })
+  status: string;
+
+  @Prop()
+  lastActivity?: Date;
+  @Prop({ type: [AdvancedConfigSchema], default: [] })
+  advancedConfigHistory: AdvancedConfig[];
+
+  @Prop({ default: '' })
+  finalPromptTemplate: string;
+
+  // — Policy documents —
+  @Prop({ default: '' })
+  returnPolicy: string;
+
+  @Prop({ default: '' })
+  exchangePolicy: string;
+
+  @Prop({ default: '' })
+  shippingPolicy: string;
+
+  // — Channels —
+  @Prop({
+    type: {
+      whatsapp: ChannelConfigSchema,
+      telegram: ChannelConfigSchema,
+      webchat: ChannelConfigSchema,
+    },
+    default: {},
+  })
+  channels: {
+    whatsapp?: ChannelConfig;
+    telegram?: ChannelConfig;
+    webchat?: ChannelConfig;
+  };
+
+  // — Working hours —
+  @Prop({ type: [WorkingHourSchema], default: [] })
+  workingHours: WorkingHour[];
 }
 
 export const MerchantSchema = SchemaFactory.createForClass(Merchant);
+
 MerchantSchema.pre<MerchantDocument>('save', function (next) {
   if (
     this.isNew ||
-    this.isModified('name') ||
-    this.isModified('promptConfig') ||
+    this.isModified('quickConfig') ||
+    this.isModified('currentAdvancedConfig.template') ||
+    this.isModified('advancedConfigHistory') ||
     this.isModified('returnPolicy') ||
     this.isModified('exchangePolicy') ||
     this.isModified('shippingPolicy')

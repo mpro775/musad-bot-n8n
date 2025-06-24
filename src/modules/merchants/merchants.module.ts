@@ -9,6 +9,10 @@ import { HttpModule } from '@nestjs/axios';
 import { N8nWorkflowModule } from '../n8n-workflow/n8n-workflow.module';
 import { AuthModule } from '../auth/auth.module';
 import { MulterModule } from '@nestjs/platform-express';
+import { PromptBuilderService } from './services/prompt-builder.service';
+import { PromptVersionService } from './services/prompt-version.service';
+import { PromptPreviewService } from './services/prompt-preview.service';
+import { MerchantPromptController } from './controllers/merchant-prompt.controller';
 
 @Module({
   imports: [
@@ -21,8 +25,18 @@ import { MulterModule } from '@nestjs/platform-express';
     HttpModule,
     forwardRef(() => N8nWorkflowModule),
   ],
-  providers: [MerchantsService],
-  controllers: [MerchantsController],
-  exports: [MerchantsService],
+  providers: [
+    MerchantsService,
+    PromptBuilderService,
+    PromptVersionService,
+    PromptPreviewService,
+  ],
+  controllers: [MerchantsController, MerchantPromptController],
+  exports: [
+    MerchantsService,
+    PromptVersionService,
+    PromptPreviewService,
+    PromptBuilderService,
+  ],
 })
 export class MerchantsModule {}

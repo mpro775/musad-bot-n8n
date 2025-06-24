@@ -1,52 +1,102 @@
+// src/merchants/utils/prompt-builder.ts
+
 import { MerchantDocument } from '../schemas/merchant.schema';
+
 export function buildPromptFromMerchant(m: MerchantDocument): string {
-  const defaultInclude = {
-    products: true,
-    instructions: true,
-    categories: true,
-    policies: true,
-    custom: true,
-  };
-  const cfg = m.promptConfig || {};
-  const include = cfg.include || defaultInclude;
-  const dialect = cfg.dialect || 'خليجي';
-  const tone = cfg.tone || 'ودّي';
-  const template = cfg.template || '';
+  const qc = m.quickConfig;
+  const {
+    dialect,
+    tone,
+    customInstructions,
+    sectionOrder,
+    includeStoreUrl,
+    includeAddress,
+    includePolicies,
+    includeWorkingHours,
+    includeClosingPhrase,
+    closingText,
+  } = qc;
+
   const categories = m.categories || [];
-  const storeurl = m.storeurl || 'https://example.com/';
+  const storeUrl = m.storefrontUrl;
+  const address = m.address;
+  const workingHours = m.workingHours || [];
+  const advancedTpl = m.currentAdvancedConfig.template.trim();
 
   const parts: string[] = [];
-  parts.push(`أنت مساعد ذكي لخدمة عملاء متجر "${m.name}".`);
-  parts.push(`استخدم اللهجة ${dialect} وبنغمة ${tone}.`);
 
-  if (include.products) {
+  // مقدمة ثابتة
+  parts.push(`أنت مساعد ذكي لخدمة عملاء متجر "${m.name}".`);
+  parts.push(`استخدم اللهجة "${dialect}" وبنغمة "${tone}".`);
+
+  sectionOrder.forEach((section) => {
+    switch (section) {
+      case 'products':
+        parts.push(
+          '📦 المنتجات: استخدم البحث الداخلي للتوصل للمنتج واقترح بدائل عند الضرورة.',
+        );
+        break;
+
+      case 'instructions':
+        if (customInstructions.length) {
+          parts.push('🎯 التعليمات الخاصة:');
+          customInstructions.forEach((inst) => parts.push(`- ${inst}`));
+        }
+        break;
+
+      case 'categories':
+        if (categories.length) {
+          parts.push('🗂️ أقسام المتجر:');
+          categories.forEach((cat) => parts.push(`- ${cat}`));
+        }
+        break;
+
+      case 'policies':
+        if (includePolicies) {
+          const lines: string[] = [];
+          if (m.returnPolicy) lines.push(`- الإرجاع: ${m.returnPolicy}`);
+          if (m.exchangePolicy) lines.push(`- الاستبدال: ${m.exchangePolicy}`);
+          if (m.shippingPolicy) lines.push(`- الشحن: ${m.shippingPolicy}`);
+          if (lines.length) {
+            parts.push('📋 السياسات:');
+            lines.forEach((ln) => parts.push(ln));
+          }
+        }
+        break;
+
+      case 'custom':
+        if (advancedTpl) {
+          parts.push('📝 قالب متقدم:');
+          parts.push(advancedTpl);
+        }
+        break;
+    }
+  });
+
+  // خيارات سهل config الإضافية
+  if (includeStoreUrl && storeUrl) {
+    parts.push(`🔗 رابط المتجر: ${storeUrl}`);
+  }
+
+  if (includeAddress && address) {
     parts.push(
-      '📦 المنتجات: استخدم البحث الداخلي، ثم اقترح بدائل عند الضرورة.',
+      `📍 العنوان: ${address.street}, ${address.city}${
+        address.state ? ', ' + address.state : ''
+      }, ${address.country}`,
     );
   }
-  if (include.instructions) {
-    parts.push('🎯 التعليمات الخاصة:');
-    parts.push('- خصم → استخدم كود Berry 🎁');
-    parts.push('- فاتورة → أطلب رقم الطلب وغيره.');
-    parts.push(`- وش عندكم؟ → ${categories.join('، ')}`);
-  }
-  if (include.categories && categories.length) {
-    parts.push('🗂️ أقسام المتجر:');
-    categories.forEach((cat) => parts.push(`- ${cat}`));
-  }
-  if (include.policies) {
-    parts.push('📋 السياسات:');
-    if (m.returnPolicy) parts.push(`- الإرجاع: ${m.returnPolicy}`);
-    if (m.exchangePolicy) parts.push(`- الاستبدال: ${m.exchangePolicy}`);
-    if (m.shippingPolicy) parts.push(`- الشحن: ${m.shippingPolicy}`);
-  }
-  parts.push(`🔗 رابط المتجر: ${storeurl}`);
 
-  if (include.custom && template.trim()) {
-    parts.push('📝 تعليمات مخصصة:');
-    parts.push(template.trim());
+  if (includeWorkingHours && workingHours.length) {
+    parts.push('⏰ ساعات العمل:');
+    workingHours.forEach((wh) =>
+      parts.push(`- ${wh.day}: ${wh.openTime} إلى ${wh.closeTime}`),
+    );
   }
 
-  parts.push('هل أقدر أساعدك بشي ثاني؟ 😊');
+  // الخاتمة
+  if (includeClosingPhrase) {
+    parts.push(closingText);
+  }
+
   return parts.join('\n\n');
 }

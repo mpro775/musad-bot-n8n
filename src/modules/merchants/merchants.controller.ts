@@ -1,10 +1,12 @@
 // src/modules/merchants/merchants.controller.ts
+
 import {
   Controller,
   Get,
   Post,
   Put,
   Delete,
+  Patch,
   Param,
   Body,
   UseGuards,
@@ -14,11 +16,12 @@ import {
   BadRequestException,
   HttpCode,
   Req,
+  NotFoundException,
 } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
-import { ChannelsDto } from './dto/update-channel.dto';
+import { ChannelDetailsDto } from './dto/channel.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
 import {
@@ -29,7 +32,6 @@ import {
   ApiBody,
   ApiOkResponse,
   ApiCreatedResponse,
-  ApiBadRequestResponse,
   ApiUnauthorizedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -37,6 +39,7 @@ import {
 import { Public } from 'src/common/decorators/public.decorator';
 import { OnboardingResponseDto } from './dto/onboarding-response.dto';
 import { OnboardingDto } from './dto/onboarding.dto';
+import { MerchantStatusResponse } from './dto/merchant-status.response';
 
 @ApiTags('التجار')
 @ApiBearerAuth()
@@ -48,54 +51,51 @@ export class MerchantsController {
   @Post()
   @ApiOperation({ summary: 'إنشاء تاجر جديد مع الإعدادات الأولية' })
   @ApiBody({ type: CreateMerchantDto })
-  @ApiCreatedResponse({
-    description: 'تم إنشاء التاجر بنجاح',
-  })
-  @ApiBadRequestResponse({ description: 'بيانات ناقصة أو غير صحيحة' })
-  @ApiUnauthorizedResponse({ description: 'التوثيق مطلوب' })
+  @ApiCreatedResponse({ description: 'تم إنشاء التاجر بنجاح' })
   create(@Body() dto: CreateMerchantDto) {
     return this.svc.create(dto);
   }
 
   @Get()
   @ApiOperation({ summary: 'جلب جميع التجار' })
-  @ApiOkResponse()
+  @ApiOkResponse({ description: 'قائمة التجار' })
   findAll() {
     return this.svc.findAll();
   }
-  @Get('actions/onboarding')
+
+  @Get('actions/onboarding/test')
   @Public()
+  @ApiOperation({ summary: 'نقطة اختبار onboarding' })
   test() {
-    console.log('▶️ test endpoint reached');
     return { ok: true };
   }
-  // src/modules/merchants/merchants.controller.ts
+
   @Put('actions/onboarding')
   @HttpCode(HttpStatus.OK)
-  async completeOnboarding(
+  @ApiOperation({ summary: 'إكمال عملية onboarding للتاجر الحالي' })
+  @ApiBody({ type: OnboardingDto })
+  @ApiOkResponse({
+    description: 'تم إكمال onboarding',
+    type: OnboardingResponseDto,
+  })
+  completeOnboarding(
     @Req() { user }: RequestWithUser,
-    @Body() dto: OnboardingDto, // ← dto أصبح مُلزَماً، لا علامة ?
+    @Body() dto: OnboardingDto,
   ): Promise<{ message: string } & OnboardingResponseDto> {
-    console.log('▶️ reached completeOnboarding', {
-      merchantId: user.merchantId,
-      dto,
-    });
-    const { merchant, webhookInfo } = await this.svc.completeOnboarding(
-      user.merchantId,
-      dto,
-    );
-    return {
-      message: 'Onboarding completed',
-      merchant,
-      webhookInfo,
-    };
+    return this.svc
+      .completeOnboarding(user.merchantId, dto)
+      .then(({ merchant, webhookInfo }) => ({
+        message: 'Onboarding completed',
+        merchant,
+        webhookInfo,
+      }));
   }
 
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'جلب بيانات تاجر واحد حسب المعرّف' })
-  @ApiParam({ name: 'id', description: 'معرّف التاجر (Mongo ObjectId)' })
-  @ApiOkResponse()
+  @ApiParam({ name: 'id', description: 'معرّف التاجر (ObjectId)' })
+  @ApiOkResponse({ description: 'بيانات التاجر' })
   @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
@@ -103,6 +103,11 @@ export class MerchantsController {
 
   @Put(':id')
   @ApiOperation({ summary: 'تحديث بيانات التاجر بالكامل' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @ApiBody({ type: UpdateMerchantDto })
+  @ApiOkResponse({ description: 'تم التحديث بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
+  @ApiForbiddenResponse({ description: 'غير مخوّل' })
   update(
     @Param('id') id: string,
     @Body() dto: UpdateMerchantDto,
@@ -110,7 +115,10 @@ export class MerchantsController {
   ) {
     const user = req.user;
     return this.svc.findOne(id).then((merchant) => {
-      if (user.role !== 'ADMIN' && user.userId !== merchant.userId.toString()) {
+      if (!merchant) {
+        throw new NotFoundException('التاجر غير موجود');
+      }
+      if (user.role !== 'ADMIN' && user.merchantId !== id) {
         throw new HttpException('ممنوع', HttpStatus.FORBIDDEN);
       }
       return this.svc.update(id, dto);
@@ -119,28 +127,25 @@ export class MerchantsController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'حذف التاجر' })
-  @ApiParam({ name: 'id', type: String })
-  @ApiOkResponse()
-  @ApiNotFoundResponse()
-  @ApiForbiddenResponse()
-  @ApiUnauthorizedResponse()
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @ApiOkResponse({ description: 'تم الحذف بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
+  @ApiForbiddenResponse({ description: 'غير مخوّل' })
+  @ApiUnauthorizedResponse({ description: 'التوثيق مطلوب' })
   remove(@Param('id') id: string, @Request() req: RequestWithUser) {
     const user = req.user;
-    if (user.role !== 'ADMIN' && user.userId !== id) {
+    if (user.role !== 'ADMIN' && user.merchantId !== id) {
       throw new HttpException('ممنوع', HttpStatus.FORBIDDEN);
     }
     return this.svc.remove(id);
   }
 
   @Get(':id/subscription-status')
-  @ApiOperation({ summary: 'التحقق من صلاحية الاشتراك الحالي للتاجر' })
+  @ApiOperation({ summary: 'التحقق من صلاحية الاشتراك الحالي' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
   @ApiOkResponse({
-    description: 'نتيجة الفحص',
     schema: {
-      example: {
-        merchantId: '6631ee7fa41377dc5cf730e0',
-        subscriptionActive: true,
-      },
+      example: { merchantId: '...', subscriptionActive: true },
     },
   })
   @ApiUnauthorizedResponse()
@@ -152,40 +157,54 @@ export class MerchantsController {
     }));
   }
 
-  @Post(':id/channels')
-  @ApiOperation({ summary: 'تحديث إعدادات القنوات (واتساب/تلجرام)' })
-  @ApiParam({ name: 'id', type: String })
-  @ApiBody({ type: ChannelsDto })
-  @ApiOkResponse()
-  @ApiNotFoundResponse()
-  updateChannels(@Param('id') id: string, @Body() dto: ChannelsDto) {
-    return this.svc.updateChannels(id, dto);
+  /**
+   * تحديث قناة محددة (واتساب/تلجرام/ويبشات)
+   */
+  @Patch(':id/channels/:channelType')
+  @ApiOperation({ summary: 'تحديث إعدادات قناة منفردة' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @ApiParam({
+    name: 'channelType',
+    description: 'نوع القناة: whatsapp | telegram | webchat',
+    enum: ['whatsapp', 'telegram', 'webchat'],
+  })
+  @ApiBody({ type: ChannelDetailsDto })
+  @ApiOkResponse({ description: 'تم تحديث القناة' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
+  updateChannel(
+    @Param('id') id: string,
+    @Param('channelType') channelType: 'whatsapp' | 'telegram' | 'webchat',
+    @Body() channelDetails: ChannelDetailsDto,
+  ) {
+    return this.svc.updateChannels(id, channelType, channelDetails);
   }
-
   @Get(':id/status')
-  @ApiOperation({ summary: 'جلب حالة التاجر التفصيلية' })
-  @ApiParam({ name: 'id', type: String })
-  @ApiOkResponse()
-  @ApiUnauthorizedResponse()
-  getStatus(@Param('id') id: string) {
+  @ApiOperation({ summary: 'Get merchant detailed status' })
+  @ApiParam({ name: 'id', description: 'Merchant ID' })
+  @ApiOkResponse({
+    description: 'Merchant status details',
+    type: MerchantStatusResponse, // استخدام الصنف بدلاً من الواجهة
+  })
+  async getStatus(@Param('id') id: string): Promise<MerchantStatusResponse> {
     return this.svc.getStatus(id);
   }
 
-  /**
-   * يفعّل ويب هوك تلجرام لتاجر معيّن. يجب إرسال botToken إما عبر Body أو أن يكون محفوظاً بقنوات التاجر.
-   */
   @Post(':id/telegram-webhook')
   @ApiOperation({ summary: 'تفعيل Webhook تلجرام للتاجر' })
-  @ApiParam({ name: 'id', type: String })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
   @ApiBody({ schema: { example: { botToken: '12345:ABCDEF...' } } })
-  async registerTelegram(
+  @ApiOkResponse({ description: 'تم تسجيل الويبهوك بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر أو الـ workflow غير موجود' })
+  registerTelegram(
     @Param('id') id: string,
     @Body('botToken') botToken: string,
   ) {
     if (!botToken) {
       throw new BadRequestException('botToken مطلوب في جسم الطلب');
     }
-    const result = await this.svc.registerTelegramWebhook(id, botToken);
-    return { message: 'تم تسجيل الويبهوك بنجاح', ...result };
+    return this.svc.registerTelegramWebhook(id, botToken).then((result) => ({
+      message: 'تم تسجيل الويبهوك بنجاح',
+      ...result,
+    }));
   }
 }

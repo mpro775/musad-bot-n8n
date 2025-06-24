@@ -4,6 +4,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Webhook, WebhookDocument } from './schemas/webhook.schema';
 import { MessageService } from '../messaging/message.service';
+import { BotReplyDto } from './dto/bot-reply.dto';
 
 @Injectable()
 export class WebhooksService {
@@ -45,5 +46,30 @@ export class WebhooksService {
 
     // 3. إعادة sessionId لاستخدامه في n8n (بدلًا من conversationId)
     return { sessionId: from };
+  }
+  async handleBotReply(
+    merchantId: string,
+    dto: BotReplyDto,
+  ): Promise<{ sessionId: string }> {
+    const { sessionId, text, metadata } = dto;
+    if (!sessionId || !text) {
+      throw new BadRequestException('sessionId و text مطلوبة');
+    }
+
+    // نحفظ رسالة البوت
+    await this.messageService.createOrAppend({
+      merchantId,
+      sessionId,
+      channel: 'webchat', // أو القناة المناسبة
+      messages: [
+        {
+          role: 'bot',
+          text,
+          metadata: metadata || {},
+        },
+      ],
+    });
+
+    return { sessionId };
   }
 }

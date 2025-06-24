@@ -1,100 +1,100 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+// src/merchants/dto/create-merchant.dto.ts
+
+import { Type } from 'class-transformer';
 import {
   IsString,
   IsOptional,
-  Matches,
   IsUrl,
-  ValidateNested,
   IsArray,
+  ArrayNotEmpty,
+  ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-import { ChannelsDto } from './update-channel.dto'; // استوردها
-import { PromptConfigDto } from './prompt-config.dto';
+
+import { AddressDto } from './address.dto';
+import { SubscriptionPlanDto } from './subscription-plan.dto';
+import { QuickConfigDto } from './quick-config.dto';
+import { ChannelsDto } from './channel.dto';
+import { WorkingHourDto } from './working-hours.dto';
+import { AdvancedTemplateDto } from './advanced-template.dto';
 
 export class CreateMerchantDto {
-  @ApiPropertyOptional({ description: 'اسم التاجر' })
-  @IsOptional()
   @IsString()
-  name?: string;
+  name: string;
 
-  @ApiPropertyOptional({ description: 'البريد الإلكتروني' })
   @IsOptional()
-  @IsString()
-  email?: string;
+  @IsUrl()
+  storefrontUrl?: string;
 
-  @ApiPropertyOptional({ description: 'رقم الجوال' })
+  @IsOptional()
+  @IsUrl()
+  logoUrl?: string;
+
+  // أضفنا العنوان هنا
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AddressDto)
+  address?: AddressDto;
+
+  @ValidateNested()
+  @Type(() => SubscriptionPlanDto)
+  subscription: SubscriptionPlanDto;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  categories?: string[];
+
   @IsOptional()
   @IsString()
-  phone?: string;
+  domain?: string;
+
+  @IsOptional()
+  @IsString()
+  businessType?: string;
+
+  @IsOptional()
+  @IsString()
+  businessDescription?: string;
 
   @IsOptional()
   @IsString()
   workflowId?: string;
 
-  @ApiPropertyOptional({ description: 'رقم واتساب' })
   @IsOptional()
-  @Matches(/^\+?\d{7,15}$/)
-  whatsappNumber?: string;
+  @ValidateNested()
+  @Type(() => QuickConfigDto)
+  quickConfig?: QuickConfigDto;
 
-  @ApiPropertyOptional({ description: 'رابط Webhook للبوت' })
   @IsOptional()
-  @IsUrl()
-  webhookUrl?: string;
+  @ValidateNested()
+  @Type(() => AdvancedTemplateDto)
+  currentAdvancedConfig?: AdvancedTemplateDto;
 
-  @ApiPropertyOptional({ description: 'إعدادات القنوات (كل قناة بكائن خاص)' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AdvancedTemplateDto)
+  advancedConfigHistory?: AdvancedTemplateDto[];
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => ChannelsDto)
-  @IsOptional()
   channels?: ChannelsDto;
 
-  @ApiPropertyOptional({ description: 'تكوين الردود' })
   @IsOptional()
-  @ValidateNested()
-  @Type(() => PromptConfigDto)
-  promptConfig?: PromptConfigDto;
+  @ValidateNested({ each: true })
+  @Type(() => WorkingHourDto)
+  workingHours?: WorkingHourDto[];
 
-  @ApiPropertyOptional({ description: 'فئة المتجر' })
-  @IsOptional()
-  @IsString()
-  businessType?: string;
-
-  @ApiPropertyOptional({ description: 'رابط المتجر ' })
-  @IsOptional()
-  @IsString()
-  storeurl?: string;
-
-  @IsOptional()
-  @IsString()
-  apiToken?: string;
-
-  @ApiPropertyOptional({ description: 'وصف المتجر' })
-  @IsOptional()
-  @IsString()
-  businessDescription?: string;
-
-  @ApiPropertyOptional({ description: 'سياسة الإرجاع (اختياري)' })
   @IsOptional()
   @IsString()
   returnPolicy?: string;
 
-  @ApiPropertyOptional({ description: 'سياسة الاستبدال (اختياري)' })
   @IsOptional()
   @IsString()
   exchangePolicy?: string;
 
-  @ApiPropertyOptional({ description: 'الفئات / أقسام المنتجات' })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  categories?: string[];
-
-  @ApiPropertyOptional({ description: 'سياسة الشحن والتوصيل (اختياري)' })
   @IsOptional()
   @IsString()
   shippingPolicy?: string;
-
-  @ApiPropertyOptional({ description: 'اللهجة المفضلة' })
-  @IsOptional()
-  @IsString()
-  preferredDialect?: string;
 }
