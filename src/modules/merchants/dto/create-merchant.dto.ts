@@ -51,6 +51,9 @@ export class CreateMerchantDto {
 
   @IsOptional()
   @IsString()
+  phone?: string;
+  @IsOptional()
+  @IsString()
   businessType?: string;
 
   @IsOptional()

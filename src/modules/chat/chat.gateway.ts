@@ -1,34 +1,36 @@
 // src/chat/chat.gateway.ts
 import {
   WebSocketGateway,
+  WebSocketServer,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
   SubscribeMessage,
   MessageBody,
-  ConnectedSocket,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { Server, Socket } from 'ws'; // استخدم ws وليس socket.io
 
 @WebSocketGateway({
-  namespace: '/chat',
-  cors: {
-    origin: '*', // أو حدد نطاقك https://dashboard.smartagency-ye.com
-    methods: ['GET', 'POST'],
-  },
+  path: '/api/chat', // <-- هنا أضف الـ prefix
+  transports: ['websocket'], // force raw WS
 })
-export class ChatGateway {
-  server: Server;
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  @WebSocketServer() server: Server;
 
-  handleConnection() {
-    // لا حاجة للـ socket هنا، فالدالة فارغة
+  handleConnection(client: Socket) {
+    console.log('Client connected' + client);
+  }
+
+  handleDisconnect(client: Socket) {
+    console.log('Client disconnected' + client);
   }
 
   @SubscribeMessage('message')
-  onMessage(
-    @MessageBody()
-    payload: { merchantId: string; sessionId: string; text: string },
-    @ConnectedSocket() socket: Socket,
-  ) {
-    // هنا ترسل إلى الـ AI عبر n8n أو الـ message service
-    // ثم تبث الرد:
-    socket.emit('botMessage', { text: 'هذه رسالة اختبار' });
+  onMessage(@MessageBody() payload: any) {
+    // ابث الردّ إلى كل العملاء
+    console.log('Client disconnected' + payload);
+
+    this.server.clients.forEach((c) => {
+      c.send(JSON.stringify({ text: 'هذا رد تجريبي' }));
+    });
   }
 }

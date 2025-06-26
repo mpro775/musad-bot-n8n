@@ -6,6 +6,7 @@ import { firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { v5 as uuidv5 } from 'uuid';
 const PRODUCT_NAMESPACE = 'd94a5f5a-2bfc-4c2d-9f10-1234567890ab';
+const OFFER_NAMESPACE = 'a5c1321e-bd1f-4ee0-9cd5-abcdef123456';
 
 @Injectable()
 export class VectorService implements OnModuleInit {
@@ -105,7 +106,7 @@ export class VectorService implements OnModuleInit {
   public async upsertOffers(offers: EmbeddableOffer[]) {
     const points = await Promise.all(
       offers.map(async (offer) => ({
-        id: uuidv5(),
+        id: uuidv5(offer.id, OFFER_NAMESPACE),
         vector: await this.embed(this.buildTextForOffer(offer)),
         payload: { mongoId: offer.id },
       })),

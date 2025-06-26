@@ -1,102 +1,117 @@
-// src/merchants/utils/prompt-builder.ts
-
 import { MerchantDocument } from '../schemas/merchant.schema';
 
 export function buildPromptFromMerchant(m: MerchantDocument): string {
-  const qc = m.quickConfig;
-  const {
-    dialect,
-    tone,
-    customInstructions,
-    sectionOrder,
-    includeStoreUrl,
-    includeAddress,
-    includePolicies,
-    includeWorkingHours,
-    includeClosingPhrase,
-    closingText,
-  } = qc;
+  // التحقق من وجود بيانات المتجر الأساسية
+  if (!m) throw new Error('بيانات المتجر مطلوبة');
+  if (!m.name) throw new Error('اسم المتجر غير محدد');
 
-  const categories = m.categories || [];
-  const storeUrl = m.storefrontUrl;
-  const address = m.address;
-  const workingHours = m.workingHours || [];
-  const advancedTpl = m.currentAdvancedConfig.template.trim();
+  // نأخذ quickConfig أو كائن فارغ مع القيم الافتراضية
+  const cfg = m.quickConfig ?? {};
 
-  const parts: string[] = [];
+  // القيم الأساسية مع القيم الافتراضية
+  const dialect = cfg.dialect ?? 'خليجي';
+  const tone = cfg.tone ?? 'ودّي';
+  const customInstructions = Array.isArray(cfg.customInstructions)
+    ? cfg.customInstructions.filter(Boolean)
+    : [];
 
-  // مقدمة ثابتة
-  parts.push(`أنت مساعد ذكي لخدمة عملاء متجر "${m.name}".`);
-  parts.push(`استخدم اللهجة "${dialect}" وبنغمة "${tone}".`);
+  // ترتيب الأقسام مع القيمة الافتراضية
+  const sectionOrder =
+    Array.isArray(cfg.sectionOrder) && cfg.sectionOrder.length > 0
+      ? cfg.sectionOrder
+      : ['products', 'instructions', 'categories', 'policies', 'custom'];
 
-  sectionOrder.forEach((section) => {
+  // الحقول الاختيارية مع القيم الافتراضية
+  const includeStoreUrl = cfg.includeStoreUrl ?? true;
+  const includeAddress = cfg.includeAddress ?? true;
+  const includePolicies = cfg.includePolicies ?? true;
+  const includeWorkingHours = cfg.includeWorkingHours ?? true;
+  const includeClosingPhrase = cfg.includeClosingPhrase ?? true;
+  const closingText = cfg.closingText ?? 'هل أقدر أساعدك بشي ثاني؟ 😊';
+
+  const lines: string[] = [];
+
+  // مقدمة البرومبت
+  lines.push(`أنت مساعد ذكي لخدمة عملاء متجر "${m.name.trim()}".`);
+  lines.push(`استخدم اللهجة "${dialect}" وبنغمة "${tone}".`);
+
+  // بناء الأقسام حسب الترتيب المحدد
+  for (const section of sectionOrder) {
     switch (section) {
       case 'products':
-        parts.push(
-          '📦 المنتجات: استخدم البحث الداخلي للتوصل للمنتج واقترح بدائل عند الضرورة.',
+        lines.push(
+          '📦 المنتجات: استخدم البحث الداخلي للتوصل للمنتج، واقترح بدائل عند الضرورة.',
         );
         break;
 
       case 'instructions':
-        if (customInstructions.length) {
-          parts.push('🎯 التعليمات الخاصة:');
-          customInstructions.forEach((inst) => parts.push(`- ${inst}`));
+        if (customInstructions.length > 0) {
+          lines.push('🎯 التعليمات الخاصة:');
+          customInstructions.forEach((inst) => lines.push(`- ${inst}`));
         }
         break;
 
       case 'categories':
-        if (categories.length) {
-          parts.push('🗂️ أقسام المتجر:');
-          categories.forEach((cat) => parts.push(`- ${cat}`));
+        if (m.categories?.length) {
+          lines.push('🗂️ أقسام المتجر:');
+          m.categories.forEach((cat) => {
+            if (cat) lines.push(`- ${cat}`);
+          });
         }
         break;
 
       case 'policies':
         if (includePolicies) {
-          const lines: string[] = [];
-          if (m.returnPolicy) lines.push(`- الإرجاع: ${m.returnPolicy}`);
-          if (m.exchangePolicy) lines.push(`- الاستبدال: ${m.exchangePolicy}`);
-          if (m.shippingPolicy) lines.push(`- الشحن: ${m.shippingPolicy}`);
-          if (lines.length) {
-            parts.push('📋 السياسات:');
-            lines.forEach((ln) => parts.push(ln));
+          const policyLines: string[] = [];
+          if (m.returnPolicy) policyLines.push(`- الإرجاع: ${m.returnPolicy}`);
+          if (m.exchangePolicy)
+            policyLines.push(`- الاستبدال: ${m.exchangePolicy}`);
+          if (m.shippingPolicy)
+            policyLines.push(`- الشحن: ${m.shippingPolicy}`);
+
+          if (policyLines.length) {
+            lines.push('📋 السياسات:');
+            lines.push(...policyLines);
           }
         }
         break;
 
       case 'custom':
-        if (advancedTpl) {
-          parts.push('📝 قالب متقدم:');
-          parts.push(advancedTpl);
-        }
+        // قسم مخصص لإضافات مستقبلية
         break;
     }
-  });
-
-  // خيارات سهل config الإضافية
-  if (includeStoreUrl && storeUrl) {
-    parts.push(`🔗 رابط المتجر: ${storeUrl}`);
   }
 
-  if (includeAddress && address) {
-    parts.push(
-      `📍 العنوان: ${address.street}, ${address.city}${
-        address.state ? ', ' + address.state : ''
-      }, ${address.country}`,
-    );
+  // الحقول الاختيارية
+  if (includeStoreUrl && m.storefrontUrl) {
+    lines.push(`🔗 رابط المتجر: ${m.storefrontUrl}`);
   }
 
-  if (includeWorkingHours && workingHours.length) {
-    parts.push('⏰ ساعات العمل:');
-    workingHours.forEach((wh) =>
-      parts.push(`- ${wh.day}: ${wh.openTime} إلى ${wh.closeTime}`),
-    );
+  if (includeAddress && m.address) {
+    const addrParts = [
+      m.address.street,
+      m.address.city,
+      m.address.state,
+      m.address.country,
+    ].filter(Boolean);
+
+    if (addrParts.length) {
+      lines.push(`📍 العنوان: ${addrParts.join('، ')}`);
+    }
   }
 
-  // الخاتمة
+  if (includeWorkingHours && m.workingHours?.length) {
+    lines.push('⏰ ساعات العمل:');
+    m.workingHours.forEach((wh) => {
+      if (wh.day && wh.openTime && wh.closeTime) {
+        lines.push(`- ${wh.day}: ${wh.openTime} إلى ${wh.closeTime}`);
+      }
+    });
+  }
+
   if (includeClosingPhrase) {
-    parts.push(closingText);
+    lines.push(closingText);
   }
 
-  return parts.join('\n\n');
+  return lines.join('\n\n');
 }

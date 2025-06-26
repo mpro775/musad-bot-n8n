@@ -42,6 +42,9 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { VectorModule } from './modules/vector/vector.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { LeadsModule } from './modules/leads/leads.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { DocumentsModule } from './modules/documents/documents.module';
 
 @Module({
   imports: [
@@ -116,9 +119,12 @@ import { ChatModule } from './modules/chat/chat.module';
     OffersModule,
     VectorModule,
     ChatModule,
+    DocumentsModule,
     N8nWorkflowModule,
     WorkflowHistoryModule,
     WebhooksModule,
+    LeadsModule,
+    IntegrationsModule,
     ScraperModule,
     AnalyticsModule,
   ],

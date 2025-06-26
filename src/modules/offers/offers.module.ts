@@ -8,17 +8,20 @@ import { OffersService } from './offers.service';
 import { OffersController } from './offers.controller';
 import { ScraperModule } from '../scraper/scraper.module';
 import { VectorModule } from '../vector/vector.module';
+import { Product, ProductSchema } from '../products/schemas/product.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Offer.name, schema: OfferSchema }]),
+    MongooseModule.forFeature([
+      { name: Offer.name, schema: OfferSchema },
+      { name: Product.name, schema: ProductSchema }, // ← أضف هذا السطر لحل المشكلة
+    ]),
     forwardRef(() => ScraperModule),
-    ProductsModule, // ← هنا نجلب ProductModel عبر الـ exports
+    ProductsModule,
     VectorModule,
-
-    BullModule.registerQueue({ name: 'offer-scrape' }), // طابور خاص بالعروض
+    BullModule.registerQueue({ name: 'offer-scrape' }),
   ],
-  providers: [OffersService], // نسخ ScrapeQueue مع تغيير الاسم داخله إن احتاجت
+  providers: [OffersService],
   controllers: [OffersController],
   exports: [OffersService],
 })

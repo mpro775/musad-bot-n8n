@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 
 import { AppModule } from './app.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -22,6 +23,7 @@ async function bootstrap() {
     // نعرف كائن crypto عالمي يستخدم دالة randomUUID من Node
     (globalThis as any).crypto = { randomUUID };
   }
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   app.use(helmet());
   app.enableCors({
@@ -38,7 +40,11 @@ async function bootstrap() {
   );
 
   app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true, // ← هذا مهم جداً
+    }),
   );
 
   const logger = app.get(PinoLogger);

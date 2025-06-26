@@ -19,7 +19,6 @@ export class SubscriptionPlan {
 
   @Prop()
   endDate?: Date;
-
   @Prop({ type: [String], default: [] })
   features: string[];
 }

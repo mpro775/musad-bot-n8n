@@ -4,7 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MessageSession, MessageSessionSchema } from './schemas/message.schema';
 import { MessageService } from './message.service';
 import { MessageController } from './message.controller';
-
+import { ChatLinksController } from './chat-links.controller';
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -12,7 +12,7 @@ import { MessageController } from './message.controller';
     ]),
   ],
   providers: [MessageService],
-  controllers: [MessageController],
+  controllers: [MessageController, ChatLinksController],
   exports: [MessageService],
 })
 export class MessagingModule {}

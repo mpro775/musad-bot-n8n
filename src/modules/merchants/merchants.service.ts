@@ -27,6 +27,7 @@ import { mapToChannelConfig } from './utils/channel-mapper';
 import { MerchantStatusResponse } from './types/types';
 import { QuickConfig } from './schemas/quick-config.schema';
 import { buildPromptFromMerchant } from './utils/prompt-builder';
+import { ChatSettingsDto } from './dto/chat-settings.dto';
 
 @Injectable()
 export class MerchantsService {
@@ -139,99 +140,59 @@ export class MerchantsService {
 
   /** تحديث تاجر */
   async update(id: string, dto: UpdateMerchantDto): Promise<MerchantDocument> {
-    const merchant = await this.merchantModel.findById(id).exec();
-    if (!merchant) throw new NotFoundException('Merchant not found');
-
-    // 1) تحويل الاشتراك إن وُجد
-    if (dto.subscription) {
-      merchant.subscription = {
-        ...dto.subscription,
-        startDate: new Date(dto.subscription.startDate),
-        endDate: dto.subscription.endDate
-          ? new Date(dto.subscription.endDate)
-          : undefined,
-      };
+    // 1) تأكد من وجود التاجر
+    const existing = await this.merchantModel.findById(id).exec();
+    if (!existing) {
+      throw new NotFoundException('Merchant not found');
     }
 
-    // 2) عنوان إن وُجد
-    if (dto.address) {
-      merchant.address = dto.address;
+    // 2) حضّر كائن التحديث بالتخلص من الحقول undefined
+    const updateData: Partial<
+      Omit<MerchantDocument, 'createdAt' | 'updatedAt'>
+    > = {};
+    for (const [key, value] of Object.entries(dto) as [
+      keyof typeof dto,
+      any,
+    ][]) {
+      if (value !== undefined) {
+        // إذا كان الاشتراك، حوّل التواريخ
+        if (key === 'subscription') {
+          updateData.subscription = {
+            ...value,
+            startDate: new Date(value.startDate),
+            endDate: value.endDate ? new Date(value.endDate) : undefined,
+          };
+        }
+        // خلاف ذلك انسخ القيمة كما هي
+        else {
+          (updateData as any)[key] = value;
+        }
+      }
     }
 
-    // 3) دمج القنوات
-    if (dto.channels) {
-      merchant.channels = {
-        whatsapp: mapToChannelConfig(
-          dto.channels.whatsapp,
-          merchant.channels.whatsapp,
-        ),
-        telegram: mapToChannelConfig(
-          dto.channels.telegram,
-          merchant.channels.telegram,
-        ),
-        webchat: mapToChannelConfig(
-          dto.channels.webchat,
-          merchant.channels.webchat,
-        ),
-      };
+    // 3) طبق التحديث عبر findByIdAndUpdate لتفعيل runValidators
+    const updated = await this.merchantModel
+      .findByIdAndUpdate(
+        id,
+        { $set: updateData },
+        { new: true, runValidators: true },
+      )
+      .exec();
+
+    if (!updated) {
+      throw new InternalServerErrorException('Failed to update merchant');
     }
 
-    // 4) بقية الحقول البسيطة
-    const {
-      subscription,
-      address,
-      channels,
-      quickConfig,
-      currentAdvancedConfig,
-      advancedConfigHistory,
-      ...rest
-    } = dto as any;
-    Object.assign(merchant, rest);
-    console.log({ subscription, address, channels, quickConfig }); // أو أي استخدام آخر
-
-    // 5) خصائص الـ prompt المركّبة إن وُجدت
-    // داخل update() في MerchantsService
-    const qc = dto.quickConfig;
-    if (qc) {
-      merchant.quickConfig = {
-        // الحقول الأصلية
-        dialect: qc.dialect ?? merchant.quickConfig.dialect,
-        tone: qc.tone ?? merchant.quickConfig.tone,
-        customInstructions:
-          qc.customInstructions ?? merchant.quickConfig.customInstructions,
-        sectionOrder: qc.sectionOrder ?? merchant.quickConfig.sectionOrder,
-
-        // الحقول الجديدة
-        includeStoreUrl:
-          qc.includeStoreUrl ?? merchant.quickConfig.includeStoreUrl,
-        includeAddress:
-          qc.includeAddress ?? merchant.quickConfig.includeAddress,
-        includePolicies:
-          qc.includePolicies ?? merchant.quickConfig.includePolicies,
-        includeWorkingHours:
-          qc.includeWorkingHours ?? merchant.quickConfig.includeWorkingHours,
-        includeClosingPhrase:
-          qc.includeClosingPhrase ?? merchant.quickConfig.includeClosingPhrase,
-        closingText: qc.closingText ?? merchant.quickConfig.closingText,
-      };
-    }
-    if (currentAdvancedConfig) {
-      merchant.currentAdvancedConfig.template = currentAdvancedConfig.template;
-      merchant.currentAdvancedConfig.note = currentAdvancedConfig.note;
-    }
-    if (advancedConfigHistory) {
-      merchant.advancedConfigHistory = advancedConfigHistory.map((v) => ({
-        template: v.template,
-        note: v.note,
-        updatedAt: new Date(v.updatedAt || Date.now()),
-      }));
+    // 4) أعد بناء finalPromptTemplate بحذر
+    try {
+      updated.finalPromptTemplate = this.promptBuilder.compileTemplate(updated);
+      await updated.save();
+    } catch (err) {
+      this.logger.error('Error compiling prompt template after update', err);
+      // لا ترمي الاستثناء، فقط سجلّ الخطأ
     }
 
-    // 6) إعادة بناء finalPromptTemplate
-    merchant.finalPromptTemplate = this.promptBuilder.compileTemplate(merchant);
-
-    await merchant.save();
-    return merchant;
+    return updated;
   }
   /** جلب كل التجار */
   async findAll(): Promise<MerchantDocument[]> {
@@ -353,7 +314,44 @@ export class MerchantsService {
         : this.promptBuilder.buildFromQuickConfig(m);
     return this.previewSvc.preview(rawTpl, testVars);
   }
+  async getChatSettings(merchantId: string) {
+    const m = await this.merchantModel.findById(merchantId).exec();
+    if (!m) throw new NotFoundException('Merchant not found');
+    return {
+      themeColor: m.chatThemeColor,
+      greeting: m.chatGreeting,
+      webhooksUrl: m.chatWebhooksUrl,
+      apiBaseUrl: m.chatApiBaseUrl,
+    };
+  }
 
+  async updateChatSettings(merchantId: string, dto: ChatSettingsDto) {
+    const updated = await this.merchantModel
+      .findByIdAndUpdate(
+        merchantId,
+        {
+          ...(dto.themeColor !== undefined && {
+            chatThemeColor: dto.themeColor,
+          }),
+          ...(dto.greeting !== undefined && { chatGreeting: dto.greeting }),
+          ...(dto.webhooksUrl !== undefined && {
+            chatWebhooksUrl: dto.webhooksUrl,
+          }),
+          ...(dto.apiBaseUrl !== undefined && {
+            chatApiBaseUrl: dto.apiBaseUrl,
+          }),
+        },
+        { new: true },
+      )
+      .exec();
+    if (!updated) throw new NotFoundException('Merchant not found');
+    return {
+      themeColor: updated.chatThemeColor,
+      greeting: updated.chatGreeting,
+      webhooksUrl: updated.chatWebhooksUrl,
+      apiBaseUrl: updated.chatApiBaseUrl,
+    };
+  }
   /** تحديث القنوات */
   async updateChannels(
     id: string,

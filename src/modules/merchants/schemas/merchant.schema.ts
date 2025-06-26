@@ -63,6 +63,9 @@ export class Merchant {
   })
   status: string;
 
+  @Prop({ default: '' })
+  phone: string;
+
   @Prop()
   lastActivity?: Date;
   @Prop({ type: [AdvancedConfigSchema], default: [] })
@@ -95,7 +98,17 @@ export class Merchant {
     telegram?: ChannelConfig;
     webchat?: ChannelConfig;
   };
+  @Prop({ default: '#D84315' })
+  chatThemeColor: string;
 
+  @Prop({ default: 'مرحباً! كيف أستطيع مساعدتك اليوم؟' })
+  chatGreeting: string;
+
+  @Prop({ default: '/api/webhooks' })
+  chatWebhooksUrl: string;
+
+  @Prop({ default: '' })
+  chatApiBaseUrl: string; // يعاد كتابته افتراضيًّا عند الإنشاء
   // — Working hours —
   @Prop({ type: [WorkingHourSchema], default: [] })
   workingHours: WorkingHour[];

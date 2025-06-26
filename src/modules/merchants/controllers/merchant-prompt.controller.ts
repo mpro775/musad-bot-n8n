@@ -11,7 +11,6 @@ import {
   ValidationPipe,
   UsePipes,
   BadRequestException,
-  InternalServerErrorException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { MerchantsService } from '../merchants.service';
@@ -20,8 +19,8 @@ import { PromptPreviewService } from '../services/prompt-preview.service';
 import { QuickConfigDto } from '../dto/quick-config.dto';
 import { AdvancedTemplateDto } from '../dto/advanced-template.dto';
 import { PreviewPromptDto } from '../dto/preview-prompt.dto';
-import { PromptBuilderService } from '../services/prompt-builder.service';
-import { QuickConfig } from '../schemas/quick-config.schema';
+import { MerchantDocument } from '../schemas/merchant.schema';
+import { buildPromptFromMerchant } from '../utils/prompt-builder';
 
 @ApiTags('Merchants • Prompt')
 @Controller('merchants/:id/prompt')
@@ -29,64 +28,50 @@ export class MerchantPromptController {
   constructor(
     private readonly merchantSvc: MerchantsService,
     private readonly versionSvc: PromptVersionService,
-    private readonly promptBuild: PromptBuilderService,
     private readonly previewSvc: PromptPreviewService,
   ) {}
 
   @Get('quick-config')
   @ApiOperation({ summary: 'جلب إعدادات Quick Setup' })
-  @ApiResponse({
-    status: 200,
-    description: 'إعدادات Quick Config',
-    type: QuickConfigDto,
-  })
+  @ApiResponse({ status: 200, type: QuickConfigDto })
   async getQuickConfig(@Param('id') id: string) {
     const m = await this.merchantSvc.findOne(id);
     return m.quickConfig;
   }
 
-  // src/modules/merchants/controllers/merchant-prompt.controller.ts
   @Patch('quick-config')
+  @ApiOperation({ summary: 'تحديث Quick Setup' })
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @ApiResponse({ status: 200, type: QuickConfigDto })
   async updateQuickConfig(
     @Param('id') id: string,
     @Body() dto: QuickConfigDto,
-  ): Promise<QuickConfig> {
-    try {
-      return await this.merchantSvc.updateQuickConfig(id, dto);
-    } catch (err) {
-      // إن كان InternalServerErrorException فستخبر العميل، وإلا نمرر الخطأ الأصلي
-      if (err instanceof InternalServerErrorException) {
-        throw err;
-      }
-      console.error('❌ Unexpected error in controller:', err);
-      throw new InternalServerErrorException();
-    }
+  ): Promise<QuickConfigDto> {
+    const updated = await this.merchantSvc.updateQuickConfig(id, dto);
+    return updated;
   }
 
   @Get('advanced-template')
   @ApiOperation({ summary: 'جلب القالب المتقدّم' })
-  @ApiResponse({
-    status: 200,
-    description: 'القالب المتقدم',
-    schema: { example: { template: '...' } },
-  })
+  @ApiResponse({ status: 200, type: AdvancedTemplateDto })
   async getAdvancedTemplate(@Param('id') id: string) {
     const m = await this.merchantSvc.findOne(id);
-    return { template: m.currentAdvancedConfig.template };
+    return {
+      template: m.currentAdvancedConfig.template,
+      note: m.currentAdvancedConfig.note,
+    };
   }
 
   @Post('advanced-template')
   @ApiOperation({ summary: 'حفظ قالب متقدّم جديد (وإنشاء نسخة احتياطية)' })
   @UsePipes(new ValidationPipe({ whitelist: true }))
+  @ApiResponse({ status: 200 })
   async saveAdvancedTemplate(
     @Param('id') id: string,
     @Body() dto: AdvancedTemplateDto,
   ) {
     const tpl = dto.advancedTemplate?.trim();
-    if (!tpl) {
-      throw new BadRequestException('template is required');
-    }
+    if (!tpl) throw new BadRequestException('template is required');
     await this.versionSvc.snapshot(id, dto.note);
     await this.merchantSvc.saveAdvancedVersion(id, tpl, dto.note);
     return { message: 'Advanced template saved' };
@@ -94,14 +79,12 @@ export class MerchantPromptController {
 
   @Get('advanced-versions')
   @ApiOperation({ summary: 'جلب سجلّ نسخ القالب المتقدّم' })
-  @ApiResponse({ status: 200, description: 'سجل القوالب المتقدمة' })
   async listVersions(@Param('id') id: string) {
     return this.versionSvc.list(id);
   }
 
   @Post('advanced-versions/:index/revert')
   @ApiOperation({ summary: 'التراجع إلى نسخة سابقة حسب المؤشر' })
-  @ApiResponse({ status: 200, description: 'تم التراجع إلى النسخة المحددة' })
   async revertVersion(
     @Param('id') id: string,
     @Param('index', ParseIntPipe) index: number,
@@ -112,36 +95,37 @@ export class MerchantPromptController {
 
   @Post('preview')
   @ApiOperation({ summary: 'معاينة البرومبت مع متغيرات اختبارية' })
-  @UsePipes(new ValidationPipe({ whitelist: true }))
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @ApiResponse({ status: 200, schema: { example: { preview: '...' } } })
   async preview(@Param('id') id: string, @Body() dto: PreviewPromptDto) {
+    // جلب التاجر الأصلي
     const m = await this.merchantSvc.findOne(id);
 
-    // اختر القالب بناءً على QuickConfig أو advanced
-    const raw =
+    // دمج quickConfig الأصلي مع ما أرسله العميل (جزئيًّا)
+    const mergedConfig = { ...m.quickConfig, ...(dto.quickConfig || {}) };
+
+    // اصنع نسخة مؤقتة من التاجر مع الإعدادات المدموجة
+    const tempMerchant = { ...m, quickConfig: mergedConfig };
+
+    // اختر القالب: متقدم أم سريع
+    const rawTpl =
       dto.useAdvanced && m.currentAdvancedConfig.template
         ? m.currentAdvancedConfig.template
-        : this.promptBuild.buildFromQuickConfig({
-            ...m,
-            quickConfig: { ...m.quickConfig, ...dto.quickConfig },
-          } as any);
+        : buildPromptFromMerchant(tempMerchant as MerchantDocument);
 
-    // previewSvc.preview يرجع نصاً (string)، لذا لا نستخدم await
-    const preview = this.previewSvc.preview(raw, dto.testVars);
+    // نفّذ المعاينة (قد تكون دالة مزامنة أو وعد)
+    const preview = this.previewSvc.preview(rawTpl, dto.testVars);
 
     return { preview };
   }
+
   @Get('final-prompt')
   @ApiOperation({ summary: 'جلب الـ finalPrompt النص النهائي' })
-  @ApiResponse({
-    status: 200,
-    description: 'النص النهائي للبرومبت',
-    schema: { example: { prompt: '...' } },
-  })
+  @ApiResponse({ status: 200, schema: { example: { prompt: '...' } } })
   async finalPrompt(@Param('id') id: string) {
     const m = await this.merchantSvc.findOne(id);
-    if (!m.finalPromptTemplate) {
+    if (!m.finalPromptTemplate)
       throw new BadRequestException('Final prompt not configured');
-    }
     return { prompt: m.finalPromptTemplate };
   }
 }

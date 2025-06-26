@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import { IsString, IsNotEmpty, IsOptional, IsNumber } from 'class-validator';
 
 export class SemanticRequestDto {
@@ -7,9 +8,10 @@ export class SemanticRequestDto {
 
   @IsString()
   @IsNotEmpty()
-  merchantId: string; // ← ضيف هذا الحقل
+  merchantId: string;
 
   @IsOptional()
+  @Type(() => Number) // ← هذا يحل المشكلة
   @IsNumber()
   topK?: number;
 }
