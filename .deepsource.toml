@@ -4,13 +4,6 @@ version = 1
 name = "javascript"
 enabled = true
 
-  [analyzers.meta]
-  environment = ["nodejs"]  # Must be array
-  eslint = true
-  typescript = true  # For TS support
-  strict_mode = true
-  config_path = "./tsconfig.json"  # Point to your TS config
-
 [[analyzers]]
 name = "docker"
 enabled = true
