@@ -20,8 +20,10 @@ import {
   ApiOperation,
   ApiParam,
   ApiQuery,
+  ApiTags,
 } from '@nestjs/swagger';
 
+@ApiTags('Messages')
 @Controller('messages')
 export class MessageController {
   constructor(private readonly messageService: MessageService) {}

@@ -8,6 +8,15 @@ import {
   Body,
   UseGuards,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiBody,
+  ApiOkResponse,
+  ApiCreatedResponse,
+} from '@nestjs/swagger';
 import { N8nWorkflowService, WorkflowDefinition } from './n8n-workflow.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -17,6 +26,8 @@ import { RollbackDto } from './dto/rollback.dto';
 import { SetActiveDto } from './dto/set-active.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 
+@ApiTags('n8n Workflows')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('n8n/workflows')
 export class N8nWorkflowController {
@@ -24,6 +35,9 @@ export class N8nWorkflowController {
 
   @Post(':merchantId')
   @Roles('ADMIN', 'MEMBER')
+  @ApiOperation({ summary: 'إنشاء ورك فلو لتاجر' })
+  @ApiParam({ name: 'merchantId', description: 'معرف التاجر' })
+  @ApiCreatedResponse({ description: 'تم إنشاء الورك فلو' })
   async createForMerchant(
     @Param('merchantId') merchantId: string,
   ): Promise<{ workflowId: string }> {
@@ -38,6 +52,9 @@ export class N8nWorkflowController {
 
   @Get(':workflowId')
   @Roles('ADMIN', 'MEMBER')
+  @ApiOperation({ summary: 'جلب تعريف ورك فلو' })
+  @ApiParam({ name: 'workflowId', description: 'معرف الورك فلو' })
+  @ApiOkResponse()
   async get(
     @Param('workflowId') workflowId: string,
   ): Promise<WorkflowDefinition> {
@@ -46,6 +63,10 @@ export class N8nWorkflowController {
 
   @Patch(':workflowId')
   @Roles('ADMIN')
+  @ApiOperation({ summary: 'تحديث ورك فلو' })
+  @ApiParam({ name: 'workflowId', description: 'معرف الورك فلو' })
+  @ApiBody({ type: UpdateWorkflowDto })
+  @ApiOkResponse({ description: 'تم التحديث' })
   async update(
     @Param('workflowId') workflowId: string,
     @Body() body: UpdateWorkflowDto,
@@ -64,6 +85,10 @@ export class N8nWorkflowController {
 
   @Post(':workflowId/rollback')
   @Roles('ADMIN')
+  @ApiOperation({ summary: 'الرجوع لنسخة سابقة' })
+  @ApiParam({ name: 'workflowId', description: 'معرف الورك فلو' })
+  @ApiBody({ type: RollbackDto })
+  @ApiOkResponse({ description: 'تم الرجوع بنجاح' })
   async rollback(
     @Param('workflowId') workflowId: string,
     @Body() dto: RollbackDto,
@@ -74,6 +99,10 @@ export class N8nWorkflowController {
 
   @Post(':workflowId/clone/:targetMerchantId')
   @Roles('ADMIN')
+  @ApiOperation({ summary: 'نسخ ورك فلو لتاجر آخر' })
+  @ApiParam({ name: 'workflowId', description: 'معرف الورك فلو' })
+  @ApiParam({ name: 'targetMerchantId', description: 'التاجر الهدف' })
+  @ApiOkResponse({ description: 'تم النسخ' })
   async clone(
     @Param('workflowId') sourceId: string,
     @Param('targetMerchantId') targetMerchantId: string,
@@ -88,6 +117,10 @@ export class N8nWorkflowController {
 
   @Patch(':workflowId/active')
   @Roles('ADMIN')
+  @ApiOperation({ summary: 'تفعيل أو تعطيل ورك فلو' })
+  @ApiParam({ name: 'workflowId', description: 'معرف الورك فلو' })
+  @ApiBody({ type: SetActiveDto })
+  @ApiOkResponse()
   async setActive(
     @Param('workflowId') workflowId: string,
     @Body() dto: SetActiveDto,

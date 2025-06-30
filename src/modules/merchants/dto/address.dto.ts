@@ -1,10 +1,11 @@
 // src/merchants/dto/address.dto.ts
 import { IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AddressDto {
-  @IsString() street: string;
-  @IsString() city: string;
-  @IsString() country: string;
-  @IsString() state?: string;
-  @IsString() postalCode?: string;
+  @ApiProperty() @IsString() street: string;
+  @ApiProperty() @IsString() city: string;
+  @ApiProperty() @IsString() country: string;
+  @ApiPropertyOptional() @IsString() state?: string;
+  @ApiPropertyOptional() @IsString() postalCode?: string;
 }

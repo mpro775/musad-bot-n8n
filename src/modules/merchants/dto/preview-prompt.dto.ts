@@ -8,16 +8,20 @@ import {
   IsOptional,
   ValidateNested,
 } from 'class-validator';
+import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 
 export class PreviewPromptDto {
+  @ApiPropertyOptional({ type: QuickConfigDto })
   @IsOptional()
   @ValidateNested()
   @Type(() => QuickConfigDto)
   quickConfig?: Partial<QuickConfigDto>; // الآن اختياري وجزئي
 
+  @ApiProperty()
   @IsBoolean()
   useAdvanced: boolean;
 
+  @ApiProperty({ type: Object })
   @IsObject()
   testVars: Record<string, string>;
 }
