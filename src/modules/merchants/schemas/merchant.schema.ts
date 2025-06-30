@@ -1,7 +1,7 @@
 // src/merchants/schemas/merchant.schema.ts
 
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 import { buildPromptFromMerchant } from '../utils/prompt-builder';
 
 import { QuickConfig, QuickConfigSchema } from './quick-config.schema';
@@ -21,6 +21,8 @@ export interface MerchantDocument extends Merchant, Document {
 @Schema({ timestamps: true })
 export class Merchant {
   // — Core fields —
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  userId: Types.ObjectId;
   @Prop({ required: true, unique: true })
   name: string;
 
