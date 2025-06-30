@@ -1,1 +1,26 @@
 version = 1
+
+[[analyzers]]
+name = "javascript"  # لأن NestJS يعتمد على TypeScript/JavaScript
+enabled = true
+
+  [analyzers.meta]
+  environment = "nodejs"
+  strict_mode = true
+  eslint_ts_config = "./tsconfig.json"  # إذا كنت تستخدم ESLint مع TypeScript
+
+[[analyzers]]
+name = "security"  # لفحص الثغرات الأمنية (JWT, Helmet, etc.)
+enabled = true
+
+[[analyzers]]
+name = "docker"  # لتحليل Dockerfile و docker-compose
+enabled = true
+
+[[transformers]]
+name = "nestjs"  # دعم خاص لإطار NestJS (إذا كان مدعومًا في DeepSource)
+enabled = true
+
+[[transformers]]
+name = "mongodb"  # لفحص استعلامات MongoDB (Mongoose)
+enabled = true
