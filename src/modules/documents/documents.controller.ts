@@ -11,16 +11,31 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiBody,
+  ApiOkResponse,
+  ApiNoContentResponse,
+} from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { DocumentsService } from './documents.service';
 
+@ApiTags('Documents')
+@ApiBearerAuth()
 @Controller('merchants/:merchantId/documents')
 export class DocumentsController {
   constructor(private readonly svc: DocumentsService) {}
 
   @Post()
   @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'رفع مستند للتاجر' })
+  @ApiParam({ name: 'merchantId', description: 'معرف التاجر' })
+  @ApiBody({ type: 'string', format: 'binary', name: 'file' })
+  @ApiOkResponse({ description: 'تم رفع الملف' })
   upload(
     @Param('merchantId') merchantId: string,
     @UploadedFile() file: Express.Multer.File & { key: string },
@@ -30,11 +45,17 @@ export class DocumentsController {
   }
 
   @Get()
+  @ApiOperation({ summary: 'قائمة ملفات التاجر' })
+  @ApiParam({ name: 'merchantId', description: 'معرف التاجر' })
+  @ApiOkResponse()
   list(@Param('merchantId') merchantId: string) {
     return this.svc.list(merchantId);
   }
 
   @Get(':docId')
+  @ApiOperation({ summary: 'تنزيل ملف' })
+  @ApiParam({ name: 'merchantId', description: 'معرف التاجر' })
+  @ApiParam({ name: 'docId', description: 'معرف المستند' })
   async download(
     @Param('merchantId') merchantId: string,
     @Param('docId') docId: string,
@@ -47,6 +68,10 @@ export class DocumentsController {
 
   @Delete(':docId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'حذف مستند' })
+  @ApiParam({ name: 'merchantId', description: 'معرف التاجر' })
+  @ApiParam({ name: 'docId', description: 'معرف المستند' })
+  @ApiNoContentResponse()
   remove(
     @Param('merchantId') merchantId: string,
     @Param('docId') docId: string,

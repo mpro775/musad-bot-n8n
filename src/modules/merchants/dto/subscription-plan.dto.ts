@@ -7,14 +7,17 @@ import {
   ArrayNotEmpty,
   IsString,
 } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PlanTier } from '../schemas/subscription-plan.schema';
 
 export class SubscriptionPlanDto {
+  @ApiProperty({ enum: PlanTier })
   @IsEnum(PlanTier) tier: PlanTier;
 
-  @IsDateString() startDate: string;
-  @IsOptional() @IsDateString() endDate?: string;
+  @ApiProperty() @IsDateString() startDate: string;
+  @ApiPropertyOptional() @IsDateString() endDate?: string;
 
+  @ApiProperty({ type: [String] })
   @IsArray()
   @ArrayNotEmpty()
   @IsString({ each: true })
