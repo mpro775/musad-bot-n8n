@@ -1,5 +1,6 @@
 // src/vector/vector.service.ts
 import { Injectable, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { QdrantClient } from '@qdrant/js-client-rest';
 import { EmbeddableOffer, EmbeddableProduct } from './types';
 import { firstValueFrom } from 'rxjs';
@@ -13,12 +14,20 @@ export class VectorService implements OnModuleInit {
   private qdrant: QdrantClient;
   private readonly collection = 'products';
   private readonly offerCollection = 'offers';
+  private embeddingUrl: string;
 
-  constructor(private readonly http: HttpService) {}
+  constructor(
+    private readonly http: HttpService,
+    private readonly config: ConfigService,
+  ) {}
 
   public async onModuleInit(): Promise<void> {
     this.qdrant = new QdrantClient({ url: process.env.QDRANT_URL });
     console.log('[VectorService] Qdrant URL is', process.env.QDRANT_URL);
+    this.embeddingUrl =
+      this.config.get<string>('EMBEDDING_API_URL') ??
+      'http://localhost:8000/embed';
+    console.log('[VectorService] Embedding API URL is', this.embeddingUrl);
     await this.ensureCollections();
   }
 
@@ -62,7 +71,7 @@ export class VectorService implements OnModuleInit {
   public async embed(text: string): Promise<number[]> {
     const response = await firstValueFrom(
       this.http.post<{ embeddings: number[][] }>(
-        'http://localhost:8000/embed',
+        this.embeddingUrl,
         { texts: [text] },
       ),
     );
