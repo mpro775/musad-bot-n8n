@@ -41,13 +41,20 @@ import { OnboardingResponseDto } from './dto/onboarding-response.dto';
 import { OnboardingDto } from './dto/onboarding.dto';
 import { MerchantStatusResponse } from './dto/merchant-status.response';
 import { ChatSettingsDto } from './dto/chat-settings.dto';
+import {
+  ChecklistItem,
+  MerchantChecklistService,
+} from './merchant-checklist.service';
 
 @ApiTags('التجار')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('merchants')
 export class MerchantsController {
-  constructor(private readonly svc: MerchantsService) {}
+  constructor(
+    private readonly svc: MerchantsService,
+    private readonly checklist: MerchantChecklistService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'إنشاء تاجر جديد مع الإعدادات الأولية' })
@@ -91,7 +98,12 @@ export class MerchantsController {
         webhookInfo,
       }));
   }
-
+  @Get(':id/checklist')
+  async getChecklist(
+    @Param('id') merchantId: string,
+  ): Promise<ChecklistItem[]> {
+    return this.checklist.getChecklist(merchantId);
+  }
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'جلب بيانات تاجر واحد حسب المعرّف' })

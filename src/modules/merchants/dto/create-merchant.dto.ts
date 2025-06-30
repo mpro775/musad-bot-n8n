@@ -16,6 +16,8 @@ import { QuickConfigDto } from './quick-config.dto';
 import { ChannelsDto } from './channel.dto';
 import { WorkingHourDto } from './working-hours.dto';
 import { AdvancedTemplateDto } from './advanced-template.dto';
+import { Prop } from '@nestjs/mongoose';
+import { Types } from 'mongoose';
 
 export class CreateMerchantDto {
   @IsString()
@@ -68,6 +70,9 @@ export class CreateMerchantDto {
   @ValidateNested()
   @Type(() => QuickConfigDto)
   quickConfig?: QuickConfigDto;
+  // src/merchants/schemas/merchant.schema.ts
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  userId: Types.ObjectId;
 
   @IsOptional()
   @ValidateNested()

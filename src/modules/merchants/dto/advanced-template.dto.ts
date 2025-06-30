@@ -11,7 +11,7 @@ export class AdvancedTemplateDto {
   @IsOptional()
   @IsString()
   @MaxLength(5000)
-  advancedTemplate?: string;
+  template?: string;
 
   @Prop({ default: Date.now })
   updatedAt: Date;

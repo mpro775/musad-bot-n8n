@@ -70,7 +70,7 @@ export class MerchantPromptController {
     @Param('id') id: string,
     @Body() dto: AdvancedTemplateDto,
   ) {
-    const tpl = dto.advancedTemplate?.trim();
+    const tpl = dto.template?.trim();
     if (!tpl) throw new BadRequestException('template is required');
     await this.versionSvc.snapshot(id, dto.note);
     await this.merchantSvc.saveAdvancedVersion(id, tpl, dto.note);

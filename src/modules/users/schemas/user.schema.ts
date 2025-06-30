@@ -27,7 +27,14 @@ export class User {
     default: 'MEMBER',
   })
   role: 'MERCHANT' | 'ADMIN' | 'MEMBER';
+  @Prop({ default: false })
+  emailVerified: boolean;
 
+  @Prop()
+  emailVerificationCode?: string; // يُخزن ال PIN أو UUID
+
+  @Prop()
+  emailVerificationExpiresAt?: Date; // صلاحية الرمز
   // حقل رابط للـ Merchant (اختياريّ لأنه قد يكون ليس كل User تاجرًا)
   @Prop({ type: Types.ObjectId, ref: 'Merchant' })
   merchantId?: Types.ObjectId;

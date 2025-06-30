@@ -8,6 +8,7 @@ import { ScrapeQueue } from './scrape.queue';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CreateProductDto, ProductSource } from './dto/create-product.dto';
 import { VectorService } from '../vector/vector.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 @Injectable()
 export class ProductsService {
@@ -16,6 +17,7 @@ export class ProductsService {
     private readonly productModel: Model<ProductDocument>,
     private readonly scrapeQueue: ScrapeQueue,
     private readonly vectorService: VectorService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   async create(

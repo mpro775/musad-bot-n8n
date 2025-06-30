@@ -1,5 +1,12 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
+import { Connection } from 'mongoose';
+import {
+  Injectable,
+  InternalServerErrorException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import { InjectModel, InjectConnection } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -10,60 +17,132 @@ import {
   MerchantDocument,
 } from '../merchants/schemas/merchant.schema';
 import { RegisterDto } from './dto/register.dto';
+import { MailService } from '../mail/mail.service';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { LoginDto } from './dto/login.dto';
+import { PlanTier } from '../merchants/schemas/subscription-plan.schema';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Merchant.name) private merchantModel: Model<MerchantDocument>,
-    private jwtService: JwtService,
+    @InjectConnection() private readonly connection: Connection,
+    private readonly jwtService: JwtService,
+    private readonly mailService: MailService,
   ) {}
-
   async register(registerDto: RegisterDto) {
     const { email, password, name } = registerDto;
 
-    // 1. التأكد من عدم تكرار البريد
-    if (await this.userModel.findOne({ email })) {
-      throw new BadRequestException('Email already in use');
+    // 1) تأكدّ من عدم وجود يوزر بنفس الإيميل
+    if (await this.userModel.exists({ email })) {
+      throw new ConflictException('Email already in use');
     }
 
-    // 2. تشفير كلمة المرور
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // 2) إنشاء المستخدم أولاً
+    let userDoc: UserDocument;
+    try {
+      const hashed = await bcrypt.hash(password, 10);
+      userDoc = await this.userModel.create({
+        name,
+        email,
+        password: hashed,
+        role: 'MERCHANT',
+        firstLogin: true,
+      });
+    } catch (err: any) {
+      this.logger.error('Failed to create user', err.stack || err);
+      if (err.code === 11000) {
+        throw new ConflictException('Email already in use');
+      }
+      throw new InternalServerErrorException('Failed to create user');
+    }
 
-    // 3. إنشاء المستخدم مع أولية firstLogin=true
-    const userDoc = new this.userModel({
-      name,
-      email,
-      password: hashedPassword,
-      role: 'MERCHANT',
-      firstLogin: true,
+    // 3) ارسال كود التفعيل
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    userDoc.emailVerificationCode = code;
+    userDoc.emailVerificationExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    await userDoc.save().catch((err) => {
+      this.logger.error('Failed to save verification code', err);
     });
-    await userDoc.save();
-
-    // 4. إنشاء سجل التاجر الافتراضي (بيانات جزئية ستُكمّل لاحقاً في الـ Onboarding)
-    const createdMerchant = await this.merchantModel.create({
-      userId: userDoc._id,
-      name: `متجر ${name}`,
-      email: email, // تضيف هذا السطر
-      // phone و whatsappNumber يبقيان اختياريّين في الـ schema
-      isActive: true,
-      planName: 'free',
-      subscriptionExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    this.mailService.sendVerificationEmail(email, code).catch((err) => {
+      this.logger.error('Failed sending verification email', err);
     });
 
-    // 5. ربط الـ merchantId في مستخدم
-    userDoc.merchantId = createdMerchant._id as Types.ObjectId;
-    await userDoc.save();
+    // 4) إنشاء التاجر
+    let merchant: MerchantDocument;
+    try {
+      merchant = await this.merchantModel.create({
+        userId: userDoc._id,
+        name: `متجر ${name}`,
+        storefrontUrl: '',
+        logoUrl: '',
+        address: {},
+        subscription: {
+          tier: PlanTier.Free,
+          startDate: new Date(),
+          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          features: [
+            'basic_support',
+            'chat_bot',
+            'analytics',
+            'multi_channel',
+            'api_access',
+            'webhook_integration',
+          ],
+        },
+        categories: [],
+        quickConfig: {
+          dialect: 'خليجي',
+          tone: 'ودّي',
+          customInstructions: [],
+          sectionOrder: ['products', 'policies', 'custom'],
+          includeStoreUrl: true,
+          includeAddress: true,
+          includePolicies: true,
+          includeWorkingHours: true,
+          includeClosingPhrase: true,
+          closingText: 'هل أقدر أساعدك بشي ثاني؟ 😊',
+        },
+        currentAdvancedConfig: {
+          template: '', // <-- تمّ تصحيح اسم الحقل هنا
+          updatedAt: new Date(),
+          note: '',
+        },
+        advancedConfigHistory: [],
+        finalPromptTemplate: '',
+        returnPolicy: '',
+        exchangePolicy: '',
+        shippingPolicy: '',
+        channels: {},
+        chatThemeColor: '#D84315',
+        chatGreeting: 'مرحباً! كيف أستطيع مساعدتك اليوم؟',
+        chatWebhooksUrl: '/api/webhooks',
+        chatApiBaseUrl: '',
+        workingHours: [],
+      });
+    } catch (err: any) {
+      this.logger.error('Failed to create merchant', err.stack || err);
+      // rollback: حذف المستخدم
+      await this.userModel.findByIdAndDelete(userDoc._id).exec();
+      throw new InternalServerErrorException('Failed to create merchant');
+    }
 
-    // 6. توقيع JWT
+    // 5) ربط merchantId ثم حفظ
+    userDoc.merchantId = merchant._id as Types.ObjectId;
+    await userDoc.save().catch((err) => {
+      this.logger.error('Failed to link merchantId', err);
+    });
+
+    // 6) إصدار JWT والرد
     const payload = {
       userId: userDoc._id,
       role: userDoc.role,
-      merchantId: createdMerchant._id,
+      merchantId: merchant._id,
     };
-
-    // 7. إرجاع الـ token والمستخدم مع العلم firstLogin=true
     return {
       accessToken: this.jwtService.sign(payload),
       user: {
@@ -71,7 +150,7 @@ export class AuthService {
         name: userDoc.name,
         email: userDoc.email,
         role: userDoc.role,
-        merchantId: createdMerchant._id,
+        merchantId: merchant._id,
         firstLogin: userDoc.firstLogin,
       },
     };
@@ -105,5 +184,56 @@ export class AuthService {
         firstLogin: userDoc.firstLogin,
       },
     };
+  }
+  // src/auth/auth.service.ts
+  // src/auth/auth.service.ts
+  async verifyEmail(dto: VerifyEmailDto): Promise<void> {
+    const { code } = dto;
+    const user = await this.userModel
+      .findOne({ emailVerificationCode: code })
+      .exec();
+
+    if (!user) {
+      throw new BadRequestException('رمز التفعيل غير صحيح');
+    }
+    if (
+      !user.emailVerificationExpiresAt ||
+      user.emailVerificationExpiresAt.getTime() < Date.now()
+    ) {
+      throw new BadRequestException('رمز التفعيل منتهي الصلاحية');
+    }
+
+    user.emailVerified = true;
+    user.emailVerificationCode = undefined;
+    user.emailVerificationExpiresAt = undefined;
+    user.firstLogin = false;
+    await user.save();
+  }
+  async resendVerification(dto: ResendVerificationDto): Promise<void> {
+    const { email } = dto;
+
+    // 1) ابحث عن المستخدم
+    const user = await this.userModel.findOne({ email }).exec();
+    if (!user) {
+      throw new BadRequestException('البريد الإلكتروني غير مسجل');
+    }
+
+    // 2) إذا كان مفعلًا بالفعل، لا حاجة للإرسال
+    if (user.emailVerified) {
+      throw new BadRequestException('البريد الإلكتروني مُفعّل مسبقًا');
+    }
+
+    // 3) أنشئ كود جديد وصلاحيته
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    user.emailVerificationCode = code;
+    user.emailVerificationExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    await user.save();
+
+    // 4) أرسل الإيميل (إذا فشل لا تُفشل الطلب)
+    try {
+      await this.mailService.sendVerificationEmail(email, code);
+    } catch (err) {
+      this.logger.error('Failed sending verification email', err);
+    }
   }
 }

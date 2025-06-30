@@ -47,27 +47,39 @@ export class MerchantsService {
   async create(createDto: CreateMerchantDto): Promise<MerchantDocument> {
     // 1) حوّل SubscriptionPlanDto إلى SubscriptionPlan
     const subscription = {
-      ...createDto.subscription,
+      tier: createDto.subscription.tier,
       startDate: new Date(createDto.subscription.startDate),
       endDate: createDto.subscription.endDate
         ? new Date(createDto.subscription.endDate)
         : undefined,
+      features: createDto.subscription.features, // مصفوفة الميزات
     };
 
-    // 2) جهّز المستند بدون تصنيفات TypeScript صارمة
+    // 2) جهّز المستند مع تزويد جميع الحقول الافتراضية
     const doc: any = {
       name: createDto.name,
-      storefrontUrl: createDto.storefrontUrl,
-      logoUrl: createDto.logoUrl,
+      storefrontUrl: createDto.storefrontUrl ?? '',
+      logoUrl: createDto.logoUrl ?? '',
+      address: createDto.address ?? {},
+
       subscription,
       categories: createDto.categories ?? [],
-      workingHours: createDto.workingHours ?? [],
-      channels: {},
+      domain: createDto.domain,
       businessType: createDto.businessType,
       businessDescription: createDto.businessDescription,
-      returnPolicy: createDto.returnPolicy,
-      exchangePolicy: createDto.exchangePolicy,
-      shippingPolicy: createDto.shippingPolicy,
+
+      // ساعات العمل
+      workingHours: createDto.workingHours ?? [],
+
+      // القنوات تُنشأ فارغة ثم تُملأ لاحقاً
+      channels: {},
+
+      // السياسات
+      returnPolicy: createDto.returnPolicy ?? '',
+      exchangePolicy: createDto.exchangePolicy ?? '',
+      shippingPolicy: createDto.shippingPolicy ?? '',
+
+      // إعدادات البرومبت السريعة مع الحقول الجديدة
       quickConfig: {
         dialect: createDto.quickConfig?.dialect ?? 'خليجي',
         tone: createDto.quickConfig?.tone ?? 'ودّي',
@@ -77,30 +89,49 @@ export class MerchantsService {
           'policies',
           'custom',
         ],
+        includeStoreUrl: createDto.quickConfig?.includeStoreUrl ?? true,
+        includeAddress: createDto.quickConfig?.includeAddress ?? true,
+        includePolicies: createDto.quickConfig?.includePolicies ?? true,
+        includeWorkingHours: createDto.quickConfig?.includeWorkingHours ?? true,
+        includeClosingPhrase:
+          createDto.quickConfig?.includeClosingPhrase ?? true,
+        closingText:
+          createDto.quickConfig?.closingText ?? 'هل أقدر أساعدك بشي ثاني؟ 😊',
       },
+
+      // الإعداد المتقدّم الحالي
       currentAdvancedConfig: {
-        template: createDto.currentAdvancedConfig?.advancedTemplate ?? '',
-        note: createDto.currentAdvancedConfig?.note,
+        template: createDto.currentAdvancedConfig?.template ?? '',
+        note: createDto.currentAdvancedConfig?.note ?? '',
         updatedAt: new Date(),
       },
-      advancedConfigHistory:
-        createDto.advancedConfigHistory?.map((v) => ({
-          template: v.advancedTemplate,
+
+      // تاريخ الإصدارات السابقة
+      advancedConfigHistory: (createDto.advancedConfigHistory ?? []).map(
+        (v) => ({
+          template: v.template,
           note: v.note,
-          updatedAt: new Date(v.updatedAt || Date.now()),
-        })) ?? [],
-      address: createDto.address, // إذا كان undefined، المينغو يستخدم default({})
+          updatedAt: v.updatedAt ? new Date(v.updatedAt) : new Date(),
+        }),
+      ),
+
+      // إعدادات الدردشة
+      chatThemeColor: '#D84315',
+      chatGreeting: 'مرحباً! كيف أستطيع مساعدتك اليوم؟',
+      chatWebhooksUrl: '/api/webhooks',
+      chatApiBaseUrl: '',
     };
 
+    // 3) أنشئ الميرشانت واحفظه
     const merchant = new this.merchantModel(doc);
     await merchant.save();
 
     try {
-      // 3) workflow
+      // 4) أنشئ الـ workflow
       const wfId = await this.n8n.createForMerchant(merchant.id);
       merchant.workflowId = wfId;
 
-      // 4) دمج قنوات إن وُجدت
+      // 5) دمج القنوات إذا وجدت في DTO
       if (createDto.channels) {
         merchant.channels = {
           whatsapp: mapToChannelConfig(createDto.channels.whatsapp),
@@ -109,12 +140,12 @@ export class MerchantsService {
         };
       }
 
-      // 5) بناء finalPromptTemplate وحفظ
+      // 6) أعد بناء وحفظ finalPromptTemplate
       merchant.finalPromptTemplate =
         this.promptBuilder.compileTemplate(merchant);
       await merchant.save();
 
-      // 6) تسجيل webhook لتليجرام
+      // 7) تسجيل ويبهوك تيليجرام إن وُجد توكن
       const tgCfg = merchant.channels.telegram;
       if (tgCfg?.token) {
         const { hookUrl } = await this.registerTelegramWebhook(
@@ -131,6 +162,7 @@ export class MerchantsService {
 
       return merchant;
     } catch (err) {
+      // 8) في حال فشل أي خطوة فرعية، احذف الميرشانت
       await this.merchantModel.findByIdAndDelete(merchant.id).exec();
       throw new InternalServerErrorException(
         `Initialization failed: ${err.message}`,
@@ -394,6 +426,9 @@ export class MerchantsService {
           : undefined,
       };
     }
+    if (dto.phone !== undefined) {
+      merchant.phone = dto.phone;
+    }
     await merchant.save();
 
     let webhookInfo;
@@ -417,29 +452,38 @@ export class MerchantsService {
   public async registerTelegramWebhook(
     merchantId: string,
     botToken: string,
-  ): Promise<{ hookUrl: string; telegramResponse: any }> {
+  ): Promise<{ hookUrl: string; telegramResponse?: any }> {
     const m = await this.merchantModel.findById(merchantId).exec();
     if (!m || !m.workflowId) {
       throw new BadRequestException('Workflow not initialized');
     }
 
     const base = this.config.get<string>('N8N_WEBHOOK_BASE');
-    if (!base)
+    if (!base) {
       throw new InternalServerErrorException('N8N_WEBHOOK_BASE not set');
+    }
 
-    const hookUrl =
-      `${base.replace(/\/+$/, '')}` +
-      `/webhook/${m.workflowId}/webhooks/incoming/${merchantId}`;
-
+    const hookUrl = `${base.replace(/\/+$/, '')}/webhook/${m.workflowId}/webhooks/incoming/${merchantId}`;
     this.logger.log(`Setting Telegram webhook: ${hookUrl}`);
 
-    const resp = await firstValueFrom(
-      this.http.get(
-        `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(hookUrl)}`,
-      ),
-    );
+    let telegramResponse: any;
+    try {
+      const resp = await firstValueFrom(
+        this.http.get(
+          `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(hookUrl)}`,
+        ),
+      );
+      telegramResponse = resp.data;
+      this.logger.log('Telegram setWebhook response', telegramResponse);
+    } catch (err: any) {
+      // نسجل الخطأ ولكن لا نفشل الأونبوردنج
+      this.logger.error(
+        `Failed to set Telegram webhook (ignored): ${err.message}`,
+        err.stack,
+      );
+    }
 
-    // احفظ عنوان الويبهوك ضمن القناة
+    // نحفظ الـ webhookUrl دائماً، حتى لو فشل الطلب
     await this.merchantModel
       .findByIdAndUpdate(
         merchantId,
@@ -448,8 +492,9 @@ export class MerchantsService {
       )
       .exec();
 
-    return { hookUrl, telegramResponse: resp.data };
+    return { hookUrl, telegramResponse };
   }
+
   // في merchants.service.ts
   // في merchants.service.ts
   async getStatus(id: string): Promise<MerchantStatusResponse> {

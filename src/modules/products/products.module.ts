@@ -8,6 +8,7 @@ import { ProductsController } from './products.controller';
 import { ScrapeQueue } from './scrape.queue';
 import { ScraperModule } from '../scraper/scraper.module';
 import { VectorModule } from '../vector/vector.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { VectorModule } from '../vector/vector.module';
     forwardRef(() => ScraperModule),
     BullModule.registerQueue({ name: 'scrape' }),
     VectorModule,
+    forwardRef(() => AnalyticsModule), // ← هنا استخدم forwardRef
   ],
   providers: [ProductsService, ScrapeQueue],
   controllers: [ProductsController],

@@ -15,6 +15,7 @@ import { MerchantsModule } from '../merchants/merchants.module';
 
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Merchant, MerchantSchema } from '../merchants/schemas/merchant.schema'; // ← استيراد الـ schema
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { Merchant, MerchantSchema } from '../merchants/schemas/merchant.schema';
       { name: User.name, schema: UserSchema },
       { name: Merchant.name, schema: MerchantSchema }, // ← إضافة هذا السطر
     ]),
+    MailModule, // ← استيراد MailModule ليوفر MailService
 
     UsersModule,
     MerchantsModule, // لازمه ل AuthController الذي يستعمل MerchantsService

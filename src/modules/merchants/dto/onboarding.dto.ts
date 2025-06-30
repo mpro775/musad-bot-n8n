@@ -5,6 +5,7 @@ import { IsString, IsOptional, IsUrl, ValidateNested } from 'class-validator';
 import { AddressDto } from './address.dto';
 import { SubscriptionPlanDto } from './subscription-plan.dto';
 import { ChannelsDto } from './channel.dto';
+import { QuickConfigDto } from './quick-config.dto';
 
 export class OnboardingDto {
   /** اسم المتجر */
@@ -21,6 +22,9 @@ export class OnboardingDto {
   @IsUrl()
   logoUrl?: string;
 
+  @IsString() // ← أضف هذا
+  @IsOptional() // إذا تريد أن يكون اختياري
+  phone?: string;
   /** عنوان المتجر (اختياري) */
   @IsOptional()
   @ValidateNested()
@@ -47,4 +51,9 @@ export class OnboardingDto {
   @ValidateNested()
   @Type(() => ChannelsDto)
   channels?: ChannelsDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuickConfigDto)
+  quickConfig?: QuickConfigDto;
 }

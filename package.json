@@ -58,6 +58,7 @@
     "multer": "^2.0.1",
     "multer-minio-storage-engine": "^1.0.0",
     "nestjs-pino": "^4.4.0",
+    "nodemailer": "^7.0.3",
     "openai": "^5.5.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

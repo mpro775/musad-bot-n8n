@@ -13,11 +13,14 @@ import { PromptBuilderService } from './services/prompt-builder.service';
 import { PromptVersionService } from './services/prompt-version.service';
 import { PromptPreviewService } from './services/prompt-preview.service';
 import { MerchantPromptController } from './controllers/merchant-prompt.controller';
+import { MerchantChecklistService } from './merchant-checklist.service';
+import { Product, ProductSchema } from '../products/schemas/product.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Merchant.name, schema: MerchantSchema },
+      { name: Product.name, schema: ProductSchema }, // ← هنا
     ]),
     forwardRef(() => AuthModule),
     MulterModule.register({ dest: './uploads' }),
@@ -30,6 +33,7 @@ import { MerchantPromptController } from './controllers/merchant-prompt.controll
     PromptBuilderService,
     PromptVersionService,
     PromptPreviewService,
+    MerchantChecklistService,
   ],
   controllers: [MerchantsController, MerchantPromptController],
   exports: [
@@ -37,6 +41,7 @@ import { MerchantPromptController } from './controllers/merchant-prompt.controll
     PromptVersionService,
     PromptPreviewService,
     PromptBuilderService,
+    MerchantChecklistService,
   ],
 })
 export class MerchantsModule {}

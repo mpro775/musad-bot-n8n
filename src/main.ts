@@ -11,6 +11,7 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 
 import { AppModule } from './app.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { AnalyticsInterceptor } from './modules/analytics/interceptors/analytics.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -24,6 +25,7 @@ async function bootstrap() {
     (globalThis as any).crypto = { randomUUID };
   }
   app.useWebSocketAdapter(new IoAdapter(app));
+  app.useGlobalInterceptors(app.get(AnalyticsInterceptor));
 
   app.use(helmet());
   app.enableCors({
@@ -55,10 +57,40 @@ async function bootstrap() {
     .setTitle('MusaidBot API')
     .setDescription('API documentation for MusaidBot')
     .setVersion('1.0')
-    .addBearerAuth()
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'Authorization',
+        description: 'Enter JWT token',
+        in: 'header',
+      },
+      'access-token',
+    )
+    .setContact(
+      'Smart Academy',
+      'https://smartacademy.sa',
+      'support@smartacademy.sa',
+    )
+    .setLicense('MIT', 'https://opensource.org/licenses/MIT')
+    .addServer('http://localhost:5000', 'Local environment')
+    .addServer('https://api.musaidbot.com', 'Production')
     .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  const document = SwaggerModule.createDocument(app, config, {
+    deepScanRoutes: true, // يضمن اكتشاف جميع المسارات
+  });
+  SwaggerModule.setup('api/docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true, // يبقي التوكن محفوظاً
+      docExpansion: 'list', // يفتح التصنيفات تلقائياً
+      displayRequestDuration: true,
+    },
+    customSiteTitle: 'MusaidBot API Docs',
+    customfavIcon: 'https://smartacademy.sa/favicon.ico',
+    customCssUrl:
+      'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
+  });
 
   // مسار مخصص لتخفيف الضغط على WhatsApp
   app.use('/api/whatsapp/reply', rateLimit({ windowMs: 1000, max: 20 }));
@@ -68,4 +100,4 @@ async function bootstrap() {
   console.log(`🚀 Backend running on http://localhost:${port}/api`);
 }
 
-bootstrap();
+void bootstrap();

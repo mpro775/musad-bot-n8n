@@ -5,6 +5,11 @@ import {
   MessageSession,
   MessageSessionDocument,
 } from '../messaging/schemas/message.schema';
+import {
+  AnalyticsEvent,
+  AnalyticsEventDocument,
+} from './schemas/analytics-event.schema';
+import { Types } from 'mongoose';
 type RoleStats = Record<'customer' | 'bot' | string, number>;
 type DailySessionStat = {
   date: string; // e.g. "2025-06-12"
@@ -23,8 +28,31 @@ export class AnalyticsService {
   constructor(
     @InjectModel(MessageSession.name)
     private readonly sessionModel: Model<MessageSessionDocument>,
+    @InjectModel(AnalyticsEvent.name) // ← هنا
+    private readonly eventModel: Model<AnalyticsEventDocument>,
   ) {}
-
+  /**
+   * سجّل حدث تحليلي جديد.
+   * @param merchantId معرّف التاجر
+   * @param type     نوع الحدث (chat_in, chat_out, http_request, …)
+   * @param payload  بيانات إضافية { channel, text, duration, … }
+   */
+  async logEvent(
+    merchantId: string | Types.ObjectId,
+    type: string,
+    payload: Record<string, any>,
+  ): Promise<AnalyticsEventDocument> {
+    const doc = await this.eventModel.create({
+      merchantId:
+        typeof merchantId === 'string'
+          ? new Types.ObjectId(merchantId)
+          : merchantId,
+      type,
+      channel: payload.channel,
+      payload,
+    });
+    return doc;
+  }
   async countSessions(
     merchantId: string,
     from: Date,
