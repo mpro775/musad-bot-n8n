@@ -17,4 +17,9 @@ export class CreatePlanDto {
   @IsNumber()
   @IsNotEmpty()
   duration: number;
+
+  @ApiProperty({ description: 'الحد الأقصى لعدد العروض', example: 50 })
+  @IsNumber()
+  @IsNotEmpty()
+  offerLimit: number;
 }

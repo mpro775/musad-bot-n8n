@@ -9,16 +9,20 @@ import { OffersController } from './offers.controller';
 import { ScraperModule } from '../scraper/scraper.module';
 import { VectorModule } from '../vector/vector.module';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
+import { Merchant, MerchantSchema } from '../merchants/schemas/merchant.schema';
+import { PlansModule } from '../plans/plans.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Offer.name, schema: OfferSchema },
       { name: Product.name, schema: ProductSchema }, // ← أضف هذا السطر لحل المشكلة
+      { name: Merchant.name, schema: MerchantSchema },
     ]),
     forwardRef(() => ScraperModule),
     ProductsModule,
     VectorModule,
+    PlansModule,
     BullModule.registerQueue({ name: 'offer-scrape' }),
   ],
   providers: [OffersService],

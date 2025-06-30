@@ -11,6 +11,7 @@ export class Plan {
   @Prop({ required: true })
   price: number; // قيمة الاشتراك
   @Prop({ default: 100 }) messageLimit?: number; // عدد الرسائل الشهرية
+  @Prop({ default: 50 }) offerLimit?: number; // أقصى عدد للعروض
   @Prop({ default: true }) llmEnabled?: boolean; // هل يُسمح باستخدام الذكاء الاصطناعي
   @Prop({ default: false }) isTrial?: boolean; // هل هذه الخطة مجانية تجريبية
   @Prop({ default: true }) isActive?: boolean; // هل الخطة مفعّلة حاليًا

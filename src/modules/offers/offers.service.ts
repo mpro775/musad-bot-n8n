@@ -13,6 +13,11 @@ import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { VectorService } from '../vector/vector.service';
+import {
+  Merchant,
+  MerchantDocument,
+} from '../merchants/schemas/merchant.schema';
+import { PlansService } from '../plans/plans.service';
 
 @Injectable()
 export class OffersService {
@@ -21,6 +26,9 @@ export class OffersService {
     private readonly offerModel: Model<OfferDocument>,
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Merchant.name)
+    private readonly merchantModel: Model<MerchantDocument>,
+    private readonly plansService: PlansService,
     private readonly vectorService: VectorService,
   ) {}
 
@@ -33,9 +41,11 @@ export class OffersService {
     const offersCount = await this.offerModel
       .countDocuments({ merchantId })
       .exec();
-    // TODO: اجلب الحد من خطة التاجر بدلاً من رقم ثابت!
-    const MAX_OFFERS_PER_MERCHANT = 50;
-    if (offersCount >= MAX_OFFERS_PER_MERCHANT) {
+    const merchant = await this.merchantModel.findById(merchantId).exec();
+    if (!merchant) throw new NotFoundException('Merchant not found');
+    const plan = await this.plansService.findByName(merchant.subscription.tier);
+    const maxOffers = plan.offerLimit ?? 0;
+    if (offersCount >= maxOffers) {
       throw new ForbiddenException('تم تجاوز الحد الأقصى لعدد العروض في خطتك');
     }
 
