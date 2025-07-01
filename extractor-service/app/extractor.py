@@ -4,6 +4,9 @@ from fastapi import HTTPException
 from bs4 import BeautifulSoup
 from trafilatura import fetch_url, extract as traf_extract
 
+# Playwright sync API
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
 # نجسّد أنفسنا كمستعرض Chrome لمنع حظر بعض المواقع
 DEFAULT_HEADERS = {
     "User-Agent": (
@@ -12,6 +15,33 @@ DEFAULT_HEADERS = {
         "Chrome/114.0.0.0 Safari/537.36"
     )
 }
+
+def fetch_html(url: str) -> str:
+    """
+    يجرب أولاً requests، ثم يتراجع إلى Playwright عند 403 أو خطأ آخر.
+    """
+    try:
+        res = requests.get(url, timeout=30, headers=DEFAULT_HEADERS)
+        if res.status_code == 403 or not res.text.strip():
+            raise HTTPException(status_code=403, detail="Blocked or empty by requests")
+        res.raise_for_status()
+        return res.text
+    except HTTPException:
+        # fallback to Playwright
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(headless=True)
+                page = browser.new_page(user_agent=DEFAULT_HEADERS["User-Agent"])
+                page.goto(url, wait_until="networkidle", timeout=60000)
+                html = page.content()
+                browser.close()
+                return html
+        except PlaywrightTimeoutError as e:
+            raise HTTPException(status_code=400, detail=f"Playwright timeout: {e}")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Fetch error both methods: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Fetch error: {e}")
 
 def extract_structured(html: str):
     """
@@ -25,7 +55,6 @@ def extract_structured(html: str):
             for item in items:
                 if item.get("@type") == "Product":
                     offers = item.get("offers", {})
-                    # قد يأتي السعر في priceSpecification أيضاً
                     price = offers.get("price") or offers.get("priceSpecification", {}).get("price")
                     availability = offers.get("availability")
                     images = item.get("image") or []
@@ -67,17 +96,13 @@ def extract_meta(soup: BeautifulSoup):
 def full_extract(url: str):
     """
     تنفّذ الاستخراج الكامل:
-    1) محاولة JSON-LD
-    2) محاولة Meta Tags
-    3) trafilatura للنص + استخراج الصور من DOM
+    1) جلب HTML (requests → Playwright)
+    2) محاولة JSON-LD
+    3) محاولة Meta Tags
+    4) trafilatura للنص + استخراج الصور يدوياً
     """
     # 1. جلب HTML
-    try:
-        res = requests.get(url, timeout=30, headers=DEFAULT_HEADERS)
-        res.raise_for_status()
-        html = res.text
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Fetch error: {e}")
+    html = fetch_html(url)
 
     # 2. JSON-LD
     structured = extract_structured(html)
@@ -95,7 +120,7 @@ def full_extract(url: str):
         downloaded = fetch_url(
             url,
             timeout=30,
-            headers=DEFAULT_HEADERS  # يدعم هذا الوسيط في الإصدارات الأحدث
+            headers=DEFAULT_HEADERS  # يدعم في الإصدارات الأحدث
         )
     except TypeError:
         downloaded = fetch_url(url, timeout=30)
