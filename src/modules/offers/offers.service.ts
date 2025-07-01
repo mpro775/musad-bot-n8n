@@ -100,6 +100,21 @@ export class OffersService {
     await offer.save();
     return offer;
   }
+  async getOfferByIdList(
+    ids: string[],
+    merchantId: string,
+  ): Promise<OfferDocument[]> {
+    if (!ids.length) return [];
+
+    return this.offerModel
+      .find({
+        _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+        merchantId: new Types.ObjectId(merchantId),
+      })
+      .lean()
+      .exec();
+  }
+
   async searchOffers(merchantId: string, query: string) {
     const mId =
       typeof merchantId === 'string'

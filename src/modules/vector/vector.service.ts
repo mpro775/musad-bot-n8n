@@ -5,6 +5,8 @@ import { EmbeddableOffer, EmbeddableProduct } from './types';
 import { firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { v5 as uuidv5 } from 'uuid';
+import { ProductsService } from '../products/products.service';
+import { OffersService } from '../offers/offers.service';
 const PRODUCT_NAMESPACE = 'd94a5f5a-2bfc-4c2d-9f10-1234567890ab';
 const OFFER_NAMESPACE = 'a5c1321e-bd1f-4ee0-9cd5-abcdef123456';
 
@@ -14,8 +16,11 @@ export class VectorService implements OnModuleInit {
   private readonly collection = 'products';
   private readonly offerCollection = 'offers';
 
-  constructor(private readonly http: HttpService) {}
-
+  constructor(
+    private readonly http: HttpService,
+    private readonly productsService: ProductsService, // 👈 أضف هذا
+    private readonly offersService: OffersService, // 👈 وأيضًا هذا لو استخدمته
+  ) {}
   public async onModuleInit(): Promise<void> {
     this.qdrant = new QdrantClient({ url: process.env.QDRANT_URL });
     console.log('[VectorService] Qdrant URL is', process.env.QDRANT_URL);
@@ -36,29 +41,6 @@ export class VectorService implements OnModuleInit {
     }
   }
 
-  private async recreateIfMismatch(
-    collections: { name: string; vectors?: { size: number } }[],
-    name: string,
-  ): Promise<void> {
-    const col = collections.find((c) => c.name === name);
-    if (col) {
-      const currentSize = col.vectors?.size;
-      if (currentSize !== 384) {
-        console.warn(
-          `[VectorService] Deleting collection ${name} due to size mismatch: ${currentSize}`,
-        );
-        await this.qdrant.deleteCollection(name);
-        await this.qdrant.createCollection(name, {
-          vectors: { size: 384, distance: 'Cosine' },
-        });
-      }
-    } else {
-      await this.qdrant.createCollection(name, {
-        vectors: { size: 384, distance: 'Cosine' },
-      });
-    }
-  }
-
   public async embed(text: string): Promise<number[]> {
     const response = await firstValueFrom(
       this.http.post<{ embeddings: number[][] }>(
@@ -72,14 +54,20 @@ export class VectorService implements OnModuleInit {
   public async upsertProducts(products: EmbeddableProduct[]) {
     const points = await Promise.all(
       products.map(async (p) => ({
-        id: uuidv5(p.id, PRODUCT_NAMESPACE),
-        vector: await this.embed(this.buildTextForEmbedding(p)),
+        id: uuidv5(p.id, PRODUCT_NAMESPACE), // ← UUID ثابت لكل منتج
+        vector: await this.embed(this.buildTextForEmbedding(p)), // ← تحويل المنتج إلى متجه
         payload: {
           mongoId: p.id,
-          merchantId: p.merchantId, // ← ضفنا هنا
+          merchantId: p.merchantId,
+          name: p.name,
+          description: p.description,
+          category: p.category,
+          specsBlock: p.specsBlock ?? [],
+          keywords: p.keywords ?? [],
         },
       })),
     );
+
     return this.qdrant.upsert(this.collection, { wait: true, points });
   }
 
@@ -87,19 +75,73 @@ export class VectorService implements OnModuleInit {
     text: string,
     merchantId: string,
     topK = 5,
-  ): Promise<{ id: string; score: number }[]> {
+  ): Promise<
+    {
+      id: string;
+      name?: string;
+      price?: number;
+      url?: string;
+      score: number;
+    }[]
+  > {
     const vector = await this.embed(text);
-    const result = await this.qdrant.search(this.collection, {
+
+    const rawResults = await this.qdrant.search(this.collection, {
       vector,
-      limit: topK,
-      with_payload: true,
+      limit: topK * 2,
+      with_payload: {
+        include: ['mongoId', 'name', 'price', 'url'],
+      },
       filter: {
         must: [{ key: 'merchantId', match: { value: merchantId } }],
       },
     });
-    return result.map((item) => ({
-      id: item.payload!.mongoId as string,
-      score: item.score,
+
+    if (!rawResults.length) return [];
+
+    const candidateTexts = rawResults.map((item) => {
+      const p = item.payload as any;
+      return `Name: ${p.name ?? ''}`;
+    });
+
+    const rerankResponse = await firstValueFrom(
+      this.http.post<{
+        results: { text: string; score: number }[];
+      }>('http://reranker:8500/rerank', {
+        query: text,
+        candidates: candidateTexts,
+      }),
+    );
+
+    const reranked = rerankResponse.data.results.map((res, index) => {
+      const original = rawResults[index];
+      const payload = original.payload as any;
+      return {
+        id: payload.mongoId as string,
+        score: res.score,
+      };
+    });
+
+    // إنشاء خريطة لربط ID مع Score
+    const productIdScoreMap = new Map<string, number>();
+    const productIds = reranked.slice(0, topK).map((r) => {
+      productIdScoreMap.set(r.id, r.score);
+      return r.id;
+    });
+
+    // جلب التفاصيل من Mongo
+    const products = await this.productsService.getProductByIdList(
+      productIds,
+      merchantId,
+    );
+
+    // دمج score داخل المنتج
+    return products.map((p) => ({
+      id: p._id.toString(),
+      name: p.name,
+      price: p.price,
+      url: (p as any).url, // إذا موجود
+      score: productIdScoreMap.get(p._id.toString()) ?? 0,
     }));
   }
 
@@ -108,25 +150,89 @@ export class VectorService implements OnModuleInit {
       offers.map(async (offer) => ({
         id: uuidv5(offer.id, OFFER_NAMESPACE),
         vector: await this.embed(this.buildTextForOffer(offer)),
-        payload: { mongoId: offer.id },
+        payload: {
+          mongoId: offer.id,
+          name: offer.name,
+          description: offer.description,
+          type: offer.type,
+          code: offer.code,
+        },
       })),
     );
+
     return this.qdrant.upsert(this.offerCollection, { wait: true, points });
   }
 
   public async querySimilarOffers(
     text: string,
+    merchantId: string,
     topK = 5,
-  ): Promise<{ id: string; score: number }[]> {
+  ): Promise<
+    {
+      id: string;
+      name?: string;
+      type?: string;
+      description?: string;
+      code?: string;
+      score: number;
+    }[]
+  > {
     const vector = await this.embed(text);
-    const result = await this.qdrant.search(this.offerCollection, {
+
+    const rawResults = await this.qdrant.search(this.offerCollection, {
       vector,
-      limit: topK,
-      with_payload: true,
+      limit: topK * 2,
+      with_payload: {
+        include: ['mongoId', 'name', 'type', 'description', 'code'],
+      },
+      filter: {
+        must: [{ key: 'merchantId', match: { value: merchantId } }],
+      },
     });
-    return result.map((item) => ({
-      id: item.payload?.mongoId as string,
-      score: item.score,
+
+    if (!rawResults.length) return [];
+
+    const candidateTexts = rawResults.map((item) => {
+      const p = item.payload as any;
+      return `Name: ${p.name ?? ''}. Type: ${p.type ?? ''}`;
+    });
+
+    const rerankResponse = await firstValueFrom(
+      this.http.post<{
+        results: { text: string; score: number }[];
+      }>('http://reranker:8500/rerank', {
+        query: text,
+        candidates: candidateTexts,
+      }),
+    );
+
+    const reranked = rerankResponse.data.results.map((res, index) => {
+      const original = rawResults[index];
+      const payload = original.payload as any;
+      return {
+        id: payload.mongoId as string,
+        score: res.score,
+      };
+    });
+
+    const offerIdScoreMap = new Map<string, number>();
+    const offerIds = reranked.slice(0, topK).map((r) => {
+      offerIdScoreMap.set(r.id, r.score);
+      return r.id;
+    });
+
+    const offers = await this.offersService.getOfferByIdList(
+      offerIds,
+      merchantId,
+    );
+
+    return offers.map((offer) => ({
+      id: offer._id.toString(),
+      name: offer.name,
+      type: offer.type,
+      description: offer.description,
+      code: offer.code,
+      score: offerIdScoreMap.get(offer._id.toString()) ?? 0,
     }));
   }
 

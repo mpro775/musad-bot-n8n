@@ -9,6 +9,7 @@ import { ScrapeQueue } from './scrape.queue';
 import { ScraperModule } from '../scraper/scraper.module';
 import { VectorModule } from '../vector/vector.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
+import { ProductsImportService } from './products-import.service';
 
 @Module({
   imports: [
@@ -20,6 +21,6 @@ import { AnalyticsModule } from '../analytics/analytics.module';
   ],
   providers: [ProductsService, ScrapeQueue],
   controllers: [ProductsController],
-  exports: [ProductsService, MongooseModule], // ← هُنا صدّر MongooseModule
+  exports: [ProductsService, MongooseModule, ProductsImportService], // ← هُنا صدّر MongooseModule
 })
 export class ProductsModule {}

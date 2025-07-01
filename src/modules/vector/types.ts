@@ -2,11 +2,13 @@
 export interface EmbeddableProduct {
   id: string; // Product._id.toString()
   name: string;
-  description: string;
+  description?: string;
   category?: string;
   specsBlock?: string[];
   keywords?: string[];
   merchantId: string;
+  price?: number;
+  url?: string; // ← نضيفه لأننا نستخدمه في Qdrant payload
 }
 export interface EmbeddableOffer {
   id: string;

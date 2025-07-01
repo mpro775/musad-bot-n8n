@@ -199,6 +199,20 @@ export class ProductsService {
     if (!prod) throw new NotFoundException('Product not found');
     return prod;
   }
+  async getProductByIdList(
+    ids: string[],
+    merchantId: string,
+  ): Promise<ProductDocument[]> {
+    if (!ids.length) return [];
+
+    return this.productModel
+      .find({
+        _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+        merchantId: new Types.ObjectId(merchantId),
+      })
+      .lean()
+      .exec();
+  }
 
   async update(id: string, dto: UpdateProductDto): Promise<ProductDocument> {
     delete (dto as any).source;
@@ -261,18 +275,39 @@ export class ProductsService {
     return product;
   }
 
-  async updateAfterScrape(
-    productId: string,
-    updateData: Partial<Product>,
-  ): Promise<ProductDocument> {
+  async updateAfterScrape(productId: string, updateData: Partial<Product>) {
+    const existing = await this.productModel.findById(productId).lean();
+    if (!existing) throw new NotFoundException('Product not found');
+
     const updated = await this.productModel
       .findByIdAndUpdate(productId, updateData, { new: true })
       .exec();
+    if (!updated) {
+      throw new NotFoundException('Product not found');
+    }
 
-    if (!updated) throw new NotFoundException('Product not found');
+    const shouldUpdateEmbedding =
+      existing.name !== updated.name ||
+      existing.description !== updated.description ||
+      existing.category !== updated.category;
+
+    if (shouldUpdateEmbedding) {
+      await this.vectorService.upsertProducts([
+        {
+          id: updated._id.toString(),
+          merchantId: updated.merchantId.toString(),
+          name: updated.name,
+          description: updated.description,
+          category: updated.category,
+          specsBlock: updated.specsBlock,
+          keywords: updated.keywords,
+        },
+      ]);
+    }
 
     return updated;
   }
+
   /**
    * يمر كل 10 دقائق على جميع المنتجات ويجدّد السعر والتوفّر فقط
    */
