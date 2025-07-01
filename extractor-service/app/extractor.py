@@ -1,3 +1,4 @@
+# extractor.py
 import re
 import json
 import requests
@@ -19,7 +20,7 @@ DEFAULT_HEADERS = {
 def fetch_html(url: str) -> str:
     """
     1) نجرب requests أولاً
-    2) إذا لم نجد مؤشرات المنتج → ننزل الصفحة عبر Playwright
+    2) إذا الصفحة لا تحتوي على دلائل المنتج → ننزل الصفحة عبر Playwright
     """
     try:
         res = requests.get(url, timeout=30, headers=DEFAULT_HEADERS)
@@ -31,6 +32,7 @@ def fetch_html(url: str) -> str:
             '<script type="application/json"',
             'og:title',
             'product:price:amount',
+            'window.__INITIAL_STATE__',
         ]):
             raise HTTPException(status_code=204, detail="No product markers in HTML")
         res.raise_for_status()
@@ -42,10 +44,20 @@ def fetch_html(url: str) -> str:
                 browser = pw.chromium.launch(headless=True)
                 page = browser.new_page(user_agent=DEFAULT_HEADERS["User-Agent"])
                 page.goto(url, wait_until="networkidle", timeout=60000)
+                # نضيف محدّدات خاصة بسلة أيضاً
                 try:
                     page.wait_for_selector(
-                        'script[type="application/ld+json"], script[type="application/json"], script[id^="ProductJson-"], .product-details, .price, h1',
-                        timeout=60000
+                        [
+                            'script[type="application/ld+json"]',
+                            'script[type="application/json"]',
+                            'script[id^="ProductJson-"]',
+                            'h1',
+                            '.product-details',
+                            '.price',
+                            'h1.product-title',
+                            '.salla-product-price',
+                        ].join(','),
+                        timeout=60000,
                     )
                 except PlaywrightTimeoutError:
                     pass
@@ -59,6 +71,15 @@ def fetch_html(url: str) -> str:
 
 
 def extract_structured(html: str):
+    """
+    يبحث عن:
+    1) JSON-LD Product مع name غير فارغ
+    1.5) Salla __INITIAL_STATE__
+    2) Shopify JSON-Tag
+    3) Generic JSON
+    4) OpenGraph / Twitter Card
+    5) Microdata / itemprop
+    """
     soup = BeautifulSoup(html, "html.parser")
 
     # 1) JSON-LD
@@ -86,6 +107,25 @@ def extract_structured(html: str):
                     "availability": availability.split('/')[-1] if availability else None,
                 }
 
+    # 1.5) Salla JSON من window.__INITIAL_STATE__
+    init_tag = soup.find("script", string=re.compile(r'window\.__INITIAL_STATE__'))
+    if init_tag:
+        try:
+            txt = init_tag.string
+            obj_text = re.search(r'window\.__INITIAL_STATE__\s*=\s*(\{.*\})\s*;', txt, re.S)
+            if obj_text:
+                state = json.loads(obj_text.group(1))
+                p = state.get("product", {})
+                return {
+                    "name": p.get("title"),
+                    "description": p.get("description_html") or None,
+                    "images": p.get("images", []),
+                    "price": float(p.get("price", 0)),
+                    "availability": "InStock" if p.get("in_stock") else "OutOfStock",
+                }
+        except:
+            pass
+
     # 2) Shopify JSON via id="ProductJson-..."
     shopify_tag = soup.find("script", id=re.compile(r"ProductJson-"))
     if shopify_tag and shopify_tag.string:
@@ -97,12 +137,12 @@ def extract_structured(html: str):
                 "description": prod_json.get("body_html"),
                 "images": prod_json.get("images", []),
                 "price": float(variant0.get("price", 0)),
-                "availability": "in stock" if variant0.get("available") else "out of stock",
+                "availability": "InStock" if variant0.get("available") else "OutOfStock",
             }
         except:
             pass
 
-    # 3) Generic JSON fallback: any <script type="application/json"> containing product keys
+    # 3) Generic JSON fallback
     for tag in soup.find_all("script", type="application/json"):
         txt = tag.string or ""
         try:
@@ -116,7 +156,7 @@ def extract_structured(html: str):
                 "description": obj.get("body_html"),
                 "images": obj.get("images", []),
                 "price": float(variant0.get("price", 0)),
-                "availability": "in stock" if variant0.get("available") else "out of stock",
+                "availability": "InStock" if variant0.get("available") else "OutOfStock",
             }
 
     # 4) OpenGraph / Twitter Card
@@ -153,6 +193,9 @@ def extract_structured(html: str):
 
 
 def extract_meta(soup: BeautifulSoup):
+    """
+    استخلاص البيانات من Meta Tags (OG & Twitter & product:price)
+    """
     def meta(keys):
         for k in keys:
             tag = soup.find("meta", property=k) or soup.find("meta", attrs={"name": k})
@@ -163,7 +206,7 @@ def extract_meta(soup: BeautifulSoup):
     return {
         "name": meta(["og:title","twitter:title"]),
         "description": meta(["og:description","twitter:description"]),
-        "images": [meta(["og:image","twitter:image"])],
+        "images": [meta(["og:image","twitter:image"])] if meta(["og:image","twitter:image"]) else [],
         "price": float(meta(["product:price:amount","og:price:amount"]) or 0) or None,
         "availability": (meta(["product:availability","og:availability"]) or "").split("/")[-1] or None,
     }
@@ -175,8 +218,10 @@ def regex_extract_price(text: str):
 
 
 def regex_extract_availability(text: str):
-    if re.search(r'\b(متوفر|in stock|available)\b', text, re.I): return "InStock"
-    if re.search(r'\b(غير متوفر|نفد|out of stock)\b', text, re.I): return "OutOfStock"
+    if re.search(r'\b(متوفر|in stock|available)\b', text, re.I):
+        return "InStock"
+    if re.search(r'\b(غير متوفر|نفد|out of stock)\b', text, re.I):
+        return "OutOfStock"
     return None
 
 
@@ -185,7 +230,7 @@ def extract_dynamic_with_playwright(url: str):
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page(user_agent=DEFAULT_HEADERS["User-Agent"])
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_selector(".product-details, .price, h1", timeout=60000)
+        page.wait_for_selector("h1, .price, .product-details", timeout=60000)
         price_text = page.query_selector(".price").inner_text()
         name_text = page.query_selector("h1").inner_text()
         try:
@@ -193,7 +238,7 @@ def extract_dynamic_with_playwright(url: str):
         except:
             avail_text = None
         browser.close()
-        price = float(re.sub(r'[^\d.]','', price_text))
+        price = float(re.sub(r'[^\d.]', '', price_text))
         return {
             "name": name_text,
             "description": None,
@@ -207,7 +252,7 @@ def full_extract(url: str):
     html = fetch_html(url)
     soup = BeautifulSoup(html, "html.parser")
 
-    # 1) بنيوي (JSON-LD, Shopify JSON, Generic JSON, OG-meta, itemprop)
+    # 1) بنيوي
     prod = extract_structured(html)
     if prod:
         return prod
@@ -223,16 +268,28 @@ def full_extract(url: str):
     avail = regex_extract_availability(text)
     if price is not None or avail:
         name = soup.h1.get_text(strip=True) if soup.h1 else meta["name"] or soup.title.string
-        return {"name": name, "description": None, "images": meta["images"], "price": price, "availability": avail}
+        return {
+            "name": name,
+            "description": None,
+            "images": meta["images"],
+            "price": price,
+            "availability": avail,
+        }
 
     # 4) ديناميكي عبر Playwright
     try:
         return extract_dynamic_with_playwright(url)
-    except Exception:
+    except:
         pass
 
     # 5) Fallback كامل عبر Trafilatura
     downloaded = fetch_url(url)
     desc = traf_extract(downloaded, include_images=True) or ""
-    imgs = [i["src"] for i in soup.find_all("img") if i.get("src","").startswith("http")]
-    return {"name": meta["name"] or soup.title.string, "description": desc, "images": imgs, "price": None, "availability": None}
+    imgs = [i["src"] for i in soup.find_all("img") if i.get("src", "").startswith("http")]
+    return {
+        "name": meta["name"] or soup.title.string,
+        "description": desc,
+        "images": imgs,
+        "price": None,
+        "availability": None,
+    }
