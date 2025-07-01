@@ -21,3 +21,11 @@ async def extract_endpoint(
     """
     result = full_extract(url)
     return {"data": result}
+
+@app.get("/debug/fields/")
+def debug_fields(url: str):
+    html = fetch_html(url)
+    debug_list_ldjson(html)
+    debug_list_itemprops(html)
+    debug_list_meta(html)
+    return {"status": "see logs"}

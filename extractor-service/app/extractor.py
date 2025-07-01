@@ -183,3 +183,43 @@ def full_extract(url: str):
         "price": None,
         "availability": None,
     }
+def debug_list_ldjson(html: str):
+    soup = BeautifulSoup(html, 'html.parser')
+    all_items = []
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(tag.string or "")
+            if isinstance(data, dict) and '@graph' in data:
+                items = data['@graph']
+            elif isinstance(data, list):
+                items = data
+            else:
+                items = [data]
+            for item in items:
+                all_items.append(item)
+        except Exception:
+            continue
+    # اعرض كل الكائنات والمفاتيح
+    for i, obj in enumerate(all_items):
+        print(f"\n[LD-JSON #{i}] keys = {list(obj.keys())}")
+        # لو أحببت، اطبع كامل الكائن:
+        # print(json.dumps(obj, indent=2, ensure_ascii=False))
+def debug_list_itemprops(html: str):
+    soup = BeautifulSoup(html, 'html.parser')
+    props = {}
+    for tag in soup.find_all(attrs={"itemprop": True}):
+        name = tag['itemprop']
+        props.setdefault(name, []).append(tag.get_text(strip=True) or tag.get('content'))
+    print("\n[itemprop values]")
+    for prop, values in props.items():
+        print(f" - {prop}: {values[:3]}{'…' if len(values)>3 else ''}")
+def debug_list_meta(html: str):
+    soup = BeautifulSoup(html, 'html.parser')
+    metas = {}
+    for tag in soup.find_all("meta"):
+        key = tag.get("property") or tag.get("name")
+        if key:
+            metas[key] = tag.get("content")
+    print("\n[meta tags]")
+    for k,v in metas.items():
+        print(f" - {k}: {v}")
