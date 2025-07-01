@@ -12,15 +12,18 @@ import { ScraperService } from '../scraper/scraper.service';
 import { ProductsService } from './products.service';
 import { InjectQueue } from '@nestjs/bull';
 
-type ScrapeJobData = {
+type ScrapeMode = 'full' | 'minimal';
+
+interface ScrapeJobData {
   productId: string;
   url: string;
-  mode: 'full' | 'minimal';
-};
+  mode: ScrapeMode;
+}
 
 @Injectable()
 export class ScrapeQueue implements OnModuleInit {
   private readonly logger = new Logger(ScrapeQueue.name);
+
   @InjectQueue('scrape')
   private queue: Queue<ScrapeJobData>;
 
@@ -32,7 +35,7 @@ export class ScrapeQueue implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    // تأكد أن اسم القوّة موحد مع InjectQueue
+    // نضمن أن اسم الطابور موحّد مع InjectQueue
     this.queue = new Queue<ScrapeJobData>('scrape', {
       connection: this.redisConfig.connection,
     });
@@ -41,22 +44,25 @@ export class ScrapeQueue implements OnModuleInit {
       'scrape',
       async (job: Job<ScrapeJobData>) => {
         const { productId, url, mode } = job.data;
-
         try {
-          // تمرير الخيار mode إلى service
-          const result = await this.scraperService.scrapeProduct(url, { mode });
+          // استدعاء scraperService بدون تمرير options
+          const result = await this.scraperService.scrapeProduct(url);
 
           const now = new Date();
           if (mode === 'minimal') {
-            // فقط تحديث السعر والتوفر + lastFetchedAt
+            // نأكد أن result يحتوي على price و isAvailable
+            const { price, isAvailable } = result as {
+              price: number;
+              isAvailable: boolean;
+            };
             await this.productsService.updateAfterScrape(productId, {
-              price: (result as any).price,
-              isAvailable: (result as any).isAvailable,
+              price,
+              isAvailable,
               lastFetchedAt: now,
               errorState: '',
             });
           } else {
-            // full → نحدّث كل الحقول + lastFetchedAt + lastFullScrapedAt
+            // full: نحدّث كل الحقول
             const {
               name,
               price,
@@ -67,12 +73,22 @@ export class ScrapeQueue implements OnModuleInit {
               lowQuantity,
               specsBlock,
               platform,
-            } = result as any;
+            } = result as {
+              name: string;
+              price: number;
+              isAvailable: boolean;
+              images: string[];
+              description: string;
+              category: string;
+              lowQuantity: string;
+              specsBlock: string[];
+              platform: string;
+            };
 
             await this.productsService.updateAfterScrape(productId, {
               name,
               price,
-              isAvailable: isAvailable,
+              isAvailable,
               images,
               description,
               category,
@@ -87,19 +103,19 @@ export class ScrapeQueue implements OnModuleInit {
 
           this.logger.log(`Scraped [${mode}] and updated product ${productId}`);
         } catch (err) {
-          // عند الخطأ نُسجّل الرسالة ونحدّث lastFetchedAt
+          const message = err instanceof Error ? err.message : 'Unknown error';
           await this.productsService.updateAfterScrape(productId, {
-            errorState: (err as Error).message,
+            errorState: message,
             lastFetchedAt: new Date(),
           });
           this.logger.error(
-            `Failed to scrape (${mode}) product ${productId}: ${(err as Error).message}`,
+            `Failed to scrape (${mode}) product ${productId}: ${message}`,
           );
         }
       },
       {
         connection: this.redisConfig.connection,
-        concurrency: parseInt(process.env.SCRAPER_CONCURRENCY || '5', 10),
+        concurrency: parseInt(process.env.SCRAPER_CONCURRENCY ?? '5', 10),
       },
     );
   }
