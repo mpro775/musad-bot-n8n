@@ -1,3 +1,4 @@
+# extractor.py
 import re
 import json
 import requests
@@ -49,14 +50,12 @@ def extract_structured(html: str):
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # 1) JSON-LD
+    # JSON-LD
     for tag in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(tag.string or "")
         except:
             continue
-
-        # ندعم @graph أو كائن وحيد أو قائمة
         items = data.get('@graph') or (data if isinstance(data, list) else [data])
         for item in items:
             if item.get('@type') == "Product":
@@ -76,37 +75,39 @@ def extract_structured(html: str):
                     "availability": availability.split('/')[-1] if availability else None,
                 }
 
-    # 2) Microdata/itemprop
-    name = soup.find(itemprop="name")
-    price = soup.find(itemprop="price")
-    avail = soup.find(itemprop="availability")
-    img = soup.find(itemprop="image")
-    if name:
+    # Microdata / itemprop
+    name_tag = soup.find(itemprop="name")
+    if name_tag:
+        price_tag = soup.find(itemprop="price")
+        avail_tag = soup.find(itemprop="availability")
+        img_tag = soup.find(itemprop="image")
+        desc_tag = soup.find(itemprop="description")
         return {
-            "name": name.get_text(strip=True),
-            "description": soup.find(itemprop="description").get_text(strip=True) if soup.find(itemprop="description") else None,
-            "images": [img.get("src")] if img and img.get("src") else [],
-            "price": float(price.get("content") or price.get_text(strip=True)) if price else None,
-            "availability": avail.get("content").split('/')[-1] if avail and avail.get("content") else None,
+            "name": name_tag.get_text(strip=True),
+            "description": desc_tag.get_text(strip=True) if desc_tag else None,
+            "images": [img_tag.get("src")] if img_tag and img_tag.get("src") else [],
+            "price": float(price_tag.get("content") or price_tag.get_text(strip=True)) if price_tag else None,
+            "availability": avail_tag.get("content").split('/')[-1] if avail_tag and avail_tag.get("content") else None,
         }
+
     return None
 
 def extract_meta(soup: BeautifulSoup):
     """
     استخلاص البيانات من Meta Tags (OG & Twitter & product:price)
     """
-    def meta(prop_names):
-        for prop in prop_names:
-            tag = soup.find("meta", property=prop) or soup.find("meta", attrs={"name": prop})
+    def meta(props):
+        for p in props:
+            tag = soup.find("meta", property=p) or soup.find("meta", attrs={"name": p})
             if tag and tag.get("content"):
                 return tag["content"]
         return None
 
-    name = meta(["og:title","twitter:title"])
-    desc = meta(["og:description","twitter:description"])
-    img  = meta(["og:image","twitter:image"])
-    price = meta(["product:price:amount","og:price:amount"])
-    availability = meta(["product:availability","og:availability"])
+    name = meta(["og:title", "twitter:title"])
+    desc = meta(["og:description", "twitter:description"])
+    img = meta(["og:image", "twitter:image"])
+    price = meta(["product:price:amount", "og:price:amount"])
+    availability = meta(["product:availability", "og:availability"])
 
     return {
         "name": name,
@@ -117,65 +118,77 @@ def extract_meta(soup: BeautifulSoup):
     }
 
 def regex_extract_price(text: str):
-    """
-    يبحث في النص عن أول رقم مع رمز عملة.
-    """
     m = re.search(r'([\d,]+(?:\.\d+)?)\s*(?:ريال|ر\.س|SAR|\$)', text)
-    if m:
-        return float(m.group(1).replace(',', ''))
-    return None
+    return float(m.group(1).replace(',', '')) if m else None
 
 def regex_extract_availability(text: str):
-    """
-    يبحث عن كلمات التوفر.
-    """
     if re.search(r'\b(متوفر|in stock|available)\b', text, re.I):
         return "InStock"
     if re.search(r'\b(غير متوفر|نفد|out of stock)\b', text, re.I):
         return "OutOfStock"
     return None
 
+def debug_list_ldjson(html: str):
+    soup = BeautifulSoup(html, 'html.parser')
+    idx = 0
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(tag.string or "")
+        except:
+            continue
+        items = data.get('@graph') or (data if isinstance(data, list) else [data])
+        for item in items:
+            print(f"[LD-JSON #{idx}] keys = {list(item.keys())}")
+            idx += 1
+
+def debug_list_itemprops(html: str):
+    soup = BeautifulSoup(html, 'html.parser')
+    props = {}
+    for tag in soup.find_all(attrs={"itemprop": True}):
+        k = tag['itemprop']
+        props.setdefault(k, []).append(tag.get("content") or tag.get_text(strip=True))
+    for k, vals in props.items():
+        print(f"[itemprop] {k}: {vals[:3]}{'…' if len(vals)>3 else ''}")
+
+def debug_list_meta(html: str):
+    soup = BeautifulSoup(html, 'html.parser')
+    for tag in soup.find_all("meta"):
+        key = tag.get("property") or tag.get("name")
+        if key and tag.get("content"):
+            print(f"[meta] {key}: {tag['content']}")
+
 def full_extract(url: str):
-    """
-    سير عمل متعدد الطبقات:
-    1) جلب HTML
-    2) JSON-LD / Microdata
-    3) Meta Tags
-    4) Regex-based Heuristics
-    5) Trafilatura كـ fallback أخير
-    """
     html = fetch_html(url)
     soup = BeautifulSoup(html, "html.parser")
 
-    # 2) Structured data
-    structured = extract_structured(html)
-    if structured:
-        return structured
+    # 1) Structured data
+    prod = extract_structured(html)
+    if prod:
+        return prod
 
-    # 3) Meta Tags
+    # 2) Meta Tags
     meta = extract_meta(soup)
     if meta["name"] or meta["price"] is not None:
         return meta
 
-    # 4) Heuristic text-based
+    # 3) Regex heuristic
     text = soup.get_text(separator=' ')
     price = regex_extract_price(text)
     availability = regex_extract_availability(text)
     if price is not None or availability:
         name = soup.h1.get_text(strip=True) if soup.h1 else (meta["name"] or soup.title.string)
-        images = meta["images"] or []
         return {
             "name": name,
             "description": None,
-            "images": images,
+            "images": meta["images"],
             "price": price,
             "availability": availability,
         }
 
-    # 5) Trafilatura fallback
+    # 4) Trafilatura fallback
     downloaded = fetch_url(url)
     desc_text = traf_extract(downloaded, include_images=True) or ""
-    imgs = [img.get("src") for img in soup.find_all("img") if img.get("src", "").startswith("http")]
+    imgs = [img.get("src") for img in soup.find_all("img") if img.get("src","").startswith("http")]
     return {
         "name": meta["name"] or soup.title.string,
         "description": desc_text,
@@ -183,43 +196,3 @@ def full_extract(url: str):
         "price": None,
         "availability": None,
     }
-def debug_list_ldjson(html: str):
-    soup = BeautifulSoup(html, 'html.parser')
-    all_items = []
-    for tag in soup.find_all("script", type="application/ld+json"):
-        try:
-            data = json.loads(tag.string or "")
-            if isinstance(data, dict) and '@graph' in data:
-                items = data['@graph']
-            elif isinstance(data, list):
-                items = data
-            else:
-                items = [data]
-            for item in items:
-                all_items.append(item)
-        except Exception:
-            continue
-    # اعرض كل الكائنات والمفاتيح
-    for i, obj in enumerate(all_items):
-        print(f"\n[LD-JSON #{i}] keys = {list(obj.keys())}")
-        # لو أحببت، اطبع كامل الكائن:
-        # print(json.dumps(obj, indent=2, ensure_ascii=False))
-def debug_list_itemprops(html: str):
-    soup = BeautifulSoup(html, 'html.parser')
-    props = {}
-    for tag in soup.find_all(attrs={"itemprop": True}):
-        name = tag['itemprop']
-        props.setdefault(name, []).append(tag.get_text(strip=True) or tag.get('content'))
-    print("\n[itemprop values]")
-    for prop, values in props.items():
-        print(f" - {prop}: {values[:3]}{'…' if len(values)>3 else ''}")
-def debug_list_meta(html: str):
-    soup = BeautifulSoup(html, 'html.parser')
-    metas = {}
-    for tag in soup.find_all("meta"):
-        key = tag.get("property") or tag.get("name")
-        if key:
-            metas[key] = tag.get("content")
-    print("\n[meta tags]")
-    for k,v in metas.items():
-        print(f" - {k}: {v}")
