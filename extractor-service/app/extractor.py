@@ -69,7 +69,7 @@ def extract_structured(html: str):
             continue
         items = data.get('@graph') or (data if isinstance(data, list) else [data])
         for item in items:
-            if item.get('@type') == "Product":
+            if item.get('@type') == "Product" and item.get("name"):
                 offers = item.get('offers') or {}
                 if isinstance(offers, list):
                     offers = offers[0]
