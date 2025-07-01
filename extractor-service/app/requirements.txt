@@ -1,8 +1,6 @@
 fastapi==0.95.2
 uvicorn[standard]==0.22.0
 requests==2.31.0
-extruct==0.12.0
-w3lib==2.1.0
 trafilatura==2.0.0
 beautifulsoup4==4.12.2
-lxml==4.9.2
+jsonschema==4.18.4 

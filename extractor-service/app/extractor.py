@@ -1,21 +1,32 @@
+import json
 import requests
 from fastapi import HTTPException
-from extruct import extract
-from w3lib.html import get_base_url
 from bs4 import BeautifulSoup
 from trafilatura import fetch_url, extract as traf_extract
 
-def extract_structured(html: str, url: str):
-    data = extract(html, base_url=get_base_url(html, url))
-    for item in data.get("json-ld", []):
-        if item.get("@type") == "Product":
-            return {
-                "name": item.get("name"),
-                "description": item.get("description"),
-                "images": item.get("image") or [],
-                "price": float(item.get("offers", {}).get("price", 0)),
-                "availability": item.get("offers", {}).get("availability"),
-            }
+def extract_structured(html: str):
+    """
+    يبحث في <script type="application/ld+json"> ويُرجع أول كائن Product إن وجد.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(tag.string or "")
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if item.get("@type") == "Product":
+                    offers = item.get("offers", {})
+                    price = offers.get("price") or offers.get("priceSpecification", {}).get("price")
+                    availability = offers.get("availability")
+                    return {
+                        "name": item.get("name"),
+                        "description": item.get("description"),
+                        "images": item.get("image") if isinstance(item.get("image"), list) else [item.get("image")],
+                        "price": float(price) if price else None,
+                        "availability": availability,
+                    }
+        except json.JSONDecodeError:
+            continue
     return None
 
 def extract_meta(soup: BeautifulSoup):
@@ -27,13 +38,13 @@ def extract_meta(soup: BeautifulSoup):
     desc = meta_content("og:description") or meta_content("twitter:description")
     img  = meta_content("og:image") or meta_content("twitter:image")
     price_tag = soup.find("meta", {"property": "product:price:amount"})
-    price = float(price_tag["content"]) if price_tag and price_tag.get("content") else None
+    price = price_tag["content"] if price_tag and price_tag.get("content") else None
 
     return {
         "name": name,
         "description": desc,
         "images": [img] if img else [],
-        "price": price,
+        "price": float(price) if price else None,
         "availability": None,
     }
 
@@ -46,25 +57,21 @@ def full_extract(url: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Fetch error: {e}")
 
-    # 2. بيانات مهيكلة (JSON-LD, Microdata, RDFa)
-    structured = extract_structured(html, url)
+    # 2. JSON-LD
+    structured = extract_structured(html)
     if structured:
         return structured
 
-    # 3. meta-tags (OG, Twitter)
+    # 3. meta-tags
     soup = BeautifulSoup(html, "html.parser")
     meta = extract_meta(soup)
     if meta["name"] and meta["price"] is not None:
         return meta
 
-    # 4. trafilatura لاستخراج النص والصور
+    # 4. trafilatura لنص + استخراج images من DOM
     downloaded = fetch_url(url, timeout=30)
     text = traf_extract(downloaded, include_images=True) or ""
-    images = []
-    for img_tag in soup.select("img"):
-        src = img_tag.get("src")
-        if src and src.startswith("http"):
-            images.append(src)
+    images = [img.get("src") for img in soup.find_all("img") if img.get("src", "").startswith("http")]
 
     return {
         "name": soup.title.string if soup.title else None,
