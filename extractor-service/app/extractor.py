@@ -3,8 +3,6 @@ import requests
 from fastapi import HTTPException
 from bs4 import BeautifulSoup
 from trafilatura import fetch_url, extract as traf_extract
-
-# Playwright sync API
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 # نجسّد أنفسنا كمستعرض Chrome لمنع حظر بعض المواقع
@@ -116,14 +114,7 @@ def full_extract(url: str):
         return meta
 
     # 4. trafilatura لاستخراج النص + استخراج الصور يدوياً من DOM
-    try:
-        downloaded = fetch_url(
-            url,
-            timeout=30,
-            headers=DEFAULT_HEADERS  # يدعم في الإصدارات الأحدث
-        )
-    except TypeError:
-        downloaded = fetch_url(url, timeout=30)
+    downloaded = fetch_url(url)  # لا ندعم timeout أو headers هنا
     text = traf_extract(downloaded, include_images=True) or ""
 
     images = []
