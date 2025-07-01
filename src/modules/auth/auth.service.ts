@@ -163,16 +163,20 @@ export class AuthService {
 
     const isMatch = await bcrypt.compare(password, userDoc.password);
     if (!isMatch) throw new BadRequestException('Invalid credentials');
+    this.logger.debug(
+      'All merchants in DB:',
+      await this.merchantModel.find().lean(),
+    );
 
     // جلب التاجر المرتبط
     const merchant = await this.merchantModel.findOne({ userId: userDoc._id });
+    this.logger.debug('Found merchant for user:', merchant);
 
     const payload = {
       userId: userDoc._id,
       role: userDoc.role,
       merchantId: merchant?._id || null,
     };
-
     return {
       accessToken: this.jwtService.sign(payload),
       user: {
