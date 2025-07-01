@@ -4,6 +4,15 @@ from fastapi import HTTPException
 from bs4 import BeautifulSoup
 from trafilatura import fetch_url, extract as traf_extract
 
+# نجسّد أنفسنا كمستعرض Chrome لمنع حظر بعض المواقع
+DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/114.0.0.0 Safari/537.36"
+    )
+}
+
 def extract_structured(html: str):
     """
     يبحث في <script type="application/ld+json"> ويُرجع أول كائن Product إن وجد.
@@ -16,12 +25,16 @@ def extract_structured(html: str):
             for item in items:
                 if item.get("@type") == "Product":
                     offers = item.get("offers", {})
+                    # قد يأتي السعر في priceSpecification أيضاً
                     price = offers.get("price") or offers.get("priceSpecification", {}).get("price")
                     availability = offers.get("availability")
+                    images = item.get("image") or []
+                    if isinstance(images, str):
+                        images = [images]
                     return {
                         "name": item.get("name"),
                         "description": item.get("description"),
-                        "images": item.get("image") if isinstance(item.get("image"), list) else [item.get("image")],
+                        "images": images,
                         "price": float(price) if price else None,
                         "availability": availability,
                     }
@@ -30,6 +43,9 @@ def extract_structured(html: str):
     return None
 
 def extract_meta(soup: BeautifulSoup):
+    """
+    استخلاص البيانات من Meta Tags (OG & Twitter & product:price)
+    """
     def meta_content(prop):
         tag = soup.find("meta", {"property": prop})
         return tag.get("content") if tag else None
@@ -49,9 +65,15 @@ def extract_meta(soup: BeautifulSoup):
     }
 
 def full_extract(url: str):
+    """
+    تنفّذ الاستخراج الكامل:
+    1) محاولة JSON-LD
+    2) محاولة Meta Tags
+    3) trafilatura للنص + استخراج الصور من DOM
+    """
     # 1. جلب HTML
     try:
-        res = requests.get(url, timeout=30)
+        res = requests.get(url, timeout=30, headers=DEFAULT_HEADERS)
         res.raise_for_status()
         html = res.text
     except Exception as e:
@@ -62,16 +84,28 @@ def full_extract(url: str):
     if structured:
         return structured
 
-    # 3. meta-tags
+    # 3. Meta Tags
     soup = BeautifulSoup(html, "html.parser")
     meta = extract_meta(soup)
     if meta["name"] and meta["price"] is not None:
         return meta
 
-    # 4. trafilatura لنص + استخراج images من DOM
-    downloaded = fetch_url(url, timeout=30)
+    # 4. trafilatura لاستخراج النص + استخراج الصور يدوياً من DOM
+    try:
+        downloaded = fetch_url(
+            url,
+            timeout=30,
+            headers=DEFAULT_HEADERS  # يدعم هذا الوسيط في الإصدارات الأحدث
+        )
+    except TypeError:
+        downloaded = fetch_url(url, timeout=30)
     text = traf_extract(downloaded, include_images=True) or ""
-    images = [img.get("src") for img in soup.find_all("img") if img.get("src", "").startswith("http")]
+
+    images = []
+    for img_tag in soup.find_all("img"):
+        src = img_tag.get("src", "")
+        if src.startswith("http"):
+            images.append(src)
 
     return {
         "name": soup.title.string if soup.title else None,
