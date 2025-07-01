@@ -16,10 +16,11 @@ DEFAULT_HEADERS = {
 
 def fetch_html(url: str) -> str:
     """
-    يجرب أولاً requests، ثم يتراجع إلى Playwright عند 403 أو خطأ آخر.
+    يجرب أولاً requests (+ UTF-8)، ثم يتراجع إلى Playwright عند 403 أو خطأ آخر.
     """
     try:
         res = requests.get(url, timeout=30, headers=DEFAULT_HEADERS)
+        res.encoding = 'utf-8'  # التأكد من استخدام UTF-8 لترميز المحتوى
         if res.status_code == 403 or not res.text.strip():
             raise HTTPException(status_code=403, detail="Blocked or empty by requests")
         res.raise_for_status()
@@ -96,7 +97,7 @@ def full_extract(url: str):
     تنفّذ الاستخراج الكامل:
     1) جلب HTML (requests → Playwright)
     2) محاولة JSON-LD
-    3) محاولة Meta Tags
+    3) محاولة Meta Tags (نستخدم الاسم لو وجد)
     4) trafilatura للنص + استخراج الصور يدوياً
     """
     # 1. جلب HTML
@@ -107,14 +108,14 @@ def full_extract(url: str):
     if structured:
         return structured
 
-    # 3. Meta Tags
+    # 3. Meta Tags: نستخدم الاسم حتى لو السعر None
     soup = BeautifulSoup(html, "html.parser")
     meta = extract_meta(soup)
-    if meta["name"] and meta["price"] is not None:
+    if meta["name"]:
         return meta
 
     # 4. trafilatura لاستخراج النص + استخراج الصور يدوياً من DOM
-    downloaded = fetch_url(url)  # لا ندعم timeout أو headers هنا
+    downloaded = fetch_url(url)
     text = traf_extract(downloaded, include_images=True) or ""
 
     images = []
