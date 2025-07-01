@@ -3,5 +3,5 @@ uvicorn[standard]==0.22.0
 requests==2.31.0
 extruct==0.12.0
 w3lib==2.1.0
-trafilatura==1.6.6
+trafilatura==2.0.0
 beautifulsoup4==4.12.2
