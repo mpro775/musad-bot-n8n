@@ -41,9 +41,15 @@ def fetch_html(url: str) -> str:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch(headless=True)
                 page = browser.new_page(user_agent=DEFAULT_HEADERS["User-Agent"])
-                page.goto(url, wait_until="domcontentloaded", timeout=60000)
-                # انتظر العنصر الرئيسي للمنتج
-                page.wait_for_selector(".product-details, .price, h1", timeout=60000)
+                page.goto(url, wait_until="networkidle", timeout=60000)
+                # انتظر سكريبت JSON-LD أو سكريبت Shopify أو عناصر عامة
+                try:
+                    page.wait_for_selector(
+                        'script[type="application/ld+json"], script[id^="ProductJson-"]',
+                        timeout=60000
+                    )
+                except PlaywrightTimeoutError:
+                    page.wait_for_selector(".product-details, .price, h1", timeout=60000)
                 html = page.content()
                 browser.close()
                 return html
@@ -55,7 +61,8 @@ def fetch_html(url: str) -> str:
 
 def extract_structured(html: str):
     soup = BeautifulSoup(html, "html.parser")
-    # JSON-LD
+
+    # 1) JSON-LD
     for tag in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(tag.string or "")
@@ -79,20 +86,38 @@ def extract_structured(html: str):
                     "price": float(price) if price else None,
                     "availability": availability.split('/')[-1] if availability else None,
                 }
-    # Microdata / itemprop
-    name = soup.find(itemprop="name")
-    if name:
-        price = soup.find(itemprop="price")
-        avail = soup.find(itemprop="availability")
-        img   = soup.find(itemprop="image")
-        desc  = soup.find(itemprop="description")
+
+    # 2) Shopify JSON fallback
+    shopify_tag = soup.find("script", id=re.compile(r"ProductJson-"))
+    if shopify_tag and shopify_tag.string:
+        try:
+            prod_json = json.loads(shopify_tag.string)
+            variant0 = prod_json.get("variants", [{}])[0]
+            return {
+                "name": prod_json.get("title"),
+                "description": prod_json.get("body_html"),
+                "images": prod_json.get("images", []),
+                "price": float(variant0.get("price", 0)),
+                "availability": "in stock" if variant0.get("available") else "out of stock",
+            }
+        except json.JSONDecodeError:
+            pass
+
+    # 3) Microdata / itemprop
+    name_tag = soup.find(itemprop="name")
+    if name_tag:
+        price_tag = soup.find(itemprop="price")
+        avail_tag = soup.find(itemprop="availability")
+        img_tag   = soup.find(itemprop="image")
+        desc_tag  = soup.find(itemprop="description")
         return {
-            "name": name.get_text(strip=True),
-            "description": desc.get_text(strip=True) if desc else None,
-            "images": [img["src"]] if img and img.get("src") else [],
-            "price": float(price.get("content") or price.get_text(strip=True)) if price else None,
-            "availability": avail.get("content").split('/')[-1] if avail and avail.get("content") else None,
+            "name": name_tag.get_text(strip=True),
+            "description": desc_tag.get_text(strip=True) if desc_tag else None,
+            "images": [img_tag["src"]] if img_tag and img_tag.get("src") else [],
+            "price": float(price_tag.get("content") or price_tag.get_text(strip=True)) if price_tag else None,
+            "availability": avail_tag.get("content").split('/')[-1] if avail_tag and avail_tag.get("content") else None,
         }
+
     return None
 
 
@@ -111,7 +136,6 @@ def extract_meta(soup: BeautifulSoup):
         "price": float(meta(["product:price:amount","og:price:amount"]) or 0) or None,
         "availability": (meta(["product:availability","og:availability"]) or "").split("/")[-1] or None,
     }
-
 
 def regex_extract_price(text: str):
     m = re.search(r'([\d,]+(?:\.\d+)?)\s*(?:ريال|ر\.س|SAR|\$)', text)
@@ -210,5 +234,5 @@ def full_extract(url: str):
     # 5) Fallback كامل
     downloaded = fetch_url(url)
     desc = traf_extract(downloaded, include_images=True) or ""
-    imgs = [i["src"] for i in soup.find_all("img") if i.get("src","").startswith("http")]
+    imgs = [i["src"] for i in soup.find_all("img") if i.get("src","" ).startswith("http")]
     return {"name": meta["name"] or soup.title.string, "description": desc, "images": imgs, "price": None, "availability": None}
