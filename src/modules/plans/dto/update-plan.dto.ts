@@ -17,4 +17,12 @@ export class UpdatePlanDto {
   @IsOptional()
   @IsNumber()
   duration?: number;
+
+  @ApiPropertyOptional({
+    description: 'الحد الأقصى الجديد لعدد العروض',
+    example: 50,
+  })
+  @IsOptional()
+  @IsNumber()
+  offerLimit?: number;
 }
