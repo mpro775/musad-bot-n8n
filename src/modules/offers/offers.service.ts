@@ -5,6 +5,8 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -21,6 +23,7 @@ export class OffersService {
     private readonly offerModel: Model<OfferDocument>,
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
+    @Inject(forwardRef(() => VectorService)) // ← أضف هذا السطر
     private readonly vectorService: VectorService,
   ) {}
 

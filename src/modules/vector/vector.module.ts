@@ -1,16 +1,20 @@
-import { Module } from '@nestjs/common';
+// src/modules/vector/vector.module.ts
+import { Module, forwardRef } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
+
 import { VectorService } from './vector.service';
 import { VectorController } from './vector.controller';
-import { HttpModule } from '@nestjs/axios';
-import { ProductsService } from '../products/products.service';
-import { OffersService } from '../offers/offers.service';
+
+import { ProductsModule } from '../products/products.module';
+import { OffersModule } from '../offers/offers.module';
 
 @Module({
   imports: [
-    HttpModule, // ← أضف هذا
-    // … بقية الوحدات
+    HttpModule,
+    forwardRef(() => ProductsModule),
+    forwardRef(() => OffersModule),
   ],
-  providers: [VectorService, ProductsService, OffersService],
+  providers: [VectorService],
   controllers: [VectorController],
   exports: [VectorService],
 })

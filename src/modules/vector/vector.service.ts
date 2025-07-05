@@ -1,5 +1,5 @@
 // src/vector/vector.service.ts
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { QdrantClient } from '@qdrant/js-client-rest';
 import { EmbeddableOffer, EmbeddableProduct } from './types';
 import { firstValueFrom } from 'rxjs';
@@ -18,7 +18,10 @@ export class VectorService implements OnModuleInit {
 
   constructor(
     private readonly http: HttpService,
-    private readonly productsService: ProductsService, // 👈 أضف هذا
+    @Inject(forwardRef(() => ProductsService)) // ← أضف هذه السطر
+    private readonly productsService: ProductsService,
+    @Inject(forwardRef(() => OffersService)) // ← وأيضًا هذه
+    private readonly OffersService: OffersService,
     private readonly offersService: OffersService, // 👈 وأيضًا هذا لو استخدمته
   ) {}
   public async onModuleInit(): Promise<void> {
