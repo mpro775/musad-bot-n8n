@@ -165,16 +165,17 @@ services:
       retries: 3
     restart: unless-stopped
 
-  evolution:
-    image: atendai/evolution-api:v1.3.5
+  evolution-api:
     container_name: evolution_api
+    image: atendai/evolution-api
     restart: always
     ports:
-      - '8080:8080'
-    environment:
-      AUTHENTICATION_API_KEY: any-secret-key
-    networks:
-      - backnet
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - evolution_store:/evolution/store
+      - evolution_instances:/evolution/instances
   n8n:
     build:
       context: .
@@ -210,7 +211,8 @@ volumes:
   n8n_data:
   minio_data:
   qdrant_data:
-
+  evolution_store:
+  evolution_instances:
 networks:
   backnet:
     driver: bridge
