@@ -165,41 +165,6 @@ services:
       retries: 3
     restart: unless-stopped
 
-  evolution-db:
-    image: postgres:14-alpine
-    container_name: musaidbot-evo-postgres
-    environment:
-      POSTGRES_USER: evo
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: evo_db
-    volumes:
-      - evo_postgres_data:/var/lib/postgresql/data
-    networks:
-      backnet:
-        aliases:
-          - postgres # ← هنا
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U evo']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  evolution-api:
-    image: atendai/evolution-api:latest
-    container_name: evolution_api
-    restart: always
-    ports:
-      - '8088:8080'
-    env_file:
-      - .env # يحتوي على DATABASE_URL=postgresql://evo:secret@postgres:5432/evo_db
-    depends_on:
-      evolution-db:
-        condition: service_healthy
-    volumes:
-      - evolution_store:/evolution/store
-      - evolution_instances:/evolution/instances
-    networks:
-      - backnet
   n8n:
     build:
       context: .
@@ -235,9 +200,6 @@ volumes:
   n8n_data:
   minio_data:
   qdrant_data:
-  evolution_store:
-  evolution_instances:
-  evo_postgres_data:
 
 networks:
   backnet:
