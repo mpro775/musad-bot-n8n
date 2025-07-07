@@ -164,14 +164,33 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
-  evolution-api:
-    image: atendai/evolution-api:latest
-    container_name: evolution_api
-    restart: always
+  postgres:
+    image: postgres:14-alpine
+    container_name: evo-postgres
+    environment:
+      POSTGRES_USER: evo
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: evo_db
+    volumes:
+      - evo_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U evo']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - backnet
+
+  evolution:
+    image: atendai/evolution-api:v2.2.3
+    container_name: evo-api
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - '8088:8080'
     env_file:
-      - .env.evolution
+      - .env.evo
     networks:
       - backnet
   n8n:
@@ -209,6 +228,7 @@ volumes:
   n8n_data:
   minio_data:
   qdrant_data:
+  evo_pg_data:
 
 networks:
   backnet:
