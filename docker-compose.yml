@@ -166,11 +166,11 @@ services:
     restart: unless-stopped
 
   evolution:
-    image: atendai/evolution-api:latest
+    image: atendai/evolution-api:1
     container_name: evolution_api
     restart: always
     ports:
-      - '8080:8080'
+      - "8080:8080"
     environment:
       AUTHENTICATION_API_KEY: any-secret-key
   n8n:
