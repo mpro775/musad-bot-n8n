@@ -185,6 +185,8 @@ services:
     image: atendai/evolution-api:v2.2.3
     container_name: evo-api
     depends_on:
+      redis:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     ports:
