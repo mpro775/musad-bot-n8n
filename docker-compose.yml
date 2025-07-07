@@ -158,9 +158,13 @@ services:
       - '8088:8080'
     env_file:
       - .env.evolution
-    depends_on:
-      mongo:
-        condition: service_healthy
+    environment:
+      # استخدم SQLite بدل Postgres
+      TYPEORM_CONNECTION: sqlite
+      TYPEORM_DATABASE: /data/evolution.sqlite
+      TYPEORM_SYNCHRONIZE: 'true'      # للمزامنة التلقائية إذا رغبت
+    volumes:
+      - evolution_sqlite:/data
     networks:
       - backnet
 
@@ -199,6 +203,7 @@ volumes:
   n8n_data:
   minio_data:
   qdrant_data:
+  evolution_sqlite:
 
 networks:
   backnet:
