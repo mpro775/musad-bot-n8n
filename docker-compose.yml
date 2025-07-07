@@ -152,21 +152,18 @@ services:
     restart: unless-stopped
  
   evolution-api:
-    image: atendai/evolution-api
-    container_name: musaidbot-evolution-api
-    ports:
-      - '8088:8080'
-    env_file:
-      - .env.evolution
-    environment:
-      # استخدم SQLite بدل Postgres
-      TYPEORM_CONNECTION: sqlite
-      TYPEORM_DATABASE: /data/evolution.sqlite
-      TYPEORM_SYNCHRONIZE: 'true'      # للمزامنة التلقائية إذا رغبت
-    volumes:
-      - evolution_sqlite:/data
-    networks:
-      - backnet
+      container_name: evolution_api
+      image: atendai/evolution-api:latest
+      restart: always
+      ports:
+        - "8088:8080"   # هنا نفتح المنفذ 8088 خارجيًّا ليوجّه إلى 8080 داخل الحاوية
+      env_file:
+        - .env.evolution
+      volumes:
+        - evolution_store:/evolution/store
+        - evolution_instances:/evolution/instances
+      networks:
+        - backnet
 
   n8n:
     build:
@@ -203,7 +200,8 @@ volumes:
   n8n_data:
   minio_data:
   qdrant_data:
-  evolution_sqlite:
+  evolution_store:
+  evolution_instances:
 
 networks:
   backnet:
