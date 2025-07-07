@@ -170,11 +170,10 @@ services:
     container_name: evolution_api
     restart: always
     ports:
-      - "8080:8080"
+      - '8080:8080'
     environment:
       AUTHENTICATION_API_KEY: any-secret-key
-    networks:
-       - evolution-net      
+
   n8n:
     build:
       context: .
