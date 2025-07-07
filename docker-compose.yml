@@ -191,6 +191,7 @@ services:
       env_file:
         - .env.evolution
       environment:
+        # هذا سيُطبَّق حتى لو بقيت في .env.evolution قيمة خاطئة
         DATABASE_PROVIDER: postgresql
         DATABASE_URL: postgresql://evo:secret@evolution-db:5432/evo_db
       depends_on:
