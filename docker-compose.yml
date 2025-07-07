@@ -175,7 +175,9 @@ services:
     volumes:
       - evo_postgres_data:/var/lib/postgresql/data
     networks:
-      - backnet
+      backnet:
+        aliases:
+          - postgres # ← هنا
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U evo']
       interval: 10s
@@ -189,11 +191,7 @@ services:
     ports:
       - '8088:8080'
     env_file:
-      - .env
-    environment:
-      # هذا سيُطبَّق حتى لو بقيت في .env.evolution قيمة خاطئة
-      DATABASE_PROVIDER: postgresql
-      DATABASE_URL: postgresql://evo:secret@evolution-db:5432/evo_db
+      - .env # يحتوي على DATABASE_URL=postgresql://evo:secret@postgres:5432/evo_db
     depends_on:
       evolution-db:
         condition: service_healthy
