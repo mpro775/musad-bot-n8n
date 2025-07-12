@@ -1,10 +1,17 @@
 // src/modules/webhooks/webhooks.service.ts
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  Post,
+  Param,
+  Body,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Webhook, WebhookDocument } from './schemas/webhook.schema';
 import { MessageService } from '../messaging/message.service';
 import { BotReplyDto } from './dto/bot-reply.dto';
+import { ConversationDto } from './dto/conversation.dto';
 
 @Injectable()
 export class WebhooksService {
@@ -14,6 +21,35 @@ export class WebhooksService {
     private readonly webhookModel: Model<WebhookDocument>,
   ) {}
 
+  // في نهاية Workflow: أرسل كل الرسائل دفعة واحدة
+  @Post('conversation/:merchantId')
+  async handleConversation(
+    @Param('merchantId') merchantId: string,
+    @Body() dto: ConversationDto,
+  ) {
+    const { sessionId, channel, messages } = dto;
+    if (!merchantId || !sessionId || !channel || !messages?.length) {
+      throw new BadRequestException('Missing conversation fields');
+    }
+
+    // حضّر المُدخلات مع timestamp افتراضي
+    const timestamped = messages.map((m) => ({
+      role: m.role,
+      text: m.text,
+      metadata: m.metadata || {},
+      timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+    }));
+
+    // استدعي الخدمة لتخزين الجلسة كاملة (إنشاؤها أو الإلحاق)
+    const session = await this.messageService.createOrAppend({
+      merchantId,
+      sessionId,
+      channel,
+      messages: timestamped,
+    });
+
+    return { sessionId: session.sessionId, storedMessages: timestamped.length };
+  }
   async handleEvent(eventType: string, payload: any) {
     const { merchantId, from, messageText, metadata } = payload;
 

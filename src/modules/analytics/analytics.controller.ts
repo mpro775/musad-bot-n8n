@@ -1,108 +1,75 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { AnalyticsService } from './analytics.service';
-import { StatsService } from './stats.service';
+// src/analytics/analytics.controller.ts
 
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  AnalyticsService,
+  Overview,
+  KeywordCount,
+  TopProduct,
+} from './analytics.service';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+
+import { Request } from 'express';
+
+@UseGuards(JwtAuthGuard)
 @Controller('analytics')
 export class AnalyticsController {
-  constructor(
-    private readonly analyticsService: AnalyticsService,
-    private readonly statsService: StatsService,
-  ) {}
+  constructor(private readonly analytics: AnalyticsService) {}
 
-  @Get('session-count')
-  async getSessionCount(
-    @Query('merchantId') merchantId: string,
-    @Query('from') from: string,
-    @Query('to') to: string,
-  ) {
-    const fromDate = new Date(from);
-    const toDate = new Date(to);
+  /**
+   * GET /api/analytics/overview?period=week|month|quarter
+   * Returns:
+   *   {
+   *     sessions: { count, changePercent },
+   *     messages: totalMessages,
+   *     topKeywords: KeywordCount[],
+   *     topProducts: TopProduct[],
+   *     channels: { total, breakdown }
+   *   }
+   */
+  @Get('overview')
+  async overview(
+    @Req() req: Request & { user: { merchantId: string } },
+    @Query('period') period: 'week' | 'month' | 'quarter' = 'week',
+  ): Promise<Overview> {
+    console.log('USER:', req.user); // <--- أضف هذا السطر
 
-    const count = await this.analyticsService.countSessions(
-      merchantId,
-      fromDate,
-      toDate,
-    );
-
-    return { merchantId, count, from: fromDate, to: toDate };
-  }
-  @Get('message-role-stats')
-  async getMessageRoleStats(@Query('merchantId') merchantId: string) {
-    const stats = await this.analyticsService.countMessagesByRole(merchantId);
-    return stats;
-  }
-  @Get('top-questions')
-  async getTopQuestions(
-    @Query('merchantId') merchantId: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.analyticsService.topCustomerMessages(
-      merchantId,
-      Number(limit) || 10,
-    );
-  }
-  @Get('daily-sessions')
-  async getDailySessions(
-    @Query('merchantId') merchantId: string,
-    @Query('from') from: string,
-    @Query('to') to: string,
-  ) {
-    return this.analyticsService.sessionsPerDay(
-      merchantId,
-      new Date(from),
-      new Date(to),
-    );
-  }
-  @Get('channel-usage')
-  async getChannelUsage(@Query('merchantId') merchantId: string) {
-    return this.analyticsService.channelDistribution(merchantId);
-  }
-  @Get('top-products-requested')
-  async getTopRequestedProducts(
-    @Query('merchantId') merchantId: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.analyticsService.topRequestedProducts(
-      merchantId,
-      Number(limit) || 10,
-    );
-  }
-  @Get('merchants/:id/stats')
-  async getStats(
-    @Param('id') merchantId: string,
-    @Query('period') period: 'daily' | 'weekly' | 'monthly',
-    @Query('date') dateStr?: string,
-  ) {
-    // 1) حوّل السلسلة إلى Date إذا وُجِدت
-    const date = dateStr ? new Date(dateStr) : new Date();
-
-    // 2) استدعِ الخدمة مع كائن Date
-    return this.statsService.findStats(merchantId, period, date);
-  }
-  @Post('events')
-  createEvent(
-    @Body()
-    dto: {
-      merchantId: string;
-      type: string;
-      channel: string;
-      payload: any;
-    },
-  ) {
-    return this.analyticsService.logEvent(dto.merchantId, dto.type, {
-      channel: dto.channel,
-      ...dto.payload,
-    });
+    const merchantId = req.user.merchantId;
+    const result = await this.analytics.getOverview(merchantId, period);
+    return result;
   }
 
+  /**
+   * GET /api/analytics/top-keywords?period=...&limit=...
+   * Returns KeywordCount[]
+   */
   @Get('top-keywords')
-  async getTopKeywords(
-    @Query('merchantId') merchantId: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.analyticsService.topCustomerKeywords(
+  async topKeywords(
+    @Req() req: Request & { user: { merchantId: string } },
+    @Query('period') period: 'week' | 'month' | 'quarter' = 'week',
+    @Query('limit') limit = '10',
+  ): Promise<KeywordCount[]> {
+    const merchantId = req.user.merchantId;
+    const kws = await this.analytics.getTopKeywords(merchantId, period, +limit);
+    return kws;
+  }
+
+  /**
+   * GET /api/analytics/top-products?period=...&limit=...
+   * Returns TopProduct[]
+   */
+  @Get('top-products')
+  async topProducts(
+    @Req() req: Request & { user: { merchantId: string } },
+    @Query('period') period: 'week' | 'month' | 'quarter' = 'week',
+    @Query('limit') limit = '5',
+  ): Promise<TopProduct[]> {
+    const merchantId = req.user.merchantId;
+    const prods = await this.analytics.getTopProducts(
       merchantId,
-      Number(limit) || 20,
+      period,
+      +limit,
     );
+    return prods;
   }
 }

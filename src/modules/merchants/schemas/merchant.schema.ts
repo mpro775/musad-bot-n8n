@@ -28,6 +28,9 @@ export class Merchant {
   @Prop({ required: false })
   storefrontUrl?: string;
 
+  @Prop({ type: [String], default: [] })
+  skippedChecklistItems: string[];
+
   @Prop({ required: false })
   logoUrl?: string;
 
@@ -39,6 +42,9 @@ export class Merchant {
 
   @Prop({ type: [String], default: [] })
   categories: string[];
+
+  @Prop({ required: false })
+  customCategory?: string; // ← الفئة التي يضيفها التاجر بنفسه عند اختيار "أخرى"
 
   @Prop({ required: false, unique: true, sparse: true })
   domain?: string;

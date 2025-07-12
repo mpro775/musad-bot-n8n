@@ -42,7 +42,7 @@ import { OnboardingDto } from './dto/onboarding.dto';
 import { MerchantStatusResponse } from './dto/merchant-status.response';
 import { ChatSettingsDto } from './dto/chat-settings.dto';
 import {
-  ChecklistItem,
+  ChecklistGroup,
   MerchantChecklistService,
 } from './merchant-checklist.service';
 
@@ -101,7 +101,7 @@ export class MerchantsController {
   @Get(':id/checklist')
   async getChecklist(
     @Param('id') merchantId: string,
-  ): Promise<ChecklistItem[]> {
+  ): Promise<ChecklistGroup[]> {
     return this.checklist.getChecklist(merchantId);
   }
   @Public()
@@ -230,5 +230,30 @@ export class MerchantsController {
       message: 'تم تسجيل الويبهوك بنجاح',
       ...result,
     }));
+  }
+  @Post(':id/checklist/:itemKey/skip')
+  async skipChecklistItem(
+    @Param('id') merchantId: string,
+    @Param('itemKey') itemKey: string,
+    @Req() req: RequestWithUser,
+  ) {
+    // تحقق أن المستخدم مالك المتجر
+    if (req.user.role !== 'ADMIN' && req.user.merchantId !== merchantId) {
+      throw new HttpException('ممنوع', HttpStatus.FORBIDDEN);
+    }
+
+    // أضف الـ key إلى skippedChecklistItems إن لم يكن موجودًا
+    const merchant = await this.svc.findOne(merchantId);
+    if (!merchant) throw new NotFoundException('التاجر غير موجود');
+
+    if (!merchant.skippedChecklistItems.includes(itemKey)) {
+      merchant.skippedChecklistItems.push(itemKey);
+      await merchant.save();
+    }
+
+    return {
+      message: 'تم التخطي',
+      skippedChecklistItems: merchant.skippedChecklistItems,
+    };
   }
 }

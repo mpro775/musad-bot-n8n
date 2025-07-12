@@ -1,7 +1,14 @@
 // src/merchants/dto/onboarding.dto.ts
 
 import { Type } from 'class-transformer';
-import { IsString, IsOptional, IsUrl, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUrl,
+  ValidateNested,
+  IsArray,
+  ArrayNotEmpty,
+} from 'class-validator';
 import { AddressDto } from './address.dto';
 import { SubscriptionPlanDto } from './subscription-plan.dto';
 import { ChannelsDto } from './channel.dto';
@@ -16,6 +23,16 @@ export class OnboardingDto {
   @IsOptional()
   @IsUrl()
   storeUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  customCategory?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  categories?: string[];
 
   /** رابط شعار المتجر (اختياري) */
   @IsOptional()

@@ -11,7 +11,6 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 
 import { AppModule } from './app.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
-import { AnalyticsInterceptor } from './modules/analytics/interceptors/analytics.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -25,7 +24,6 @@ async function bootstrap() {
     (globalThis as any).crypto = { randomUUID };
   }
   app.useWebSocketAdapter(new IoAdapter(app));
-  app.useGlobalInterceptors(app.get(AnalyticsInterceptor));
 
   app.use(helmet());
   app.enableCors({

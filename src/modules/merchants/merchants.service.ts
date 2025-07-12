@@ -64,6 +64,8 @@ export class MerchantsService {
 
       subscription,
       categories: createDto.categories ?? [],
+      customCategory: createDto.customCategory ?? undefined,
+
       domain: createDto.domain,
       businessType: createDto.businessType,
       businessDescription: createDto.businessDescription,
@@ -429,6 +431,8 @@ export class MerchantsService {
     if (dto.phone !== undefined) {
       merchant.phone = dto.phone;
     }
+    if (dto.customCategory) merchant.customCategory = dto.customCategory;
+
     await merchant.save();
 
     let webhookInfo;

@@ -6,14 +6,9 @@ import { VectorService } from './vector.service';
 import { VectorController } from './vector.controller';
 
 import { ProductsModule } from '../products/products.module';
-import { OffersModule } from '../offers/offers.module';
 
 @Module({
-  imports: [
-    HttpModule,
-    forwardRef(() => ProductsModule),
-    forwardRef(() => OffersModule),
-  ],
+  imports: [HttpModule, forwardRef(() => ProductsModule)],
   providers: [VectorService],
   controllers: [VectorController],
   exports: [VectorService],

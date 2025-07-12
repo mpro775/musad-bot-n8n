@@ -1,18 +1,21 @@
+// ---------------------------
+// File: src/modules/messaging/schemas/message.schema.ts
+// ---------------------------
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 
-export type MessageSessionDocument = MessageSession & Document;
+export type MessageSessionDocument = HydratedDocument<MessageSession>;
 
 @Schema({ timestamps: true })
 export class MessageSession {
-  @Prop({ required: true })
-  merchantId: string;
+  @Prop({ type: Types.ObjectId, ref: 'Merchant', required: true })
+  merchantId: Types.ObjectId;
 
   @Prop({ required: true })
-  sessionId: string; // مثلاً رقم الهاتف أو session hash
+  sessionId: string;
 
-  @Prop({ required: true })
-  channel: string; // 'whatsapp' | 'telegram' | 'webchat'
+  @Prop({ required: true, enum: ['whatsapp', 'telegram', 'webchat'] })
+  channel: string;
 
   @Prop({
     type: [
@@ -25,12 +28,12 @@ export class MessageSession {
     ],
     default: [],
   })
-  messages: {
+  messages: Array<{
     role: 'customer' | 'bot';
     text: string;
     timestamp: Date;
     metadata?: Record<string, any>;
-  }[];
+  }>;
 }
 
 export const MessageSessionSchema =

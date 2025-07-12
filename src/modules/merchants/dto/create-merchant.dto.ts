@@ -49,6 +49,10 @@ export class CreateMerchantDto {
 
   @IsOptional()
   @IsString()
+  customCategory?: string;
+
+  @IsOptional()
+  @IsString()
   domain?: string;
 
   @IsOptional()

@@ -28,11 +28,9 @@ import { ScraperModule } from './modules/scraper/scraper.module';
 import { RolesGuard } from './common/guards/roles.guard';
 import { HttpMetricsInterceptor } from './common/interceptors/http-metrics.interceptor';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
-import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { MessagingModule } from './modules/messaging/message.module';
 import { RedisConfig } from './config/redis.config';
 import { RedisModule } from './config/redis.module';
-import { OffersModule } from './modules/offers/offers.module';
 import { N8nWorkflowModule } from './modules/n8n-workflow/n8n-workflow.module';
 import { WorkflowHistoryModule } from './modules/workflow-history/workflow-history.module';
 import { PassportModule } from '@nestjs/passport';
@@ -45,6 +43,7 @@ import { ChatModule } from './modules/chat/chat.module';
 import { LeadsModule } from './modules/leads/leads.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -110,13 +109,14 @@ import { DocumentsModule } from './modules/documents/documents.module';
     DatabaseConfigModule,
 
     // Feature modules
+    AnalyticsModule,
+
     AuthModule,
     UsersModule,
     ProductsModule,
     MessagingModule,
     MerchantsModule,
     PlansModule,
-    OffersModule,
     VectorModule,
     ChatModule,
     DocumentsModule,
@@ -126,7 +126,6 @@ import { DocumentsModule } from './modules/documents/documents.module';
     LeadsModule,
     IntegrationsModule,
     ScraperModule,
-    AnalyticsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

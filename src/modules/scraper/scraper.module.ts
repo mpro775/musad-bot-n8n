@@ -6,9 +6,7 @@ import { HttpModule } from '@nestjs/axios'; // ← استيراد هذا
 import { ScraperService } from './scraper.service';
 import { ScraperController } from './scraper.controller';
 
-// إذا هناك استيراد لموديولات أخرى (ProductsModule, VectorModule, OffersModule...)
 import { ProductsModule } from '../products/products.module';
-import { OffersModule } from '../offers/offers.module';
 import { VectorModule } from '../vector/vector.module';
 
 @Module({
@@ -16,7 +14,6 @@ import { VectorModule } from '../vector/vector.module';
     HttpModule, // ← أضف هنا
     BullModule.registerQueue({ name: 'scrape' }),
     forwardRef(() => ProductsModule),
-    forwardRef(() => OffersModule),
     forwardRef(() => VectorModule),
   ],
   providers: [ScraperService],

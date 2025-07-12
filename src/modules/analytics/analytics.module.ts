@@ -1,33 +1,25 @@
+// src/analytics/analytics.module.ts
 import { forwardRef, Module } from '@nestjs/common';
-import { AnalyticsService } from './analytics.service';
-import { AnalyticsController } from './analytics.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 import {
   MessageSession,
   MessageSessionSchema,
 } from '../messaging/schemas/message.schema';
-import {
-  AnalyticsEvent,
-  AnalyticsEventSchema,
-} from './schemas/analytics-event.schema';
-import { Stats, StatsSchema } from './schemas/stats.schema';
-import { ScheduleModule } from '@nestjs/schedule';
-import { StatsService } from './stats.service';
-import { AnalyticsInterceptor } from './interceptors/analytics.interceptor';
+import { AnalyticsService } from './analytics.service';
+import { AnalyticsController } from './analytics.controller';
 import { ProductsModule } from '../products/products.module';
+import { Merchant, MerchantSchema } from '../merchants/schemas/merchant.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: MessageSession.name, schema: MessageSessionSchema },
-      { name: AnalyticsEvent.name, schema: AnalyticsEventSchema },
-      { name: Stats.name, schema: StatsSchema },
+      { name: Merchant.name, schema: MerchantSchema }, // أضف هذا السطر
     ]),
-    forwardRef(() => ProductsModule), // ← هنا استخدم forwardRef
-    ScheduleModule.forRoot(), // لجدولة الـ Cron jobs
+    forwardRef(() => ProductsModule),
   ],
-  providers: [AnalyticsService, StatsService, AnalyticsInterceptor],
+  providers: [AnalyticsService],
   controllers: [AnalyticsController],
-  exports: [AnalyticsService], // نصدر خدمة التحليلات لكي يستخدمها ProductsService
+  exports: [AnalyticsService], // ← هذا السطر مفقود عندك
 })
 export class AnalyticsModule {}

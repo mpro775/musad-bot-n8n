@@ -32,16 +32,4 @@ export class VectorController {
     );
     return { recommendations: recs };
   }
-
-  // GET endpoint for semantic search on offers
-  @Get('offers')
-  async semanticSearchOffers(
-    @Query('text') text: string,
-    @Query('merchantId') merchantId: string,
-    @Query('topK') topK = '5',
-  ) {
-    const count = parseInt(topK, 10);
-    const recs = await this.vector.querySimilarOffers(text, merchantId, count);
-    return { recommendations: recs };
-  }
 }

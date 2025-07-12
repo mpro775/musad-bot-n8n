@@ -35,19 +35,31 @@ export class AuthService {
     private readonly mailService: MailService,
   ) {}
   async register(registerDto: RegisterDto) {
-    const { email, password, name } = registerDto;
+    // فكّ فقط الحقلين اللذين نريد أن نستخدمهما هنا
+    const { password, confirmPassword } = registerDto;
 
-    // 1) تأكدّ من عدم وجود يوزر بنفس الإيميل
+    // استخدم الحقلين للتحقق من تطابق كلمة المرور
+    if (password !== confirmPassword) {
+      throw new BadRequestException('كلمتا المرور غير متطابقتين');
+    }
+
+    // بقية الحقول نأخذها مباشرة من registerDto حين الحاجة
+    const email = registerDto.email;
+    const username = registerDto.username; // سمّيتها username لتجنّب الاصطدام
+
+    // 1) تأكد من عدم وجود مستخدم بالإيميل نفسه
     if (await this.userModel.exists({ email })) {
       throw new ConflictException('Email already in use');
     }
 
-    // 2) إنشاء المستخدم أولاً
+    // 2) هشّ لكلمة المرور
+    const hashed = await bcrypt.hash(password, 10);
+
+    // 3) أنشئ المستخدم باستخدام الحقول الواضحة
     let userDoc: UserDocument;
     try {
-      const hashed = await bcrypt.hash(password, 10);
       userDoc = await this.userModel.create({
-        name,
+        name: username,
         email,
         password: hashed,
         role: 'MERCHANT',
@@ -60,7 +72,6 @@ export class AuthService {
       }
       throw new InternalServerErrorException('Failed to create user');
     }
-
     // 3) ارسال كود التفعيل
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     userDoc.emailVerificationCode = code;
@@ -77,7 +88,7 @@ export class AuthService {
     try {
       merchant = await this.merchantModel.create({
         userId: userDoc._id,
-        name: `متجر ${name}`,
+        name: `متجر ${username}`,
         storefrontUrl: '',
         logoUrl: '',
         address: {},

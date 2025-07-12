@@ -1,68 +1,47 @@
-import { ApiProperty } from '@nestjs/swagger';
+// src/modules/messaging/dto/create-message.dto.ts
+
 import {
-  IsArray,
-  IsEnum,
-  IsObject,
-  IsOptional,
   IsString,
+  IsNotEmpty,
+  IsArray,
   ValidateNested,
-  ArrayMinSize,
+  IsOptional,
+  IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-class MessageContentDto {
-  @ApiProperty({
-    description: 'دور المرسل',
-    enum: ['customer', 'bot'],
-    example: 'customer',
-  })
-  @IsEnum(['customer', 'bot'])
+class MessageItemDto {
+  @IsString()
+  @IsNotEmpty()
   role: 'customer' | 'bot';
 
-  @ApiProperty({
-    description: 'نص الرسالة',
-    example: 'مرحبًا! أبغى شاحن سامسونج.',
-  })
   @IsString()
+  @IsNotEmpty()
   text: string;
 
-  @ApiProperty({
-    description: 'بيانات إضافية للرسالة (اختياري)',
-    type: Object,
-    required: false,
-  })
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
+
+  @IsOptional()
+  timestamp?: Date; // سيُملأ تلقائياً إذا لم يُرسل
 }
 
 export class CreateMessageDto {
-  @ApiProperty({ description: 'معرّف التاجر', example: '6631ee7f...' })
   @IsString()
+  @IsNotEmpty()
   merchantId: string;
 
-  @ApiProperty({
-    description: 'معرف الجلسة (رقم جوال أو sessionId موحد)',
-    example: '966501234567',
-  })
   @IsString()
+  @IsNotEmpty()
   sessionId: string;
 
-  @ApiProperty({
-    description: 'القناة المستخدمة',
-    enum: ['whatsapp', 'telegram', 'webchat'],
-    example: 'whatsapp',
-  })
-  @IsEnum(['whatsapp', 'telegram', 'webchat'])
+  @IsString()
+  @IsNotEmpty()
   channel: string;
 
-  @ApiProperty({
-    description: 'مصفوفة الرسائل المُراد إضافتها إلى الجلسة',
-    type: [MessageContentDto],
-  })
   @IsArray()
-  @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => MessageContentDto)
-  messages: MessageContentDto[];
+  @Type(() => MessageItemDto)
+  messages: MessageItemDto[];
 }

@@ -1,14 +1,12 @@
 // src/vector/vector.service.ts
 import { forwardRef, Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { QdrantClient } from '@qdrant/js-client-rest';
-import { EmbeddableOffer, EmbeddableProduct } from './types';
+import { EmbeddableProduct } from './types';
 import { firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { v5 as uuidv5 } from 'uuid';
 import { ProductsService } from '../products/products.service';
-import { OffersService } from '../offers/offers.service';
 const PRODUCT_NAMESPACE = 'd94a5f5a-2bfc-4c2d-9f10-1234567890ab';
-const OFFER_NAMESPACE = 'a5c1321e-bd1f-4ee0-9cd5-abcdef123456';
 
 @Injectable()
 export class VectorService implements OnModuleInit {
@@ -20,9 +18,7 @@ export class VectorService implements OnModuleInit {
     private readonly http: HttpService,
     @Inject(forwardRef(() => ProductsService)) // ← أضف هذه السطر
     private readonly productsService: ProductsService,
-    @Inject(forwardRef(() => OffersService)) // ← وأيضًا هذه
-    private readonly OffersService: OffersService,
-    private readonly offersService: OffersService, // 👈 وأيضًا هذا لو استخدمته
+    // 👈 وأيضًا هذا لو استخدمته
   ) {}
   public async onModuleInit(): Promise<void> {
     this.qdrant = new QdrantClient({ url: process.env.QDRANT_URL });
@@ -148,97 +144,6 @@ export class VectorService implements OnModuleInit {
     }));
   }
 
-  public async upsertOffers(offers: EmbeddableOffer[]) {
-    const points = await Promise.all(
-      offers.map(async (offer) => ({
-        id: uuidv5(offer.id, OFFER_NAMESPACE),
-        vector: await this.embed(this.buildTextForOffer(offer)),
-        payload: {
-          mongoId: offer.id,
-          name: offer.name,
-          description: offer.description,
-          type: offer.type,
-          code: offer.code,
-        },
-      })),
-    );
-
-    return this.qdrant.upsert(this.offerCollection, { wait: true, points });
-  }
-
-  public async querySimilarOffers(
-    text: string,
-    merchantId: string,
-    topK = 5,
-  ): Promise<
-    {
-      id: string;
-      name?: string;
-      type?: string;
-      description?: string;
-      code?: string;
-      score: number;
-    }[]
-  > {
-    const vector = await this.embed(text);
-
-    const rawResults = await this.qdrant.search(this.offerCollection, {
-      vector,
-      limit: topK * 2,
-      with_payload: {
-        include: ['mongoId', 'name', 'type', 'description', 'code'],
-      },
-      filter: {
-        must: [{ key: 'merchantId', match: { value: merchantId } }],
-      },
-    });
-
-    if (!rawResults.length) return [];
-
-    const candidateTexts = rawResults.map((item) => {
-      const p = item.payload as any;
-      return `Name: ${p.name ?? ''}. Type: ${p.type ?? ''}`;
-    });
-
-    const rerankResponse = await firstValueFrom(
-      this.http.post<{
-        results: { text: string; score: number }[];
-      }>('http://reranker:8500/rerank', {
-        query: text,
-        candidates: candidateTexts,
-      }),
-    );
-
-    const reranked = rerankResponse.data.results.map((res, index) => {
-      const original = rawResults[index];
-      const payload = original.payload as any;
-      return {
-        id: payload.mongoId as string,
-        score: res.score,
-      };
-    });
-
-    const offerIdScoreMap = new Map<string, number>();
-    const offerIds = reranked.slice(0, topK).map((r) => {
-      offerIdScoreMap.set(r.id, r.score);
-      return r.id;
-    });
-
-    const offers = await this.offersService.getOfferByIdList(
-      offerIds,
-      merchantId,
-    );
-
-    return offers.map((offer) => ({
-      id: offer._id.toString(),
-      name: offer.name,
-      type: offer.type,
-      description: offer.description,
-      code: offer.code,
-      score: offerIdScoreMap.get(offer._id.toString()) ?? 0,
-    }));
-  }
-
   private buildTextForEmbedding(product: EmbeddableProduct): string {
     const parts: string[] = [];
     if (product.name) parts.push(`Name: ${product.name}`);
@@ -248,13 +153,6 @@ export class VectorService implements OnModuleInit {
       parts.push(`Specs: ${product.specsBlock.join(', ')}`);
     if (product.keywords?.length)
       parts.push(`Keywords: ${product.keywords.join(', ')}`);
-    return parts.join('. ');
-  }
-
-  private buildTextForOffer(offer: EmbeddableOffer): string {
-    const parts: string[] = [`Name: ${offer.name}`, `Type: ${offer.type}`];
-    if (offer.description) parts.push(`Description: ${offer.description}`);
-    if (offer.code) parts.push(`Code: ${offer.code}`);
     return parts.join('. ');
   }
 }
