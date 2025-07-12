@@ -10,11 +10,12 @@ import {
 } from '@nestjs/common';
 import { MessageService } from '../messaging/message.service';
 import { CreateMessageDto } from '../messaging/dto/create-message.dto';
+import { Public } from 'src/common/decorators/public.decorator';
 
 @Controller('webhooks')
 export class WebhooksController {
   constructor(private readonly messageService: MessageService) {}
-
+  @Public()
   @Post('incoming/:merchantId')
   async handleIncoming(
     @Param('merchantId') merchantId: string,
@@ -42,6 +43,7 @@ export class WebhooksController {
     return { sessionId: from };
   }
 
+  @Public()
   @Post('bot-reply/:merchantId')
   async handleBotReply(
     @Param('merchantId') merchantId: string,
