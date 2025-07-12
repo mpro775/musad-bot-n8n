@@ -7,11 +7,14 @@ import {
   Body,
   Param,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { MessageService } from '../messaging/message.service';
 import { CreateMessageDto } from '../messaging/dto/create-message.dto';
 import { Public } from 'src/common/decorators/public.decorator';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
+@UseGuards(JwtAuthGuard)
 @Controller('webhooks')
 export class WebhooksController {
   constructor(private readonly messageService: MessageService) {}
