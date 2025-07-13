@@ -13,11 +13,11 @@ import { Type } from 'class-transformer';
 class MessageContentDto {
   @ApiProperty({
     description: 'دور المرسل',
-    enum: ['customer', 'bot'],
+    enum: ['customer', 'bot', 'agent'],
     example: 'bot',
   })
-  @IsEnum(['customer', 'bot'])
-  role: 'customer' | 'bot';
+  @IsEnum(['customer', 'bot', 'agent'])
+  role: 'customer' | 'bot' | 'agent';
 
   @ApiProperty({
     description: 'نص الرسالة',

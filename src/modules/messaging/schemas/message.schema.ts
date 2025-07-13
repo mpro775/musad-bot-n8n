@@ -20,7 +20,11 @@ export class MessageSession {
   @Prop({
     type: [
       {
-        role: { type: String, enum: ['customer', 'bot'], required: true },
+        role: {
+          type: String,
+          enum: ['customer', 'bot', 'agent'],
+          required: true,
+        },
         text: { type: String, required: true },
         timestamp: { type: Date, required: true },
         metadata: { type: Object, default: {} },
@@ -29,7 +33,7 @@ export class MessageSession {
     default: [],
   })
   messages: Array<{
-    role: 'customer' | 'bot';
+    role: 'customer' | 'bot' | 'agent';
     text: string;
     timestamp: Date;
     metadata?: Record<string, any>;
