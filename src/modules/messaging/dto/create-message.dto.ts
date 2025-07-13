@@ -13,7 +13,7 @@ import { Type } from 'class-transformer';
 class MessageItemDto {
   @IsString()
   @IsNotEmpty()
-  role: 'customer' | 'bot';
+  role: 'customer' | 'bot' | 'agent';
 
   @IsString()
   @IsNotEmpty()
