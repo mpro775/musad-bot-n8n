@@ -24,7 +24,7 @@ export class WebhooksController {
     @Param('merchantId') merchantId: string,
     @Body() body: any,
   ) {
-    const { from, text, metadata, channel } = body;
+    const { from, text, metadata, channel, role } = body;
     if (!merchantId || !from || !text || !channel) {
       throw new BadRequestException('Payload missing required fields');
     }
@@ -35,7 +35,8 @@ export class WebhooksController {
       channel,
       messages: [
         {
-          role: 'customer',
+          // إذا أُرسل role استخدمه، وإلا استخدم "customer"
+          role: role || 'customer',
           text,
           metadata: metadata || {},
         },
