@@ -34,9 +34,8 @@ export class WebhooksController {
       merchantId,
       sessionId: from,
       channel,
-      // استخدم المصفوفة كما هي إذا أرسلت، أو أبنها يدوياً إذا لم ترسل
       messages:
-        Array.isArray(messages) && messages.length
+        Array.isArray(messages) && messages.length > 0
           ? messages
           : [
               {
@@ -46,7 +45,6 @@ export class WebhooksController {
               },
             ],
     };
-
     await this.messageService.createOrAppend(dto);
     return { sessionId: from };
   }
