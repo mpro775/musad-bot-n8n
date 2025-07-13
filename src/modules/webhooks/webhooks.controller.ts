@@ -24,7 +24,8 @@ export class WebhooksController {
     @Param('merchantId') merchantId: string,
     @Body() body: any,
   ) {
-    const { from, text, metadata, channel, role } = body;
+    const { from, text, metadata, channel, messages } = body;
+
     if (!merchantId || !from || !text || !channel) {
       throw new BadRequestException('Payload missing required fields');
     }
@@ -33,14 +34,17 @@ export class WebhooksController {
       merchantId,
       sessionId: from,
       channel,
-      messages: [
-        {
-          // إذا أُرسل role استخدمه، وإلا استخدم "customer"
-          role: role || 'customer',
-          text,
-          metadata: metadata || {},
-        },
-      ],
+      // استخدم المصفوفة كما هي إذا أرسلت، أو أبنها يدوياً إذا لم ترسل
+      messages:
+        Array.isArray(messages) && messages.length
+          ? messages
+          : [
+              {
+                role: 'customer',
+                text,
+                metadata: metadata || {},
+              },
+            ],
     };
 
     await this.messageService.createOrAppend(dto);
