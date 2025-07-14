@@ -7,6 +7,7 @@ import {
   Patch,
   Delete,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { MessageService } from './message.service';
 import { CreateMessageDto } from './dto/create-message.dto';
@@ -21,7 +22,10 @@ import {
   ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
+import { Public } from 'src/common/decorators/public.decorator';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
+@UseGuards(JwtAuthGuard)
 @Controller('messages')
 export class MessageController {
   constructor(private readonly messageService: MessageService) {}
@@ -53,6 +57,16 @@ export class MessageController {
   @ApiBadRequestResponse({ description: 'البيانات غير صحيحة أو ناقصة' })
   createOrAppend(@Body() dto: CreateMessageDto) {
     return this.messageService.createOrAppend(dto);
+  }
+
+  @Patch('session/:sessionId/handover')
+  @Public()
+  async setHandover(
+    @Param('sessionId') sessionId: string,
+    @Body('handoverToAgent') handoverToAgent: boolean,
+  ) {
+    await this.messageService.setHandover(sessionId, handoverToAgent);
+    return { success: true };
   }
 
   @Get('session/:sessionId')

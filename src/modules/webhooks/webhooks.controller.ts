@@ -45,8 +45,15 @@ export class WebhooksController {
               },
             ],
     };
+
     await this.messageService.createOrAppend(dto);
-    return { sessionId: from };
+
+    // بعد الحفظ، جلب حالة الجلسة الحالية
+    const session = await this.messageService.findBySession(from);
+    return {
+      sessionId: from,
+      handoverToAgent: session?.handoverToAgent ?? false,
+    };
   }
 
   @Public()

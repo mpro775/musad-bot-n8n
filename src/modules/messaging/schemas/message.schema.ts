@@ -16,7 +16,8 @@ export class MessageSession {
 
   @Prop({ required: true, enum: ['whatsapp', 'telegram', 'webchat'] })
   channel: string;
-
+  @Prop({ type: Boolean, default: false })
+  handoverToAgent: boolean;
   @Prop({
     type: [
       {

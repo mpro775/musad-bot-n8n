@@ -67,6 +67,9 @@ export class MessageService {
     if (!doc) throw new NotFoundException(`Session ${id} not found`);
     return doc;
   }
+  async setHandover(sessionId: string, handoverToAgent: boolean) {
+    return this.messageModel.updateOne({ sessionId }, { handoverToAgent });
+  }
 
   async update(
     id: string,
