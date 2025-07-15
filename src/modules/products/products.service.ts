@@ -53,6 +53,7 @@ export class ProductsService {
       keywords: dto.keywords || [],
       uniqueKey,
     });
+
     await product.save();
     if (dto.source !== ProductSource.MANUAL) {
       await this.enqueueScrapeJob({
@@ -69,7 +70,7 @@ export class ProductsService {
 
         name: product.name,
         description: product.description,
-        category: product.category,
+        category: product.category?.toString(), // ← الحل هنا
         specsBlock: product.specsBlock,
         keywords: product.keywords,
       },
@@ -229,7 +230,7 @@ export class ProductsService {
 
         description: updated.description,
         name: updated.name,
-        category: updated.category,
+        category: updated.category?.toString(),
         specsBlock: updated.specsBlock,
         keywords: updated.keywords,
       },
@@ -285,7 +286,9 @@ export class ProductsService {
     if (!updated) {
       throw new NotFoundException('Product not found');
     }
-
+    if (updateData.category && typeof updateData.category === 'string') {
+      updateData.category = new Types.ObjectId(updateData.category);
+    }
     const shouldUpdateEmbedding =
       existing.name !== updated.name ||
       existing.description !== updated.description ||
@@ -298,7 +301,10 @@ export class ProductsService {
           merchantId: updated.merchantId.toString(),
           name: updated.name,
           description: updated.description,
-          category: updated.category,
+          category:
+            typeof updated.category === 'object'
+              ? updated.category.toString()
+              : updated.category,
           specsBlock: updated.specsBlock,
           keywords: updated.keywords,
         },

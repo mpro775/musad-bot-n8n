@@ -11,6 +11,7 @@ import { RedisConfig } from '../../config/redis.config';
 import { ScraperService } from '../scraper/scraper.service';
 import { ProductsService } from './products.service';
 import { InjectQueue } from '@nestjs/bull';
+import { Types } from 'mongoose';
 
 type ScrapeMode = 'full' | 'minimal';
 
@@ -91,7 +92,7 @@ export class ScrapeQueue implements OnModuleInit {
               isAvailable,
               images,
               description,
-              category,
+              category: category ? new Types.ObjectId(category) : undefined,
               lowQuantity,
               specsBlock,
               platform,

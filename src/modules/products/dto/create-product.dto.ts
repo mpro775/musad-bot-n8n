@@ -10,6 +10,7 @@ import {
   ValidateIf,
   IsUrl,
   IsEnum,
+  IsMongoId,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -106,12 +107,8 @@ export class CreateProductDto {
   @IsString({ each: true })
   images?: string[];
 
-  @ApiPropertyOptional({
-    description: 'تصنيف المنتج',
-    example: 'العطور الشرقية',
-  })
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   category?: string;
 
   @ApiPropertyOptional({

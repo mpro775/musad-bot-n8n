@@ -32,6 +32,15 @@ services:
       retries: 3
     networks:
       - backnet
+  embedding:
+    build:
+      context: ./embedding-service
+    container_name: musaidbot-embedding
+    ports:
+      - '8000:8000'
+    networks:
+      - backnet
+    restart: unless-stopped
 
   mongo:
     image: mongo:5

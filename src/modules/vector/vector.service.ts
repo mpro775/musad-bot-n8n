@@ -43,7 +43,7 @@ export class VectorService implements OnModuleInit {
   public async embed(text: string): Promise<number[]> {
     const response = await firstValueFrom(
       this.http.post<{ embeddings: number[][] }>(
-        'http://localhost:8000/embed',
+        'http://31.97.155.167:8000/embed',
         { texts: [text] },
       ),
     );

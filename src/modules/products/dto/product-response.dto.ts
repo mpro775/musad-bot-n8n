@@ -1,5 +1,6 @@
 // src/modules/products/dto/product-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
+import { IsMongoId, IsOptional } from 'class-validator';
 
 export class ProductResponseDto {
   @ApiProperty({ description: 'المعرف الفريد للمنتج' })
@@ -30,7 +31,8 @@ export class ProductResponseDto {
   @ApiProperty({ description: 'الصور', type: [String] })
   images: string[];
 
-  @ApiProperty({ description: 'فئة المنتج', example: '' })
+  @IsOptional()
+  @IsMongoId()
   category: string;
 
   @ApiProperty({ description: 'حالة التوفر المنخفض', example: '' })

@@ -37,6 +37,8 @@ import {
   ApiNotFoundResponse,
 } from '@nestjs/swagger';
 import { Public } from 'src/common/decorators/public.decorator';
+import { ProductSetupConfigDto } from './dto/product-setup-config.dto';
+import { ProductSetupConfigService } from './product-setup-config.service';
 
 @ApiTags('المنتجات')
 @ApiBearerAuth()
@@ -44,7 +46,10 @@ import { Public } from 'src/common/decorators/public.decorator';
 @UseInterceptors(ClassSerializerInterceptor)
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly productSetupConfigService: ProductSetupConfigService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'إنشاء منتج جديد (للتاجر)' })
@@ -105,7 +110,7 @@ export class ProductsController {
     if (dto.source !== ProductSource.MANUAL) {
       await this.productsService.enqueueScrapeJob({
         productId: product._id.toString(),
-        url: dto.sourceUrl || dto.originalUrl,
+        url: dto.sourceUrl || dto.originalUrl || '',
         merchantId: req.user.merchantId,
         mode: 'minimal',
       });
@@ -255,6 +260,31 @@ export class ProductsController {
     return plainToInstance(ProductResponseDto, updated, {
       excludeExtraneousValues: true,
     });
+  }
+
+  @Post(':merchantId/setup-products')
+  @UseGuards(JwtAuthGuard)
+  async setupProducts(
+    @Param('merchantId') merchantId: string,
+    @Body() config: ProductSetupConfigDto,
+    @Request() req,
+  ) {
+    // صلاحية: يجب أن يكون هو نفس التاجر
+    if (merchantId !== req.user.merchantId) throw new Error('Unauthorized');
+    return this.productSetupConfigService.saveOrUpdate(merchantId, config);
+  }
+
+  @Get(':merchantId/setup-products')
+  @UseGuards(JwtAuthGuard)
+  async getSetupProducts(
+    @Param('merchantId') merchantId: string,
+    @Request() req,
+  ) {
+    if (merchantId !== req.user.merchantId) throw new Error('Unauthorized');
+    const config =
+      await this.productSetupConfigService.getByMerchantId(merchantId);
+    console.log('[DEBUG] getSetupProducts:', { merchantId, config }); // ← سجل الرد هنا
+    return config; // أو يمكنك: return config || null;
   }
 
   @Post(':id/availability')

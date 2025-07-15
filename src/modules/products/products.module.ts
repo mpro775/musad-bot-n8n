@@ -12,16 +12,34 @@ import { ScraperModule } from '../scraper/scraper.module';
 import { VectorModule } from '../vector/vector.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { ProductsImportService } from './products-import.service';
+import { ProductSetupConfigService } from './product-setup-config.service';
+import {
+  ProductSetupConfig,
+  ProductSetupConfigSchema,
+} from './schemas/product-setup-config.schema';
+import {
+  Category,
+  CategorySchema,
+} from '../categories/schemas/category.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Product.name, schema: ProductSchema }]),
+    MongooseModule.forFeature([
+      { name: Product.name, schema: ProductSchema },
+      { name: ProductSetupConfig.name, schema: ProductSetupConfigSchema }, // ← أضف هذا
+      { name: Category.name, schema: CategorySchema }, // أضف هذا السطر!
+    ]),
     forwardRef(() => ScraperModule),
     BullModule.registerQueue({ name: 'scrape' }),
     forwardRef(() => VectorModule), // ← حوّل هنا إلى forwardRef
     forwardRef(() => AnalyticsModule),
   ],
-  providers: [ProductsService, ScrapeQueue, ProductsImportService],
+  providers: [
+    ProductsService,
+    ScrapeQueue,
+    ProductsImportService,
+    ProductSetupConfigService,
+  ],
   controllers: [ProductsController],
   exports: [ProductsService, MongooseModule, ProductsImportService],
 })

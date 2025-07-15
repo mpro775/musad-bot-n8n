@@ -44,6 +44,7 @@ import { LeadsModule } from './modules/leads/leads.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { CategoriesModule } from './modules/categories/categories.module';
 
 @Module({
   imports: [
@@ -123,6 +124,8 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     N8nWorkflowModule,
     WorkflowHistoryModule,
     WebhooksModule,
+    CategoriesModule,
+
     LeadsModule,
     IntegrationsModule,
     ScraperModule,
