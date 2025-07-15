@@ -17,7 +17,7 @@ class EmbeddingResponse(BaseModel):
     embeddings: List[List[float]]
 
 # يمكنك تغيير الموديل إذا أردت سرعة أكبر (paraphrase-MiniLM...), أو دقة أعلى (all-mpnet-base-v2)
-model_name = "all-MiniLM-L6-v2"
+model_name = "paraphrase-multilingual-MiniLM-L12-v2"
 model = SentenceTransformer(model_name)
 
 @app.post("/embed", response_model=EmbeddingResponse)
