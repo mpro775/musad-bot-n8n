@@ -1,14 +1,18 @@
 // src/vector/vector.controller.ts
-import { Controller, Post, Body, Get, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, UseGuards } from '@nestjs/common';
 import { VectorService } from './vector.service';
 import { SemanticRequestDto } from './dto/semantic-request.dto';
+import { Public } from 'src/common/decorators/public.decorator';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 
 @Controller('semantic')
+@UseGuards(JwtAuthGuard)
 export class VectorController {
   constructor(private readonly vector: VectorService) {}
 
   // POST endpoint for semantic search on products
   @Post('products')
+  @Public()
   async semanticSProducts(@Body() dto: SemanticRequestDto) {
     const recs = await this.vector.querySimilarProducts(
       dto.text,
@@ -19,6 +23,7 @@ export class VectorController {
   }
   // GET endpoint with optional topK parameter
   @Get('products')
+  @Public()
   async semanticSearchProductsByQuery(
     @Query('text') text: string,
     @Query('merchantId') merchantId: string,
