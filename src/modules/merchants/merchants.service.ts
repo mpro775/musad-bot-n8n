@@ -29,6 +29,7 @@ import { QuickConfig } from './schemas/quick-config.schema';
 import { buildPromptFromMerchant } from './utils/prompt-builder';
 import { ChatSettingsDto } from './dto/chat-settings.dto';
 import { EvolutionService } from '../integrations/evolution.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class MerchantsService {
@@ -545,37 +546,40 @@ export class MerchantsService {
   }
   async connectWhatsapp(merchantId: string): Promise<{ qr: string }> {
     const merchant = await this.merchantModel.findById(merchantId);
-
     if (!merchant) throw new NotFoundException('Merchant not found');
-    // instanceName فريد
+
     const instanceName = `whatsapp_${merchantId}`;
 
-    // 1. بدء الجلسة
-    await this.evoService.startSession(instanceName);
+    // 1. إذا يوجد token محفوظ في القناة نفسها ولم تُربط الجلسة (status != connected)، استخدمه، غير ذلك جدد token
+    let token = merchant.channels.whatsapp?.token;
+    if (!token || merchant.channels.whatsapp?.status === 'expired') {
+      token = randomUUID();
+    }
 
-    // 2. جلب كود الـ QR
-    const { qr } = await this.evoService.getQr(instanceName);
+    // 2. تأكد من حذف أي جلسة قديمة (إذا موجودة)
+    await this.evoService.deleteInstance(instanceName);
 
-    // 3. بناء رابط الـ webhook لهذا التاجر (يفضل ربطه بـ workflowId من n8n إذا متوفر)
+    // 3. أنشئ جلسة جديدة مباشرة مع الـ token (ترجع qr)
+    const { qr } = await this.evoService.startSession(instanceName, token);
+
+    // 4. بناء رابط webhook وربطه
     const webhookUrl = `https://n8n.smartagency-ye.com/webhook/${merchant.workflowId}/webhooks/incoming/${merchantId}`;
-
-    // 4. تعيين الـ webhook على Evolution API
     await this.evoService.setWebhook(instanceName, webhookUrl);
 
-    // 5. تحديث بيانات التاجر
+    // 5. حفظ بيانات الربط في merchant
     merchant.channels.whatsapp = {
       ...merchant.channels.whatsapp,
       enabled: true,
       sessionId: instanceName,
       webhookUrl,
-      qr,
+      qr, // صورة الـ QR مباشرة
+      token, // الـ token نفسه
       status: 'pending',
     };
     await merchant.save();
 
     return { qr };
   }
-
   // جلب حالة الجلسة
   async getWhatsappStatus(merchantId: string) {
     const merchant = await this.merchantModel.findById(merchantId);

@@ -39,7 +39,6 @@ import {
 import { Public } from 'src/common/decorators/public.decorator';
 import { OnboardingResponseDto } from './dto/onboarding-response.dto';
 import { OnboardingDto } from './dto/onboarding.dto';
-import { MerchantStatusResponse } from './dto/merchant-status.response';
 import { ChatSettingsDto } from './dto/chat-settings.dto';
 import {
   ChecklistGroup,
@@ -202,16 +201,6 @@ export class MerchantsController {
   ) {
     return this.svc.updateChannels(id, channelType, channelDetails);
   }
-  @Get(':id/status')
-  @ApiOperation({ summary: 'Get merchant detailed status' })
-  @ApiParam({ name: 'id', description: 'Merchant ID' })
-  @ApiOkResponse({
-    description: 'Merchant status details',
-    type: MerchantStatusResponse, // استخدام الصنف بدلاً من الواجهة
-  })
-  async getStatus(@Param('id') id: string): Promise<MerchantStatusResponse> {
-    return this.svc.getStatus(id);
-  }
 
   @Post(':id/telegram-webhook')
   @ApiOperation({ summary: 'تفعيل Webhook تلجرام للتاجر' })
@@ -230,6 +219,25 @@ export class MerchantsController {
       message: 'تم تسجيل الويبهوك بنجاح',
       ...result,
     }));
+  }
+  @Post(':id/whatsapp/start-session')
+  async startSession(@Param('id') id: string) {
+    return this.svc.connectWhatsapp(id);
+  }
+
+  // جلب حالة الاتصال
+  @Get(':id/whatsapp/status')
+  async getStatus(@Param('id') id: string) {
+    return this.svc.getWhatsappStatus(id);
+  }
+
+  // إرسال رسالة (اختياري للاختبار/التجربة)
+  @Post(':id/whatsapp/send-message')
+  async sendMsg(
+    @Param('id') id: string,
+    @Body() body: { to: string; text: string },
+  ) {
+    return this.svc.sendWhatsappMessage(id, body.to, body.text);
   }
   @Post(':id/checklist/:itemKey/skip')
   async skipChecklistItem(
