@@ -15,6 +15,8 @@ import { PromptPreviewService } from './services/prompt-preview.service';
 import { MerchantPromptController } from './controllers/merchant-prompt.controller';
 import { MerchantChecklistService } from './merchant-checklist.service';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
+import { WhatsappController } from './whatsapp.controller';
+import { IntegrationsModule } from '../integrations/integrations.module';
 
 @Module({
   imports: [
@@ -27,6 +29,7 @@ import { Product, ProductSchema } from '../products/schemas/product.schema';
 
     HttpModule,
     forwardRef(() => N8nWorkflowModule),
+    IntegrationsModule,
   ],
   providers: [
     MerchantsService,
@@ -35,7 +38,11 @@ import { Product, ProductSchema } from '../products/schemas/product.schema';
     PromptPreviewService,
     MerchantChecklistService,
   ],
-  controllers: [MerchantsController, MerchantPromptController],
+  controllers: [
+    MerchantsController,
+    MerchantPromptController,
+    WhatsappController,
+  ],
   exports: [
     MerchantsService,
     PromptVersionService,

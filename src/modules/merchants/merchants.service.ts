@@ -28,6 +28,7 @@ import { MerchantStatusResponse } from './types/types';
 import { QuickConfig } from './schemas/quick-config.schema';
 import { buildPromptFromMerchant } from './utils/prompt-builder';
 import { ChatSettingsDto } from './dto/chat-settings.dto';
+import { EvolutionService } from '../integrations/evolution.service';
 
 @Injectable()
 export class MerchantsService {
@@ -40,6 +41,8 @@ export class MerchantsService {
     private readonly config: ConfigService,
     private readonly promptBuilder: PromptBuilderService,
     private readonly versionSvc: PromptVersionService,
+    private readonly evoService: EvolutionService,
+
     private readonly previewSvc: PromptPreviewService,
     private readonly n8n: N8nWorkflowService,
   ) {}
@@ -539,5 +542,61 @@ export class MerchantsService {
         lastUpdated: merchant.updatedAt,
       },
     };
+  }
+  async connectWhatsapp(merchantId: string): Promise<{ qr: string }> {
+    const merchant = await this.merchantModel.findById(merchantId);
+
+    if (!merchant) throw new NotFoundException('Merchant not found');
+    // instanceName فريد
+    const instanceName = `whatsapp_${merchantId}`;
+
+    // 1. بدء الجلسة
+    await this.evoService.startSession(instanceName);
+
+    // 2. جلب كود الـ QR
+    const { qr } = await this.evoService.getQr(instanceName);
+
+    // 3. بناء رابط الـ webhook لهذا التاجر (يفضل ربطه بـ workflowId من n8n إذا متوفر)
+    const webhookUrl = `https://n8n.smartagency-ye.com/webhook/${merchant.workflowId}/webhooks/incoming/${merchantId}`;
+
+    // 4. تعيين الـ webhook على Evolution API
+    await this.evoService.setWebhook(instanceName, webhookUrl);
+
+    // 5. تحديث بيانات التاجر
+    merchant.channels.whatsapp = {
+      ...merchant.channels.whatsapp,
+      enabled: true,
+      sessionId: instanceName,
+      webhookUrl,
+      qr,
+      status: 'pending',
+    };
+    await merchant.save();
+
+    return { qr };
+  }
+
+  // جلب حالة الجلسة
+  async getWhatsappStatus(merchantId: string) {
+    const merchant = await this.merchantModel.findById(merchantId);
+    if (!merchant || !merchant.channels.whatsapp?.sessionId)
+      throw new NotFoundException('No whatsapp session');
+    const { state } = await this.evoService.getStatus(
+      merchant.channels.whatsapp.sessionId,
+    );
+    return { status: state };
+  }
+
+  // إرسال رسالة (اختياري)
+  async sendWhatsappMessage(merchantId: string, to: string, text: string) {
+    const merchant = await this.merchantModel.findById(merchantId);
+    if (!merchant || !merchant.channels.whatsapp?.sessionId)
+      throw new NotFoundException('No whatsapp session');
+    await this.evoService.sendMessage(
+      merchant.channels.whatsapp.sessionId,
+      to,
+      text,
+    );
+    return { ok: true };
   }
 }

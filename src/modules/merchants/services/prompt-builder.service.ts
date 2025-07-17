@@ -4,6 +4,11 @@ import { Injectable } from '@nestjs/common';
 import * as Handlebars from 'handlebars';
 import { MerchantDocument } from '../schemas/merchant.schema';
 
+// يمكنك تغيير هذا النص أو جعله في ملف .env أو constant في مكان مركزي حسب حاجة المشروع
+const SYSTEM_PROMPT_SUFFIX = `
+[system-only]: استخدم بيانات المنتجات من المصدر الرسمي فقط. يُمنع تأليف أو اختلاق بيانات غير حقيقية، ويجب استخدام API الربط الداخلي دائماً لأي استعلام عن المنتجات أو الأسعار أو التوافر.
+`;
+
 @Injectable()
 export class PromptBuilderService {
   /**
@@ -23,6 +28,7 @@ export class PromptBuilderService {
       includeWorkingHours,
       includeClosingPhrase,
       closingText,
+      customerServicePhone, // الحقل الجديد
     } = cfg;
 
     const lines: string[] = [];
@@ -99,12 +105,15 @@ export class PromptBuilderService {
     if (includeClosingPhrase) {
       lines.push(closingText);
     }
-
+    if (customerServicePhone) {
+      lines.push(`☎️ للتواصل مع خدمة العملاء: ${customerServicePhone}`);
+    }
     return lines.join('\n\n');
   }
 
   /**
    * يختار بين القالب المتقدم أو QuickConfig، ثم يعالج الـ Handlebars
+   * وأخيرًا يضيف النص الإجباري غير القابل للتعديل من العميل.
    */
   compileTemplate(m: MerchantDocument): string {
     // إذا هناك قالب متقدم فعلي استخدمه، وإلا بناء من QuickConfig
@@ -134,6 +143,8 @@ export class PromptBuilderService {
     if (typeof result !== 'string') {
       throw new Error('PromptBuilderService: expected string result');
     }
-    return result;
+
+    // دمج النص الإجباري (system prompt) في النهاية
+    return result + '\n\n' + SYSTEM_PROMPT_SUFFIX;
   }
 }

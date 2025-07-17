@@ -10,6 +10,13 @@ export class ChannelConfig {
   phone?: string; // للواتساب
 
   @Prop()
+  sessionId?: string;
+  @Prop()
+  qr?: string; // base64 QR
+
+  @Prop()
+  status?: string;
+  @Prop()
   token?: string; // للتليجرام
 
   @Prop()

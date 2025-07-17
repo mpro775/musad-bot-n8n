@@ -106,7 +106,7 @@ export class VectorService implements OnModuleInit {
     const rerankResponse = await firstValueFrom(
       this.http.post<{
         results: { text: string; score: number }[];
-      }>('http://reranker:8500/rerank', {
+      }>('http://31.97.155.167:8500/rerank', {
         query: text,
         candidates: candidateTexts,
       }),

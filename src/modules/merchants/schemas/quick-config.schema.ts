@@ -34,6 +34,9 @@ export class QuickConfig {
   @Prop({ default: true })
   includeClosingPhrase: boolean;
 
+  // === حقل رقم خدمة العملاء الجديد ===
+  @Prop({ default: '' })
+  customerServicePhone: string;
   // نص الخاتمة القابل للتخصيص
   @Prop({ default: 'هل أقدر أساعدك بشي ثاني؟ 😊' })
   closingText: string;
