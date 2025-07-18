@@ -4,8 +4,8 @@ export function hasCompletedRequiredSetup(merchant: Merchant): boolean {
   return (
     !!merchant.name &&
     !!merchant.businessType &&
-    !!merchant.address?.city &&
-    !!merchant.address?.country &&
+    !!merchant.addresses[0]?.city &&
+    !!merchant.addresses[0]?.country &&
     !!merchant.subscription?.tier &&
     !!merchant.subscription?.startDate &&
     (!!merchant.channels?.whatsapp?.enabled ||

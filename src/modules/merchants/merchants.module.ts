@@ -16,12 +16,17 @@ import { MerchantPromptController } from './controllers/merchant-prompt.controll
 import { MerchantChecklistService } from './merchant-checklist.service';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { IntegrationsModule } from '../integrations/integrations.module';
+import {
+  Category,
+  CategorySchema,
+} from '../categories/schemas/category.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Merchant.name, schema: MerchantSchema },
       { name: Product.name, schema: ProductSchema }, // ← هنا
+      { name: Category.name, schema: CategorySchema },
     ]),
     forwardRef(() => AuthModule),
     MulterModule.register({ dest: './uploads' }),

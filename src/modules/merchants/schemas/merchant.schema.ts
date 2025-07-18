@@ -34,8 +34,8 @@ export class Merchant {
   @Prop({ required: false })
   logoUrl?: string;
 
-  @Prop({ type: AddressSchema, default: () => ({}) })
-  address: Address;
+  @Prop({ type: [AddressSchema], default: [] })
+  addresses: Address[];
 
   @Prop({ type: SubscriptionPlanSchema, required: true })
   subscription: SubscriptionPlan;

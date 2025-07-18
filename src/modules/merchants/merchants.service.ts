@@ -64,7 +64,7 @@ export class MerchantsService {
       name: createDto.name,
       storefrontUrl: createDto.storefrontUrl ?? '',
       logoUrl: createDto.logoUrl ?? '',
-      address: createDto.address ?? {},
+      addresses: createDto.addresses ?? {},
 
       subscription,
       categories: createDto.categories ?? [],
@@ -316,7 +316,7 @@ export class MerchantsService {
         'quickConfig',
         'categories',
         'storefrontUrl',
-        'address',
+        'addresses',
         'workingHours',
         'returnPolicy',
         'exchangePolicy',
@@ -420,8 +420,8 @@ export class MerchantsService {
     merchant.logoUrl = dto.logoUrl;
     merchant.businessType = dto.businessType;
     merchant.businessDescription = dto.businessDescription;
-    if (dto.address) {
-      merchant.address = dto.address;
+    if (dto.addresses) {
+      merchant.addresses = dto.addresses;
     }
     if (dto.subscription) {
       merchant.subscription = {
@@ -559,25 +559,29 @@ export class MerchantsService {
     // حذف الجلسة السابقة لو كانت موجودة (إعادة تهيئة)
     await this.evoService.deleteInstance(instanceName);
 
-    // أنشئ جلسة جديدة وأرجع QR جديد
-    const { qr } = await this.evoService.startSession(instanceName, token);
+    // **استخدم الدالة المحدثة الآن**
+    const { qr, instanceId } = await this.evoService.startSession(
+      instanceName,
+      token,
+    );
 
     // بناء رابط الـ webhook الخاص بالتاجر
-    const webhookUrl = `https://n8n.smartagency-ye.com/webhook/${merchant.workflowId}/webhooks/incoming/${merchantId}`;
-    // **هنا استخدم الـ API الحديث وربط event الصحيح**
+    const webhookUrl = `${this.config.get('N8N_WEBHOOK_BASE')}/webhook/${merchant.workflowId}/webhooks/incoming/${merchantId}`;
+
+    // تعيين الـ webhook من جديد
     await this.evoService.setWebhook(
       instanceName,
       webhookUrl,
-      ['MESSAGES_UPSERT'], // لو أردت استقبال أنواع أخرى عدّلها هنا
-      true, // webhook_by_events (true لو أردت event URL منفصل، غالبًا true في حالتك)
-      true, // webhook_base64 (لو أردت الصور تأتي base64، حسب حاجة n8n)
+      ['MESSAGES_UPSERT'],
+      true,
+      true,
     );
 
-    // حفظ كل البيانات الجديدة
     merchant.channels.whatsapp = {
       ...merchant.channels.whatsapp,
       enabled: true,
       sessionId: instanceName,
+      instanceId,
       webhookUrl,
       qr,
       token,
@@ -587,6 +591,7 @@ export class MerchantsService {
 
     return { qr };
   }
+
   async updateWhatsappWebhook(merchantId: string, newWebhookUrl: string) {
     const merchant = await this.merchantModel.findById(merchantId);
     if (!merchant || !merchant.channels.whatsapp?.sessionId)
@@ -609,10 +614,21 @@ export class MerchantsService {
     const merchant = await this.merchantModel.findById(merchantId);
     if (!merchant || !merchant.channels.whatsapp?.sessionId)
       throw new NotFoundException('No whatsapp session');
-    const { state } = await this.evoService.getStatus(
+
+    const instanceInfo = await this.evoService.getStatus(
       merchant.channels.whatsapp.sessionId,
     );
-    return { status: state };
+
+    if (!instanceInfo) return { status: 'unknown' };
+
+    // هنا صار كل شيء typesafe
+    return {
+      status: instanceInfo.status || 'unknown',
+      instanceName: instanceInfo.instanceName,
+      instanceId: instanceInfo.instanceId,
+      integration: instanceInfo.integration,
+      // أضف أي حقول أخرى تحتاجها للفرونت
+    };
   }
 
   // إرسال رسالة (اختياري)

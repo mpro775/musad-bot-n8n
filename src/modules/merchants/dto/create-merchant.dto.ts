@@ -31,11 +31,11 @@ export class CreateMerchantDto {
   @IsUrl()
   logoUrl?: string;
 
-  // أضفنا العنوان هنا
   @IsOptional()
-  @ValidateNested()
+  @IsArray()
+  @ValidateNested({ each: true })
   @Type(() => AddressDto)
-  address?: AddressDto;
+  addresses?: AddressDto[];
 
   @ValidateNested()
   @Type(() => SubscriptionPlanDto)

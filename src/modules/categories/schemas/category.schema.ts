@@ -8,6 +8,9 @@ export class Category {
   @Prop({ required: true })
   name: string;
 
+  @Prop({ type: Types.ObjectId, ref: 'Merchant', required: true })
+  merchantId: Types.ObjectId;
+
   @Prop({ type: Types.ObjectId, ref: 'Category', default: null })
   parent?: Types.ObjectId | null; // لدعم التداخل (Sub-categories)
 

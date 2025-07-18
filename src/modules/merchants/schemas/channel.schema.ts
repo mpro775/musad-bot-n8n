@@ -12,6 +12,8 @@ export class ChannelConfig {
   @Prop()
   sessionId?: string;
   @Prop()
+  instanceId?: string;
+  @Prop()
   qr?: string; // base64 QR
 
   @Prop()

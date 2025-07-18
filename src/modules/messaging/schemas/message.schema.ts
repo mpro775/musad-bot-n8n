@@ -29,6 +29,7 @@ export class MessageSession {
         text: { type: String, required: true },
         timestamp: { type: Date, required: true },
         metadata: { type: Object, default: {} },
+        keywords: { type: [String], default: [] },
       },
     ],
     default: [],
@@ -38,6 +39,7 @@ export class MessageSession {
     text: string;
     timestamp: Date;
     metadata?: Record<string, any>;
+    keywords?: string[];
   }>;
 }
 

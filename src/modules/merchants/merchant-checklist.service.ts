@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { MerchantDocument } from './schemas/merchant.schema';
 import { ProductDocument } from '../products/schemas/product.schema';
+import { CategoryDocument } from '../categories/schemas/category.schema';
 
 export type ChecklistItem = {
   key: string;
@@ -24,6 +25,7 @@ export class MerchantChecklistService {
   constructor(
     @InjectModel('Merchant') private merchantModel: Model<MerchantDocument>,
     @InjectModel('Product') private productModel: Model<ProductDocument>,
+    @InjectModel('Category') private categoryModel: Model<CategoryDocument>,
   ) {}
 
   async getChecklist(merchantId: string): Promise<ChecklistGroup[]> {
@@ -34,7 +36,12 @@ export class MerchantChecklistService {
       : [];
 
     // المنتجات
-    const productCount = await this.productModel.countDocuments({ merchantId });
+    const productCount = await this.productModel.countDocuments({
+      merchantId: new Types.ObjectId(merchantId),
+    });
+    const categoryCount = await this.categoryModel.countDocuments({
+      merchantId: new Types.ObjectId(merchantId),
+    });
 
     // 1) معلومات المتجر
     const storeInfo: ChecklistItem[] = [
@@ -61,7 +68,10 @@ export class MerchantChecklistService {
         key: 'address',
         title: 'عنوان المتجر',
         isComplete:
-          !!m.address?.street && !!m.address?.city && !!m.address?.country,
+          !!m.addresses?.length &&
+          !!m.addresses[0]?.street &&
+          !!m.addresses[0]?.city &&
+          !!m.addresses[0]?.country,
         isSkipped: skipped.includes('address'),
         message: 'اكمل حقول العنوان (الشارع، المدينة، الدولة)',
         actionPath: '/dashboard/marchinfo',
@@ -148,7 +158,7 @@ export class MerchantChecklistService {
       {
         key: 'categories',
         title: 'تصنيفات المتجر',
-        isComplete: Array.isArray(m.categories) && m.categories.length > 0,
+        isComplete: categoryCount > 0,
         message: 'حدد تصنيفات المنتجات التي تقدمها',
         actionPath: '/settings/merchant/categories',
         skippable: true,

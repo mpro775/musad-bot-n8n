@@ -6,6 +6,9 @@ export class CreateCategoryDto {
   @IsString()
   name: string;
 
+  @IsString()
+  merchantId: string;
+
   @IsOptional()
   @IsMongoId()
   parent?: string;

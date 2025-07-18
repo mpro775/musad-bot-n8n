@@ -90,8 +90,8 @@ export class PromptBuilderService {
     if (includeStoreUrl && m.storefrontUrl) {
       lines.push(`🔗 رابط المتجر: ${m.storefrontUrl}`);
     }
-    if (includeAddress && m.address) {
-      const addr = m.address;
+    if (includeAddress && m.addresses) {
+      const addr = m.addresses[0];
       lines.push(
         `📍 العنوان: ${addr.street}, ${addr.city}${addr.state ? ', ' + addr.state : ''}, ${addr.country}`,
       );
@@ -134,7 +134,7 @@ export class PromptBuilderService {
       exchangePolicy: m.exchangePolicy,
       shippingPolicy: m.shippingPolicy,
       storefrontUrl: m.storefrontUrl,
-      address: m.address,
+      address: m.addresses,
       workingHours: m.workingHours,
       quickConfig: m.quickConfig,
     };

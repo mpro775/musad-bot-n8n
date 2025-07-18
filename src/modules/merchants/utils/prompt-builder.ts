@@ -87,12 +87,12 @@ export function buildPromptFromMerchant(m: MerchantDocument): string {
     lines.push(`🔗 رابط المتجر: ${m.storefrontUrl}`);
   }
 
-  if (includeAddress && m.address) {
+  if (includeAddress && m.addresses) {
     const addrParts = [
-      m.address.street,
-      m.address.city,
-      m.address.state,
-      m.address.country,
+      m.addresses[0].street,
+      m.addresses[0].city,
+      m.addresses[0].state,
+      m.addresses[0].country,
     ].filter(Boolean);
 
     if (addrParts.length) {

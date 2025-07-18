@@ -46,7 +46,7 @@ export class OnboardingDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => AddressDto)
-  address?: AddressDto;
+  addresses?: AddressDto[];
 
   /** باقة الاشتراك */
   @ValidateNested()
