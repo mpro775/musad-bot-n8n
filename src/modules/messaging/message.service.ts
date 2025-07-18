@@ -10,7 +10,7 @@ import {
 } from './schemas/message.schema';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
-import { removeStopwords } from 'stopword';
+import { removeStopwords, ara, eng } from 'stopword';
 
 @Injectable()
 export class MessageService {
@@ -20,6 +20,8 @@ export class MessageService {
   ) {}
 
   async createOrAppend(dto: CreateMessageDto): Promise<MessageSessionDocument> {
+    console.log('==== ENTERED createOrAppend! ====');
+
     const mId = new Types.ObjectId(dto.merchantId);
     const existing = await this.messageModel.findOne({
       merchantId: mId,
@@ -31,7 +33,9 @@ export class MessageService {
     const toInsert = dto.messages.map((m) => {
       // استخراج الكلمات المفتاحية من نص كل رسالة
       const tokens = m.text.toLowerCase().match(/\b[\p{L}0-9]+\b/gu) || [];
-      const keywords = removeStopwords(tokens);
+      console.log('tokens:', tokens);
+      const keywords = removeStopwords(tokens, [...ara, ...eng]);
+      console.log('keywords:', keywords);
 
       return {
         role: m.role,
