@@ -81,7 +81,6 @@ import { CategoriesModule } from './modules/categories/categories.module';
       store: redisStore,
       host: process.env.REDIS_HOST,
       port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
-      auth_pass: process.env.REDIS_PASSWORD,
       ttl: 30,
     }),
 

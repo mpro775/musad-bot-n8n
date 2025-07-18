@@ -4,7 +4,7 @@ services:
   redis:
     image: redis:6-alpine
     container_name: musaidbot-redis
-    command: ['redis-server', '--requirepass', 'strongpassword']
+    command: ['redis-server']
     ports:
       - '6379:6379'
     volumes:
