@@ -32,7 +32,6 @@ export class MessageService {
       // استخراج الكلمات المفتاحية من نص كل رسالة
       const tokens = m.text.toLowerCase().match(/\b[\p{L}0-9]+\b/gu) || [];
       const keywords = removeStopwords(tokens);
-      console.log('Will insert:', JSON.stringify(toInsert, null, 2));
 
       return {
         role: m.role,
@@ -42,6 +41,7 @@ export class MessageService {
         keywords,
       };
     });
+    console.log('Will insert:', JSON.stringify(toInsert, null, 2));
 
     if (existing) {
       existing.messages.push(...toInsert);
