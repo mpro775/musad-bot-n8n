@@ -32,7 +32,7 @@ export class MessageService {
     // حول كل عنصر في dto.messages ليشمل الكلمات المفتاحية والتوقيت
     const toInsert = dto.messages.map((m) => {
       // استخراج الكلمات المفتاحية من نص كل رسالة
-      const tokens = m.text.toLowerCase().match(/\b[\p{L}0-9]+\b/gu) || [];
+      const tokens = m.text.split(/\s+/);
       console.log('tokens:', tokens);
       const keywords = removeStopwords(tokens, [...ara, ...eng]);
       console.log('keywords:', keywords);
