@@ -549,36 +549,60 @@ export class MerchantsService {
     if (!merchant) throw new NotFoundException('Merchant not found');
 
     const instanceName = `whatsapp_${merchantId}`;
-
-    // 1. إذا يوجد token محفوظ في القناة نفسها ولم تُربط الجلسة (status != connected)، استخدمه، غير ذلك جدد token
     let token = merchant.channels.whatsapp?.token;
+
+    // إذا لا يوجد توكن أو الجلسة انتهت، أنشئ توكن جديد
     if (!token || merchant.channels.whatsapp?.status === 'expired') {
       token = randomUUID();
     }
 
-    // 2. تأكد من حذف أي جلسة قديمة (إذا موجودة)
+    // حذف الجلسة السابقة لو كانت موجودة (إعادة تهيئة)
     await this.evoService.deleteInstance(instanceName);
 
-    // 3. أنشئ جلسة جديدة مباشرة مع الـ token (ترجع qr)
+    // أنشئ جلسة جديدة وأرجع QR جديد
     const { qr } = await this.evoService.startSession(instanceName, token);
 
-    // 4. بناء رابط webhook وربطه
+    // بناء رابط الـ webhook الخاص بالتاجر
     const webhookUrl = `https://n8n.smartagency-ye.com/webhook/${merchant.workflowId}/webhooks/incoming/${merchantId}`;
-    await this.evoService.setWebhook(instanceName, webhookUrl);
+    // **هنا استخدم الـ API الحديث وربط event الصحيح**
+    await this.evoService.setWebhook(
+      instanceName,
+      webhookUrl,
+      ['MESSAGES_UPSERT'], // لو أردت استقبال أنواع أخرى عدّلها هنا
+      true, // webhook_by_events (true لو أردت event URL منفصل، غالبًا true في حالتك)
+      true, // webhook_base64 (لو أردت الصور تأتي base64، حسب حاجة n8n)
+    );
 
-    // 5. حفظ بيانات الربط في merchant
+    // حفظ كل البيانات الجديدة
     merchant.channels.whatsapp = {
       ...merchant.channels.whatsapp,
       enabled: true,
       sessionId: instanceName,
       webhookUrl,
-      qr, // صورة الـ QR مباشرة
-      token, // الـ token نفسه
+      qr,
+      token,
       status: 'pending',
     };
     await merchant.save();
 
     return { qr };
+  }
+  async updateWhatsappWebhook(merchantId: string, newWebhookUrl: string) {
+    const merchant = await this.merchantModel.findById(merchantId);
+    if (!merchant || !merchant.channels.whatsapp?.sessionId)
+      throw new NotFoundException('No whatsapp session');
+
+    await this.evoService.setWebhook(
+      merchant.channels.whatsapp.sessionId,
+      newWebhookUrl,
+      ['MESSAGES_UPSERT'],
+      true,
+      true,
+    );
+
+    merchant.channels.whatsapp.webhookUrl = newWebhookUrl;
+    await merchant.save();
+    return { ok: true };
   }
   // جلب حالة الجلسة
   async getWhatsappStatus(merchantId: string) {

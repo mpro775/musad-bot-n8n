@@ -2,12 +2,19 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 
-import {
-  SendMessageResponse,
-  SetWebhookResponse,
-  StatusResponse,
-} from '../merchants/types/evolution.types';
-
+interface EvolutionWebhookResponse {
+  webhook?: {
+    instanceName: string;
+    webhook: {
+      url: string;
+      webhook_by_events: boolean;
+      webhook_base64: boolean;
+      events: string[];
+      enabled: boolean;
+    };
+  };
+  [key: string]: any;
+}
 @Injectable()
 export class EvolutionService {
   private readonly logger = new Logger(EvolutionService.name);
@@ -18,6 +25,7 @@ export class EvolutionService {
     return {
       apikey: this.apiKey,
       'Content-Type': 'application/json',
+      accept: 'application/json',
     };
   }
 
@@ -25,7 +33,6 @@ export class EvolutionService {
   async ensureFreshInstance(
     instanceName: string,
   ): Promise<{ qr: string; token: string }> {
-    // 1. حذف الجلسة القديمة لو موجودة
     try {
       await this.getStatus(instanceName);
       this.logger.log(`Instance ${instanceName} already exists. Deleting...`);
@@ -33,14 +40,11 @@ export class EvolutionService {
     } catch (err: any) {
       if (err.response?.status !== 404) throw err;
     }
-    // 2. أنشئ توكن جديد
     const token = uuidv4();
-    // 3. أنشئ جلسة جديدة (ترجع qr + token)
     const { qr } = await this.startSession(instanceName, token);
     return { qr, token };
   }
 
-  /** حذف الجلسة */
   async deleteInstance(instanceName: string): Promise<void> {
     const url = `${this.baseUrl}/instance/delete/${instanceName}`;
     try {
@@ -55,7 +59,6 @@ export class EvolutionService {
     }
   }
 
-  /** بدء جلسة جديدة وإرجاع qr + token */
   async startSession(
     instanceName: string,
     token: string,
@@ -64,11 +67,7 @@ export class EvolutionService {
     try {
       const res = await axios.post(
         url,
-        {
-          instanceName,
-          token,
-          qrcode: true, // <-- ضروري لإرجاع QR
-        },
+        { instanceName, token, qrcode: true },
         { headers: this.getHeaders() },
       );
       const qr = res.data?.qrcode?.base64 || '';
@@ -82,13 +81,10 @@ export class EvolutionService {
     }
   }
 
-  /** جلب حالة الجلسة (متصل/ينتظر..) */
-  async getStatus(instanceName: string): Promise<StatusResponse> {
+  async getStatus(instanceName: string): Promise<any> {
     const url = `${this.baseUrl}/instance/connectionState/${instanceName}`;
     try {
-      const res = await axios.get<StatusResponse>(url, {
-        headers: this.getHeaders(),
-      });
+      const res = await axios.get(url, { headers: this.getHeaders() });
       return res.data;
     } catch (err: any) {
       this.logger.error('getStatus failed', err.response?.data || err.message);
@@ -96,15 +92,14 @@ export class EvolutionService {
     }
   }
 
-  /** إرسال رسالة */
   async sendMessage(
     instanceName: string,
     to: string,
     message: string,
-  ): Promise<SendMessageResponse> {
+  ): Promise<any> {
     const url = `${this.baseUrl}/message/sendText`;
     try {
-      const res = await axios.post<SendMessageResponse>(
+      const res = await axios.post(
         url,
         { instanceName, to, message },
         { headers: this.getHeaders() },
@@ -119,19 +114,25 @@ export class EvolutionService {
     }
   }
 
-  /** تعيين webhook */
+  /** تعيين Webhook حسب الوثائق الجديدة */
   async setWebhook(
     instanceName: string,
     webhookUrl: string,
-  ): Promise<SetWebhookResponse> {
-    const url = `${this.baseUrl}/instance/webhook`;
+    events: string[] = ['MESSAGES_UPSERT'],
+    webhook_by_events = false,
+    webhook_base64 = false,
+  ): Promise<EvolutionWebhookResponse> {
+    const url = `${this.baseUrl}/webhook/instance`;
     try {
-      const res = await axios.post<SetWebhookResponse>(
+      const res = await axios.post<EvolutionWebhookResponse>(
         url,
         {
           instanceName,
-          webhook: webhookUrl,
-          events: ['onMessage'],
+          url: webhookUrl,
+          enabled: true,
+          webhook_by_events,
+          webhook_base64,
+          events,
         },
         { headers: this.getHeaders() },
       );
@@ -140,5 +141,23 @@ export class EvolutionService {
       this.logger.error('setWebhook failed', err.response?.data || err.message);
       throw err;
     }
+  }
+
+  // دالة تحديث الويبهوك
+  async updateWebhook(
+    instanceName: string,
+    webhookUrl: string,
+    events: string[] = ['MESSAGES_UPSERT'],
+    webhook_by_events = false,
+    webhook_base64 = false,
+  ): Promise<EvolutionWebhookResponse> {
+    // هنا النوع مضبوط ولن يظهر التحذير
+    return this.setWebhook(
+      instanceName,
+      webhookUrl,
+      events,
+      webhook_by_events,
+      webhook_base64,
+    );
   }
 }
