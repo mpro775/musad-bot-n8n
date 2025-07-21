@@ -11,12 +11,14 @@ import {
 import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
 import { removeStopwords, ara, eng } from 'stopword';
+import { ChatGateway } from '../chat/chat.gateway';
 
 @Injectable()
 export class MessageService {
   constructor(
     @InjectModel(MessageSession.name)
     private readonly messageModel: Model<MessageSessionDocument>,
+    private readonly chatGateway: ChatGateway,
   ) {}
 
   async createOrAppend(dto: CreateMessageDto): Promise<MessageSessionDocument> {
@@ -46,6 +48,9 @@ export class MessageService {
       };
     });
     console.log('Will insert:', JSON.stringify(toInsert, null, 2));
+    for (const msg of toInsert) {
+      this.chatGateway.sendMessageToSession(dto.sessionId, msg);
+    }
 
     if (existing) {
       existing.messages.push(...toInsert);

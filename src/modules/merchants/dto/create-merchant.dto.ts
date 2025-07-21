@@ -8,6 +8,7 @@ import {
   IsArray,
   ArrayNotEmpty,
   ValidateNested,
+  IsObject,
 } from 'class-validator';
 
 import { AddressDto } from './address.dto';
@@ -18,6 +19,7 @@ import { WorkingHourDto } from './working-hours.dto';
 import { AdvancedTemplateDto } from './advanced-template.dto';
 import { Prop } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
+import { LeadsSettingsDto } from './leads-settings.dto';
 
 export class CreateMerchantDto {
   @IsString()
@@ -36,6 +38,10 @@ export class CreateMerchantDto {
   @ValidateNested({ each: true })
   @Type(() => AddressDto)
   addresses?: AddressDto[];
+
+  @IsOptional()
+  @IsString()
+  slug?: string;
 
   @ValidateNested()
   @Type(() => SubscriptionPlanDto)
@@ -103,8 +109,16 @@ export class CreateMerchantDto {
   returnPolicy?: string;
 
   @IsOptional()
+  @IsObject()
+  socialLinks?: Record<string, string>;
+  @IsOptional()
   @IsString()
   exchangePolicy?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LeadsSettingsDto)
+  leadsSettings?: LeadsSettingsDto;
 
   @IsOptional()
   @IsString()

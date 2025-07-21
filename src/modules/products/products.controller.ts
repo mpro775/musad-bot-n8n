@@ -164,6 +164,7 @@ export class ProductsController {
 
     return plainToInstance(ProductResponseDto, docs);
   }
+
   @Public()
   @Get(':id')
   @ApiParam({ name: 'id', type: 'string', description: 'معرّف المنتج' })
@@ -199,16 +200,26 @@ export class ProductsController {
     @Param('id') id: string,
     @Request() req: RequestWithUser,
   ): Promise<ProductResponseDto> {
-    const product = await this.productsService.findOne(id);
-    if (
-      req.user.role !== 'ADMIN' &&
-      product.merchantId.toString() !== req.user.merchantId
-    ) {
-      throw new ForbiddenException('Not allowed');
+    try {
+      const product = await this.productsService.findOne(id);
+
+      // إذا هناك مستخدم سجّل الدخول (req.user موجود) افحص الصلاحية
+      if (req.user) {
+        if (
+          req.user.role !== 'ADMIN' &&
+          String(product.merchantId) !== String(req.user.merchantId)
+        ) {
+          throw new ForbiddenException('Not allowed');
+        }
+      }
+
+      return plainToInstance(ProductResponseDto, product, {
+        excludeExtraneousValues: true,
+      });
+    } catch (error) {
+      console.error('Find Product Error:', error);
+      throw error;
     }
-    return plainToInstance(ProductResponseDto, product, {
-      excludeExtraneousValues: true,
-    });
   }
   @Post('import-link')
   @HttpCode(HttpStatus.ACCEPTED)

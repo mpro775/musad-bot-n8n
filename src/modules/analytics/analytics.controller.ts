@@ -53,6 +53,25 @@ export class AnalyticsController {
     const kws = await this.analytics.getTopKeywords(merchantId, period, +limit);
     return kws;
   }
+  @Get('messages-timeline')
+  async messagesTimeline(
+    @Req() req: Request & { user: { merchantId: string } },
+    @Query('period') period: 'week' | 'month' | 'quarter' = 'week',
+    @Query('groupBy') groupBy: 'day' | 'hour' = 'day',
+  ) {
+    return this.analytics.getMessagesTimeline(
+      req.user.merchantId,
+      period,
+      groupBy,
+    );
+  }
+
+  @Get('products-count')
+  async productsCount(@Req() req: Request & { user: { merchantId: string } }) {
+    return {
+      total: await this.analytics.getProductsCount(req.user.merchantId),
+    };
+  }
 
   /**
    * GET /api/analytics/top-products?period=...&limit=...

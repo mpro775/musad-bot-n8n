@@ -9,11 +9,13 @@ import { AnalyticsService } from './analytics.service';
 import { AnalyticsController } from './analytics.controller';
 import { ProductsModule } from '../products/products.module';
 import { Merchant, MerchantSchema } from '../merchants/schemas/merchant.schema';
+import { Product, ProductSchema } from '../products/schemas/product.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: MessageSession.name, schema: MessageSessionSchema },
+      { name: Product.name, schema: ProductSchema },
       { name: Merchant.name, schema: MerchantSchema }, // أضف هذا السطر
     ]),
     forwardRef(() => ProductsModule),

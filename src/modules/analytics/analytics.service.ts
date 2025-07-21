@@ -12,6 +12,7 @@ import {
   Merchant,
   MerchantDocument,
 } from '../merchants/schemas/merchant.schema';
+import { Product, ProductDocument } from '../products/schemas/product.schema';
 
 export interface KeywordCount {
   keyword: string;
@@ -50,6 +51,8 @@ export class AnalyticsService {
     private readonly sessionModel: Model<MessageSessionDocument>,
     @InjectModel(Merchant.name)
     private readonly merchantModel: Model<MerchantDocument>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
   ) {}
 
   /**
@@ -133,7 +136,7 @@ export class AnalyticsService {
       { $unwind: '$messages.keywords' },
       { $group: { _id: '$messages.keywords', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
-      { $limit: 3 },
+      { $limit: 10 },
       { $project: { keyword: '$_id', count: 1, _id: 0 } },
     ]);
 
@@ -201,6 +204,32 @@ export class AnalyticsService {
       },
     };
   }
+  async getMessagesTimeline(
+    merchantId: string,
+    period: 'week' | 'month' | 'quarter' = 'week',
+    groupBy: 'day' | 'hour' = 'day',
+  ) {
+    const { start, end } = this.getPeriodDates(period);
+    const mId = new Types.ObjectId(merchantId);
+
+    // حدد صيغة التجميع حسب groupBy
+    const dateFormat = groupBy === 'hour' ? '%Y-%m-%d %H:00' : '%Y-%m-%d';
+
+    return this.sessionModel.aggregate([
+      { $match: { merchantId: mId, createdAt: { $gte: start, $lte: end } } },
+      { $unwind: '$messages' },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: dateFormat, date: '$messages.timestamp' },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+  }
+
   async getTopKeywords(
     merchantId: string,
     period: 'week' | 'month' | 'quarter',
@@ -221,6 +250,11 @@ export class AnalyticsService {
       ])
       .then((res) => res);
   }
+  async getProductsCount(merchantId: string) {
+    const mId = new Types.ObjectId(merchantId);
+    return this.productModel.countDocuments({ merchantId: mId });
+  }
+
   async getTopProducts(
     merchantId: string,
     period: 'week' | 'month' | 'quarter',

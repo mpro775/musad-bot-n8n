@@ -236,7 +236,13 @@ export class MerchantsService {
   async findAll(): Promise<MerchantDocument[]> {
     return this.merchantModel.find().exec();
   }
-
+  async updateLeadsSettings(merchantId: string, settings: any[]): Promise<any> {
+    return this.merchantModel.findByIdAndUpdate(
+      merchantId,
+      { leadsSettings: settings },
+      { new: true },
+    );
+  }
   /** جلب تاجر واحد */
   async findOne(id: string): Promise<MerchantDocument> {
     const merchant = await this.merchantModel.findById(id).exec();
@@ -393,7 +399,7 @@ export class MerchantsService {
   /** تحديث القنوات */
   async updateChannels(
     id: string,
-    channelType: 'whatsapp' | 'telegram' | 'webchat', // تحديد نوع القناة
+    channelType: string,
     channelDetails: ChannelDetailsDto,
   ): Promise<MerchantDocument> {
     const channelsDto: ChannelsDto = {

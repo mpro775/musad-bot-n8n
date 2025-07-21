@@ -31,11 +31,15 @@ export class Merchant {
   @Prop({ type: [String], default: [] })
   skippedChecklistItems: string[];
 
+  @Prop({ required: false, unique: true, sparse: true })
+  slug?: string;
   @Prop({ required: false })
   logoUrl?: string;
 
   @Prop({ type: [AddressSchema], default: [] })
   addresses: Address[];
+  @Prop({ type: Map, of: String, default: {} })
+  socialLinks?: { [key: string]: string };
 
   @Prop({ type: SubscriptionPlanSchema, required: true })
   subscription: SubscriptionPlan;
@@ -95,18 +99,28 @@ export class Merchant {
   @Prop({
     type: {
       whatsapp: ChannelConfigSchema,
+      whatsappQr: ChannelConfigSchema, // لدعم QR إذا أردت الفصل
       telegram: ChannelConfigSchema,
       webchat: ChannelConfigSchema,
+      instagram: ChannelConfigSchema,
+      messenger: ChannelConfigSchema,
     },
     default: {},
   })
   channels: {
     whatsapp?: ChannelConfig;
+    whatsappQr?: ChannelConfig;
     telegram?: ChannelConfig;
     webchat?: ChannelConfig;
+    instagram?: ChannelConfig;
+    messenger?: ChannelConfig;
   };
+
   @Prop({ default: '#D84315' })
   chatThemeColor: string;
+
+  @Prop({ type: Array, default: [] })
+  leadsSettings?: any[];
 
   @Prop({ default: 'مرحباً! كيف أستطيع مساعدتك اليوم؟' })
   chatGreeting: string;

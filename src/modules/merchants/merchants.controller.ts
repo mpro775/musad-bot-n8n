@@ -264,4 +264,11 @@ export class MerchantsController {
       skippedChecklistItems: merchant.skippedChecklistItems,
     };
   }
+  @Patch(':merchantId/leads-settings')
+  updateLeadsSettings(
+    @Param('merchantId') merchantId: string,
+    @Body('settings') settings: any[],
+  ) {
+    return this.svc.updateLeadsSettings(merchantId, settings);
+  }
 }

@@ -22,6 +22,6 @@ import { HttpModule } from '@nestjs/axios';
   ],
   providers: [ChatGateway, ChatWidgetService],
   controllers: [ChatWidgetController],
-  exports: [ChatWidgetService],
+  exports: [ChatWidgetService, ChatGateway],
 })
 export class ChatModule {}

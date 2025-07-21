@@ -45,6 +45,8 @@ import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { CategoriesModule } from './modules/categories/categories.module';
+import { StorefrontModule } from './modules/storefront/storefront.module';
+import { OrdersModule } from './modules/orders/orders.module';
 
 @Module({
   imports: [
@@ -122,10 +124,12 @@ import { CategoriesModule } from './modules/categories/categories.module';
     ChatModule,
     DocumentsModule,
     N8nWorkflowModule,
+    OrdersModule,
+
     WorkflowHistoryModule,
     WebhooksModule,
     CategoriesModule,
-
+    StorefrontModule,
     LeadsModule,
     IntegrationsModule,
     ScraperModule,

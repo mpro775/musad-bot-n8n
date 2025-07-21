@@ -1,4 +1,3 @@
-// src/chat/chat.gateway.ts
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -7,30 +6,36 @@ import {
   SubscribeMessage,
   MessageBody,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'ws'; // استخدم ws وليس socket.io
+import { Server, Socket } from 'socket.io';
 
 @WebSocketGateway({
-  path: '/api/chat', // <-- هنا أضف الـ prefix
-  transports: ['websocket'], // force raw WS
+  path: '/api/chat',
+  cors: {
+    origin: ['http://localhost:5173'], // ضف دوميناتك هنا
+    credentials: true,
+  },
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
-
   handleConnection(client: Socket) {
-    console.log('Client connected' + client);
+    const { sessionId } = client.handshake.query;
+    if (sessionId) {
+      client.join(sessionId as string);
+      console.log('Client joined room:', sessionId);
+    }
+    client.emit('message', { text: 'أهلاً من الباك اند!' });
   }
-
   handleDisconnect(client: Socket) {
-    console.log('Client disconnected' + client);
+    console.log('Client disconnected', client.id);
   }
 
   @SubscribeMessage('message')
   onMessage(@MessageBody() payload: any) {
-    // ابث الردّ إلى كل العملاء
-    console.log('Client disconnected' + payload);
+    console.log('Received message', payload);
+    this.server.emit('message', { text: 'هذا رد تجريبي' });
+  }
 
-    this.server.clients.forEach((c) => {
-      c.send(JSON.stringify({ text: 'هذا رد تجريبي' }));
-    });
+  sendMessageToSession(sessionId: string, message: any) {
+    this.server.to(sessionId).emit('message', message);
   }
 }
