@@ -21,6 +21,8 @@ export interface MerchantDocument extends Merchant, Document {
 @Schema({ timestamps: true })
 export class Merchant {
   // — Core fields —
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  userId: Types.ObjectId;
   @Prop({ required: true, unique: true })
   name: string;
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
