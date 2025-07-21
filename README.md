@@ -31,6 +31,15 @@
 $ npm install
 ```
 
+### Environment variables
+
+انسخ ملف `.env.example` إلى `.env`، ثم عدّل القيم التالية لتتوافق مع إعداد خادم n8n لديك:
+
+```bash
+N8N_BASE_URL=https://n8n.example.com
+N8N_API_KEY=your-n8n-api-key
+```
+
 ## Compile and run the project
 
 ```bash

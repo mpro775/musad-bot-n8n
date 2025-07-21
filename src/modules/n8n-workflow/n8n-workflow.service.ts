@@ -4,11 +4,13 @@ import {
   Injectable,
   HttpException,
   HttpStatus,
+  InternalServerErrorException,
   Logger,
   Inject,
   forwardRef,
 } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
+import { ConfigService } from '@nestjs/config';
 
 import templateJson from './workflow-template.json';
 
@@ -64,11 +66,18 @@ export class N8nWorkflowService {
     private readonly history: WorkflowHistoryService,
     @Inject(forwardRef(() => MerchantsService))
     private readonly merchants: MerchantsService,
+    private readonly config: ConfigService,
   ) {
     const keyName = 'X-N8N-API-KEY';
-    const apiKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiZWExMTI3Yi0zZDg3LTQ1ODAtODlhNi00ZmZkOTU0ZTg1YWUiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzUwMjAzODk3fQ.eSJGKYsoQ3ZY4FLUF1fmuHgSM3uxTDyQAkPavpzJcnY';
-    const baseUrl = 'https://n8n.smartagency-ye.com'.replace(/\/+$/, '');
+    const apiKey = this.config.get<string>('N8N_API_KEY');
+    const baseUrl = this.config.get<string>('N8N_BASE_URL')?.replace(/\/+$/, '');
+
+    if (!apiKey || !baseUrl) {
+      const missing = [!apiKey && 'N8N_API_KEY', !baseUrl && 'N8N_BASE_URL'].filter(Boolean);
+      throw new InternalServerErrorException(
+        `Missing n8n configuration: ${missing.join(', ')}`,
+      );
+    }
 
     this.logger.log(`▶️ [n8n.baseURL] = ${baseUrl}`);
     this.logger.log(`▶️ [n8n.header]  = ${keyName}: ${apiKey}`);
