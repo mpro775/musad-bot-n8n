@@ -13,13 +13,18 @@ import { MessageService } from '../messaging/message.service';
 import { CreateMessageDto } from '../messaging/dto/create-message.dto';
 import { Public } from 'src/common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { ApiTags, ApiOperation, ApiParam, ApiOkResponse } from '@nestjs/swagger';
 
+@ApiTags('Webhooks')
 @UseGuards(JwtAuthGuard)
 @Controller('webhooks')
 export class WebhooksController {
   constructor(private readonly messageService: MessageService) {}
   @Public()
   @Post('incoming/:merchantId')
+  @ApiOperation({ summary: 'Handle incoming message' })
+  @ApiParam({ name: 'merchantId', description: 'Merchant ID' })
+  @ApiOkResponse({ description: 'Session updated' })
   async handleIncoming(
     @Param('merchantId') merchantId: string,
     @Body() body: any,
@@ -58,6 +63,9 @@ export class WebhooksController {
 
   @Public()
   @Post('bot-reply/:merchantId')
+  @ApiOperation({ summary: 'Handle bot reply message' })
+  @ApiParam({ name: 'merchantId', description: 'Merchant ID' })
+  @ApiOkResponse({ description: 'Session updated' })
   async handleBotReply(
     @Param('merchantId') merchantId: string,
     @Body() body: any,

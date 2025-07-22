@@ -4,7 +4,15 @@ import { VectorService } from './vector.service';
 import { SemanticRequestDto } from './dto/semantic-request.dto';
 import { Public } from 'src/common/decorators/public.decorator';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBody,
+  ApiQuery,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 
+@ApiTags('Semantic Search')
 @Controller('semantic')
 @UseGuards(JwtAuthGuard)
 export class VectorController {
@@ -13,6 +21,9 @@ export class VectorController {
   // POST endpoint for semantic search on products
   @Post('products')
   @Public()
+  @ApiOperation({ summary: 'Semantic search for products (POST body)' })
+  @ApiBody({ type: SemanticRequestDto })
+  @ApiOkResponse({ description: 'Recommended products' })
   async semanticSProducts(@Body() dto: SemanticRequestDto) {
     const recs = await this.vector.querySimilarProducts(
       dto.text,
@@ -24,6 +35,11 @@ export class VectorController {
   // GET endpoint with optional topK parameter
   @Get('products')
   @Public()
+  @ApiOperation({ summary: 'Semantic search for products via query' })
+  @ApiQuery({ name: 'text' })
+  @ApiQuery({ name: 'merchantId' })
+  @ApiQuery({ name: 'topK', required: false, type: Number })
+  @ApiOkResponse({ description: 'Recommended products' })
   async semanticSearchProductsByQuery(
     @Query('text') text: string,
     @Query('merchantId') merchantId: string,

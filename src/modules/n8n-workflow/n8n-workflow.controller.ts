@@ -16,7 +16,15 @@ import { UpdateWorkflowDto } from './dto/update-workflow.dto';
 import { RollbackDto } from './dto/rollback.dto';
 import { SetActiveDto } from './dto/set-active.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiParam,
+  ApiBody,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 
+@ApiTags('n8n Workflows')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('n8n/workflows')
 export class N8nWorkflowController {
@@ -24,6 +32,9 @@ export class N8nWorkflowController {
 
   @Post(':merchantId')
   @Roles('ADMIN', 'MEMBER')
+  @ApiOperation({ summary: 'Create workflow for a merchant' })
+  @ApiParam({ name: 'merchantId', description: 'Merchant ID' })
+  @ApiOkResponse({ description: 'Workflow created', schema: { example: { workflowId: '123' } } })
   async createForMerchant(
     @Param('merchantId') merchantId: string,
   ): Promise<{ workflowId: string }> {
@@ -38,6 +49,8 @@ export class N8nWorkflowController {
 
   @Get(':workflowId')
   @Roles('ADMIN', 'MEMBER')
+  @ApiOperation({ summary: 'Get workflow definition' })
+  @ApiParam({ name: 'workflowId', description: 'Workflow ID' })
   async get(
     @Param('workflowId') workflowId: string,
   ): Promise<WorkflowDefinition> {
@@ -46,6 +59,10 @@ export class N8nWorkflowController {
 
   @Patch(':workflowId')
   @Roles('ADMIN')
+  @ApiOperation({ summary: 'Update workflow definition' })
+  @ApiParam({ name: 'workflowId', description: 'Workflow ID' })
+  @ApiBody({ type: UpdateWorkflowDto })
+  @ApiOkResponse({ description: 'Workflow updated' })
   async update(
     @Param('workflowId') workflowId: string,
     @Body() body: UpdateWorkflowDto,
@@ -64,6 +81,10 @@ export class N8nWorkflowController {
 
   @Post(':workflowId/rollback')
   @Roles('ADMIN')
+  @ApiOperation({ summary: 'Rollback workflow to a previous version' })
+  @ApiParam({ name: 'workflowId', description: 'Workflow ID' })
+  @ApiBody({ type: RollbackDto })
+  @ApiOkResponse({ description: 'Rollback successful' })
   async rollback(
     @Param('workflowId') workflowId: string,
     @Body() dto: RollbackDto,
@@ -74,6 +95,10 @@ export class N8nWorkflowController {
 
   @Post(':workflowId/clone/:targetMerchantId')
   @Roles('ADMIN')
+  @ApiOperation({ summary: 'Clone workflow to another merchant' })
+  @ApiParam({ name: 'workflowId', description: 'Source workflow ID' })
+  @ApiParam({ name: 'targetMerchantId', description: 'Target merchant ID' })
+  @ApiOkResponse({ description: 'Cloned successfully' })
   async clone(
     @Param('workflowId') sourceId: string,
     @Param('targetMerchantId') targetMerchantId: string,
@@ -88,6 +113,10 @@ export class N8nWorkflowController {
 
   @Patch(':workflowId/active')
   @Roles('ADMIN')
+  @ApiOperation({ summary: 'Activate or deactivate workflow' })
+  @ApiParam({ name: 'workflowId', description: 'Workflow ID' })
+  @ApiBody({ type: SetActiveDto })
+  @ApiOkResponse({ description: 'Status updated' })
   async setActive(
     @Param('workflowId') workflowId: string,
     @Body() dto: SetActiveDto,
