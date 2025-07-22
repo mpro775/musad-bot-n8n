@@ -24,6 +24,7 @@
 ## Description
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+See [docs/request-flow.md](docs/request-flow.md) for a diagram of the request flow from the client to MongoDB.
 
 ## Project setup
 
