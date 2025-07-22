@@ -5,6 +5,9 @@ digraph architecture {
     subgraph cluster_containers {
         label="Docker Compose Services";
         api;
+        embedding;
+        extractor;
+        reranker;
         n8n;
         qdrant;
         mongo;
@@ -19,6 +22,9 @@ digraph architecture {
     api -> redis           [label="Bull queues / cache"];
     api -> qdrant          [label="VectorService"];
     api -> minio           [label="Documents"];
+    api -> embedding       [label="REST"];
+    api -> extractor       [label="REST"];
+    api -> reranker        [label="REST"];
     api -> n8n             [label="Workflow API"];
     api -> evolution_api   [label="Integrations"];
     n8n -> api             [label="Webhooks / HTTP"];
