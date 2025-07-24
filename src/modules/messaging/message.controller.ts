@@ -21,10 +21,12 @@ import {
   ApiOperation,
   ApiParam,
   ApiQuery,
+  ApiTags,
 } from '@nestjs/swagger';
 import { Public } from 'src/common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
+@ApiTags('Messages')
 @UseGuards(JwtAuthGuard)
 @Controller('messages')
 export class MessageController {
