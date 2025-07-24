@@ -20,6 +20,7 @@ import { AdvancedTemplateDto } from './advanced-template.dto';
 import { Prop } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
 import { LeadsSettingsDto } from './leads-settings.dto';
+import { BannerDto } from './banner.dto';
 
 export class CreateMerchantDto {
   @IsString()
@@ -119,6 +120,9 @@ export class CreateMerchantDto {
   @ValidateNested()
   @Type(() => LeadsSettingsDto)
   leadsSettings?: LeadsSettingsDto;
+  @IsOptional()
+  @IsArray()
+  banners?: BannerDto[];
 
   @IsOptional()
   @IsString()

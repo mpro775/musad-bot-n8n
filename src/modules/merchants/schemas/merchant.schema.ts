@@ -116,6 +116,29 @@ export class Merchant {
     messenger?: ChannelConfig;
   };
 
+  @Prop({
+    type: [
+      {
+        _id: false,
+        image: String, // رابط صورة البانر (اختياري)
+        text: String, // نص أو عنوان البانر
+        url: String, // رابط عند الضغط (اختياري)
+        color: String, // لون خلفية البانر (اختياري)
+        active: { type: Boolean, default: true },
+        order: { type: Number, default: 0 },
+      },
+    ],
+    default: [],
+  })
+  banners?: {
+    image?: string;
+    text: string;
+    url?: string;
+    color?: string;
+    active?: boolean;
+    order?: number;
+  }[];
+
   @Prop({ default: '#D84315' })
   chatThemeColor: string;
 
