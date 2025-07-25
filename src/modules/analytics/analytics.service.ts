@@ -13,6 +13,7 @@ import {
   MerchantDocument,
 } from '../merchants/schemas/merchant.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
+import { Order, OrderDocument } from '../orders/schemas/order.schema';
 
 export interface KeywordCount {
   keyword: string;
@@ -31,16 +32,16 @@ export interface TopProduct {
 }
 
 export interface Overview {
-  sessions: {
-    count: number;
-    changePercent: number;
-  };
+  sessions: { count: number; changePercent: number };
   messages: number;
   topKeywords: KeywordCount[];
   topProducts: TopProduct[];
-  channels: {
-    total: number;
-    breakdown: ChannelCount[];
+  channels: { total: number; breakdown: ChannelCount[] };
+  orders: {
+    count: number;
+    changePercent: number;
+    byStatus: Record<string, number>;
+    totalSales: number;
   };
 }
 
@@ -53,6 +54,8 @@ export class AnalyticsService {
     private readonly merchantModel: Model<MerchantDocument>,
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Order.name)
+    private readonly orderModel: Model<OrderDocument>,
   ) {}
 
   /**
@@ -129,6 +132,43 @@ export class AnalyticsService {
     ]);
     const totalMessages = messagesAgg.length > 0 ? messagesAgg[0].total : 0;
 
+    const [currOrders, prevOrders] = await Promise.all([
+      this.orderModel.countDocuments({
+        merchantId: mId,
+        createdAt: { $gte: start, $lte: end },
+      }),
+      this.orderModel.countDocuments({
+        merchantId: mId,
+        createdAt: { $gte: prevStart, $lte: prevEnd },
+      }),
+    ]);
+    const ordersChangePercent = prevOrders
+      ? Math.round(((currOrders - prevOrders) / prevOrders) * 100)
+      : 100;
+
+    // 2) تفصيل حسب الحالة
+    const orderStatusAgg = await this.orderModel.aggregate([
+      { $match: { merchantId: mId, createdAt: { $gte: start, $lte: end } } },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]);
+    // حول الـ aggregate إلى كائن مثل {pending: 2, paid: 5, ...}
+    const ordersByStatus = {};
+    orderStatusAgg.forEach((s) => {
+      ordersByStatus[s._id] = s.count;
+    });
+
+    // 3) اجمالي المبيعات (مجموع مبلغ الطلبات)
+    const salesAgg = await this.orderModel.aggregate([
+      {
+        $match: {
+          merchantId: mId,
+          createdAt: { $gte: start, $lte: end },
+          status: { $ne: 'canceled' },
+        },
+      },
+      { $group: { _id: null, total: { $sum: '$total' } } },
+    ]);
+    const totalSales = salesAgg[0]?.total || 0;
     // 3) أعلى 3 كلمات مفتاحية
     const topKeywords = await this.sessionModel.aggregate<KeywordCount>([
       { $match: { merchantId: mId, createdAt: { $gte: start, $lte: end } } },
@@ -201,6 +241,12 @@ export class AnalyticsService {
       channels: {
         total: enabledChannels.length,
         breakdown,
+      },
+      orders: {
+        count: currOrders,
+        changePercent: ordersChangePercent,
+        byStatus: ordersByStatus,
+        totalSales,
       },
     };
   }

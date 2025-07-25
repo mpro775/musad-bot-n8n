@@ -40,4 +40,12 @@ export class OrdersService {
   async updateStatus(id: string, status: string): Promise<Order | null> {
     return this.orderModel.findByIdAndUpdate(id, { status }, { new: true });
   }
+  async findByCustomer(merchantId: string, phone: string): Promise<Order[]> {
+    return this.orderModel
+      .find({
+        merchantId,
+        'customer.phone': phone, // أو أي key آخر يحفظ رقم العميل
+      })
+      .sort({ createdAt: -1 });
+  }
 }
