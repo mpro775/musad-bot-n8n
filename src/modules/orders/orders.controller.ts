@@ -30,6 +30,7 @@ export class OrdersController {
   }
 
   // جلب طلب محدد بالتفصيل
+  @Public()
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.ordersService.findOne(id);
