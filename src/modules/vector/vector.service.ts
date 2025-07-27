@@ -43,7 +43,7 @@ export class VectorService implements OnModuleInit {
   public async embed(text: string): Promise<number[]> {
     const response = await firstValueFrom(
       this.http.post<{ embeddings: number[][] }>(
-        'http://31.97.155.167:8000/embed',
+        'http://musaidbot-embedding:8000/embed',
         { texts: [text] },
       ),
     );
@@ -106,7 +106,7 @@ export class VectorService implements OnModuleInit {
     const rerankResponse = await firstValueFrom(
       this.http.post<{
         results: { text: string; score: number }[];
-      }>('http://31.97.155.167:8500/rerank', {
+      }>('http://musaidbot-reranker:8500/rerank', {
         query: text,
         candidates: candidateTexts,
       }),
