@@ -3,8 +3,6 @@ import {
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
-  SubscribeMessage,
-  MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 
@@ -23,16 +21,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.join(sessionId as string);
       console.log('Client joined room:', sessionId);
     }
-    client.emit('message', { text: 'أهلاً من الباك اند!' });
-  }
-  handleDisconnect(client: Socket) {
-    console.log('Client disconnected', client.id);
+    // لا ترسل أي رسالة تلقائية هنا!
   }
 
-  @SubscribeMessage('message')
-  onMessage(@MessageBody() payload: any) {
-    console.log('Received message', payload);
-    this.server.emit('message', { text: 'هذا رد تجريبي' });
+  handleDisconnect(client: Socket) {
+    console.log('Client disconnected', client.id);
   }
 
   sendMessageToSession(sessionId: string, message: any) {

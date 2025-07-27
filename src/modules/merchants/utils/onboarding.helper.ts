@@ -37,13 +37,6 @@ export function getOptionalEnhancementTips(merchant: Merchant): string[] {
     tips.push('حدد أوقات العمل لضمان استجابات دقيقة من البوت.');
   }
 
-  if (
-    !merchant.chatGreeting ||
-    merchant.chatGreeting === 'مرحباً! كيف أستطيع مساعدتك اليوم؟'
-  ) {
-    tips.push('خصص عبارة الترحيب لخلق تجربة أكثر ودّية.');
-  }
-
   if (!merchant.quickConfig?.customInstructions?.length) {
     tips.push('أضف تعليمات مخصصة لتخصيص ردود البوت.');
   }

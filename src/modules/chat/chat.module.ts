@@ -10,6 +10,7 @@ import {
 } from './schema/chat-widget.schema';
 import { MerchantsModule } from '../merchants/merchants.module';
 import { HttpModule } from '@nestjs/axios';
+import { PublicChatWidgetController } from './public-chat-widget.controller';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { HttpModule } from '@nestjs/axios';
     HttpModule,
   ],
   providers: [ChatGateway, ChatWidgetService],
-  controllers: [ChatWidgetController],
+  controllers: [ChatWidgetController, PublicChatWidgetController],
   exports: [ChatWidgetService, ChatGateway],
 })
 export class ChatModule {}

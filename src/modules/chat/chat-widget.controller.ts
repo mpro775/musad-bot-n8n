@@ -35,11 +35,6 @@ export class ChatWidgetController {
     return this.svc.updateSettings(merchantId, dto);
   }
 
-  @Post('slug')
-  @ApiOperation({ summary: 'Generate or update chat slug' })
-  generateSlug(@Param('merchantId') merchantId: string) {
-    return this.svc.generateSlug(merchantId);
-  }
   @Post(':merchantId/handoff')
   @ApiOperation({ summary: 'Initiate human handoff for a session' })
   async handoff(
@@ -52,6 +47,15 @@ export class ChatWidgetController {
   @ApiOperation({ summary: 'Get embed settings (mode + shareable URL)' })
   async getEmbedSettings(@Param('merchantId') merchantId: string) {
     return this.svc.getEmbedSettings(merchantId);
+  }
+  @Get('share-url')
+  async getShareUrl(@Param('merchantId') merchantId: string) {
+    const settings = await this.svc.getSettings(merchantId);
+    return { url: `http://localhost:5173/chat/${settings.widgetSlug}` };
+  }
+  @Post('slug')
+  generateSlug(@Param('merchantId') merchantId: string) {
+    return this.svc.generateWidgetSlug(merchantId);
   }
 
   @Put('embed-settings')

@@ -39,7 +39,6 @@ import {
 import { Public } from 'src/common/decorators/public.decorator';
 import { OnboardingResponseDto } from './dto/onboarding-response.dto';
 import { OnboardingDto } from './dto/onboarding.dto';
-import { ChatSettingsDto } from './dto/chat-settings.dto';
 import {
   ChecklistGroup,
   MerchantChecklistService,
@@ -112,18 +111,7 @@ export class MerchantsController {
   findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
-  @Get(':id/chat-settings')
-  async getChatSettings(@Param('id') id: string) {
-    return this.svc.getChatSettings(id);
-  }
 
-  @Put(':id/chat-settings')
-  async updateChatSettings(
-    @Param('id') id: string,
-    @Body() dto: ChatSettingsDto,
-  ) {
-    return this.svc.updateChatSettings(id, dto);
-  }
   @Put(':id')
   @ApiOperation({ summary: 'تحديث بيانات التاجر بالكامل' })
   @ApiParam({ name: 'id', description: 'معرّف التاجر' })

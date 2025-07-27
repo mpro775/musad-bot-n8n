@@ -48,9 +48,11 @@ export class MessageService {
       };
     });
     console.log('Will insert:', JSON.stringify(toInsert, null, 2));
-    for (const msg of toInsert) {
-      this.chatGateway.sendMessageToSession(dto.sessionId, msg);
+    const lastMsg = toInsert[toInsert.length - 1];
+    if (lastMsg) {
+      this.chatGateway.sendMessageToSession(dto.sessionId, lastMsg);
     }
+    console.log('Sending to WS room:', dto.sessionId, lastMsg);
 
     if (existing) {
       existing.messages.push(...toInsert);

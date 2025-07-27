@@ -27,7 +27,6 @@ import { mapToChannelConfig } from './utils/channel-mapper';
 import { MerchantStatusResponse } from './types/types';
 import { QuickConfig } from './schemas/quick-config.schema';
 import { buildPromptFromMerchant } from './utils/prompt-builder';
-import { ChatSettingsDto } from './dto/chat-settings.dto';
 import { EvolutionService } from '../integrations/evolution.service';
 import { randomUUID } from 'crypto';
 
@@ -358,44 +357,7 @@ export class MerchantsService {
         : this.promptBuilder.buildFromQuickConfig(m);
     return this.previewSvc.preview(rawTpl, testVars);
   }
-  async getChatSettings(merchantId: string) {
-    const m = await this.merchantModel.findById(merchantId).exec();
-    if (!m) throw new NotFoundException('Merchant not found');
-    return {
-      themeColor: m.chatThemeColor,
-      greeting: m.chatGreeting,
-      webhooksUrl: m.chatWebhooksUrl,
-      apiBaseUrl: m.chatApiBaseUrl,
-    };
-  }
 
-  async updateChatSettings(merchantId: string, dto: ChatSettingsDto) {
-    const updated = await this.merchantModel
-      .findByIdAndUpdate(
-        merchantId,
-        {
-          ...(dto.themeColor !== undefined && {
-            chatThemeColor: dto.themeColor,
-          }),
-          ...(dto.greeting !== undefined && { chatGreeting: dto.greeting }),
-          ...(dto.webhooksUrl !== undefined && {
-            chatWebhooksUrl: dto.webhooksUrl,
-          }),
-          ...(dto.apiBaseUrl !== undefined && {
-            chatApiBaseUrl: dto.apiBaseUrl,
-          }),
-        },
-        { new: true },
-      )
-      .exec();
-    if (!updated) throw new NotFoundException('Merchant not found');
-    return {
-      themeColor: updated.chatThemeColor,
-      greeting: updated.chatGreeting,
-      webhooksUrl: updated.chatWebhooksUrl,
-      apiBaseUrl: updated.chatApiBaseUrl,
-    };
-  }
   /** تحديث القنوات */
   async updateChannels(
     id: string,

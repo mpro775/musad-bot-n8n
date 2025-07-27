@@ -47,6 +47,29 @@ export class ChatWidgetService {
     if (!settings) throw new NotFoundException('Settings not found');
     return settings.toObject();
   }
+  async generateWidgetSlug(merchantId: string): Promise<string> {
+    const base = (await this.getSettings(merchantId)).botName
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
+
+    let widgetSlug = base;
+    const exists = await this.widgetModel.exists({ widgetSlug });
+    if (exists) widgetSlug = `${base}-${uuidv4().slice(0, 6)}`;
+    await this.widgetModel.findOneAndUpdate(
+      { merchantId },
+      { widgetSlug },
+      { new: true },
+    );
+    return widgetSlug;
+  }
+
+  async getSettingsByWidgetSlug(widgetSlug: string) {
+    const settings = await this.widgetModel.findOne({ widgetSlug }).lean();
+    if (!settings) throw new NotFoundException('Widget not found');
+    return settings;
+  }
   async handleHandoff(
     merchantId: string,
     dto: { sessionId: string; note?: string },
@@ -92,30 +115,11 @@ export class ChatWidgetService {
     }
     return { success: true };
   }
-  async generateSlug(merchantId: string): Promise<string> {
-    const base = (await this.getSettings(merchantId)).botName
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '');
 
-    let slug = `${base}`;
-    // تأكد من التفرد
-    const exists = await this.widgetModel.exists({ slug });
-    if (exists) {
-      slug = `${base}-${uuidv4().slice(0, 6)}`;
-    }
-    await this.widgetModel.findOneAndUpdate(
-      { merchantId },
-      { slug },
-      { new: true },
-    );
-    return slug;
-  }
   async getEmbedSettings(merchantId: string) {
     const settings = await this.widgetModel.findOne({ merchantId }).lean();
     if (!settings) throw new NotFoundException('Settings not found');
-    const shareUrl = `/chat/${settings.slug}`;
+    const shareUrl = `/chat/${settings.widgetSlug}`;
     return {
       embedMode: settings.embedMode,
       availableModes: ['bubble', 'iframe', 'bar', 'conversational'],
@@ -136,7 +140,7 @@ export class ChatWidgetService {
     if (!updated) throw new NotFoundException('Settings not found');
     return {
       embedMode: updated.embedMode,
-      shareUrl: `/chat/${updated.slug}`,
+      shareUrl: `/chat/${updated.widgetSlug}`,
       availableModes: ['bubble', 'iframe', 'bar', 'conversational'], // ← أضف هذا
     };
   }

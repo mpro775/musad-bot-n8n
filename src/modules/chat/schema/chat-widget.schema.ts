@@ -11,7 +11,6 @@ export class ChatWidgetSettings {
   // General
   @Prop({ default: 'Musaid Bot' }) botName: string;
   @Prop({ default: 'ياحيا ’ كيف ممكن اساعدك اليوم؟' }) welcomeMessage: string;
-  @Prop({ unique: true, sparse: true }) slug: string;
 
   // Appearance
   @Prop({
@@ -56,7 +55,8 @@ export class ChatWidgetSettings {
   @Prop([String]) topicsTags: string[]; // ['Pricing','Demo',…]
   @Prop([String]) sentimentTags: string[]; // ['Positive','Negative','Neutral']
   @Prop({ default: false }) autoTagging: boolean;
-
+  @Prop({ unique: true, sparse: true })
+  widgetSlug: string;
   @Prop({
     enum: ['bubble', 'iframe', 'bar', 'conversational'],
     default: 'bubble',

@@ -139,20 +139,9 @@ export class Merchant {
     order?: number;
   }[];
 
-  @Prop({ default: '#D84315' })
-  chatThemeColor: string;
-
   @Prop({ type: Array, default: [] })
   leadsSettings?: any[];
 
-  @Prop({ default: 'مرحباً! كيف أستطيع مساعدتك اليوم؟' })
-  chatGreeting: string;
-
-  @Prop({ default: '/api/webhooks' })
-  chatWebhooksUrl: string;
-
-  @Prop({ default: '' })
-  chatApiBaseUrl: string; // يعاد كتابته افتراضيًّا عند الإنشاء
   // — Working hours —
   @Prop({ type: [WorkingHourSchema], default: [] })
   workingHours: WorkingHour[];
