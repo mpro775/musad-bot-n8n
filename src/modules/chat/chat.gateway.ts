@@ -16,12 +16,15 @@ import { Server, Socket } from 'socket.io';
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
   handleConnection(client: Socket) {
-    const { sessionId } = client.handshake.query;
+    const { sessionId, role } = client.handshake.query;
     if (sessionId) {
       client.join(sessionId as string);
-      console.log('Client joined room:', sessionId);
     }
-    // لا ترسل أي رسالة تلقائية هنا!
+    // إذا متصل كمدير أو مشرف، يدخل غرفة المشرفين
+    if (role === 'admin' || role === 'agent') {
+      client.join('admin');
+      console.log('Admin/Agent joined admin room:', client.id);
+    }
   }
 
   handleDisconnect(client: Socket) {
@@ -29,6 +32,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   sendMessageToSession(sessionId: string, message: any) {
-    this.server.to(sessionId).emit('message', message);
+    this.server.to(sessionId).emit('message', message); // للعميل نفسه
+    this.server.to('admin').emit('admin_new_message', { sessionId, message }); // بث للمشرفين
   }
 }
