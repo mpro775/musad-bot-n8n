@@ -1,5 +1,5 @@
 # Dockerfile.n8n
-FROM n8nio/n8n:1.102.3
+FROM n8nio/n8n:latest
 
 # ثبّت node التطويريّ لـ Evolution API
 RUN npm install --no-save n8n-nodes-evolution-api
