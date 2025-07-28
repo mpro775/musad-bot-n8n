@@ -8,7 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 
@@ -26,9 +26,9 @@ import { ChannelDetailsDto, ChannelsDto } from './dto/channel.dto';
 import { mapToChannelConfig } from './utils/channel-mapper';
 import { MerchantStatusResponse } from './types/types';
 import { QuickConfig } from './schemas/quick-config.schema';
-import { buildPromptFromMerchant } from './utils/prompt-builder';
 import { EvolutionService } from '../integrations/evolution.service';
 import { randomUUID } from 'crypto';
+import { StorefrontService } from '../storefront/storefront.service';
 
 @Injectable()
 export class MerchantsService {
@@ -42,6 +42,7 @@ export class MerchantsService {
     private readonly promptBuilder: PromptBuilderService,
     private readonly versionSvc: PromptVersionService,
     private readonly evoService: EvolutionService,
+    private readonly storefrontService: StorefrontService,
 
     private readonly previewSvc: PromptPreviewService,
     private readonly n8n: N8nWorkflowService,
@@ -61,7 +62,6 @@ export class MerchantsService {
     // 2) جهّز المستند مع تزويد جميع الحقول الافتراضية
     const doc: any = {
       name: createDto.name,
-      storefrontUrl: createDto.storefrontUrl ?? '',
       logoUrl: createDto.logoUrl ?? '',
       addresses: createDto.addresses ?? {},
 
@@ -69,7 +69,6 @@ export class MerchantsService {
       categories: createDto.categories ?? [],
       customCategory: createDto.customCategory ?? undefined,
 
-      domain: createDto.domain,
       businessType: createDto.businessType,
       businessDescription: createDto.businessDescription,
 
@@ -119,12 +118,6 @@ export class MerchantsService {
           updatedAt: v.updatedAt ? new Date(v.updatedAt) : new Date(),
         }),
       ),
-
-      // إعدادات الدردشة
-      chatThemeColor: '#D84315',
-      chatGreeting: 'مرحباً! كيف أستطيع مساعدتك اليوم؟',
-      chatWebhooksUrl: '/api/webhooks',
-      chatApiBaseUrl: '',
     };
 
     // 3) أنشئ الميرشانت واحفظه
@@ -150,6 +143,15 @@ export class MerchantsService {
         this.promptBuilder.compileTemplate(merchant);
       await merchant.save();
 
+      await this.storefrontService.create({
+        merchant: merchant.id,
+        primaryColor: '#FF8500',
+        secondaryColor: '#1976d2',
+        buttonStyle: 'rounded',
+        banners: [],
+        featuredProductIds: [],
+        slug: merchant.id.toString(),
+      });
       // 7) تسجيل ويبهوك تيليجرام إن وُجد توكن
       const tgCfg = merchant.channels.telegram;
       if (tgCfg?.token) {
@@ -334,9 +336,15 @@ export class MerchantsService {
     if (!updatedDoc) {
       throw new NotFoundException('Merchant not found');
     }
+    const storefront = await this.storefrontService.findByMerchant(
+      (updatedDoc._id as Types.ObjectId).toString(),
+    );
 
     // أعد بناء finalPromptTemplate
-    const newPrompt = buildPromptFromMerchant(updatedDoc);
+    const newPrompt = this.promptBuilder.buildFromQuickConfig(
+      updatedDoc,
+      storefront,
+    );
     await this.merchantModel
       .findByIdAndUpdate(id, { $set: { finalPromptTemplate: newPrompt } })
       .exec();
@@ -384,7 +392,6 @@ export class MerchantsService {
 
     // خريطة الحقول
     merchant.name = dto.name;
-    merchant.storefrontUrl = dto.storeUrl;
     merchant.logoUrl = dto.logoUrl;
     merchant.businessType = dto.businessType;
     merchant.businessDescription = dto.businessDescription;

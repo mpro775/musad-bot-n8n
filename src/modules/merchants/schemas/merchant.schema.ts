@@ -2,7 +2,6 @@
 
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { buildPromptFromMerchant } from '../utils/prompt-builder';
 
 import { QuickConfig, QuickConfigSchema } from './quick-config.schema';
 import { AdvancedConfig, AdvancedConfigSchema } from './advanced-config.schema';
@@ -25,14 +24,10 @@ export class Merchant {
   name: string;
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
-  @Prop({ required: false })
-  storefrontUrl?: string;
 
   @Prop({ type: [String], default: [] })
   skippedChecklistItems: string[];
 
-  @Prop({ required: false, unique: true, sparse: true })
-  slug?: string;
   @Prop({ required: false })
   logoUrl?: string;
 
@@ -49,9 +44,6 @@ export class Merchant {
 
   @Prop({ required: false })
   customCategory?: string; // ← الفئة التي يضيفها التاجر بنفسه عند اختيار "أخرى"
-
-  @Prop({ required: false, unique: true, sparse: true })
-  domain?: string;
 
   @Prop({ required: false })
   businessType?: string;
@@ -116,50 +108,14 @@ export class Merchant {
     messenger?: ChannelConfig;
   };
 
-  @Prop({
-    type: [
-      {
-        _id: false,
-        image: String, // رابط صورة البانر (اختياري)
-        text: String, // نص أو عنوان البانر
-        url: String, // رابط عند الضغط (اختياري)
-        color: String, // لون خلفية البانر (اختياري)
-        active: { type: Boolean, default: true },
-        order: { type: Number, default: 0 },
-      },
-    ],
-    default: [],
-  })
-  banners?: {
-    image?: string;
-    text: string;
-    url?: string;
-    color?: string;
-    active?: boolean;
-    order?: number;
-  }[];
-
   @Prop({ type: Array, default: [] })
   leadsSettings?: any[];
 
+  @Prop({ type: Types.ObjectId, ref: 'Storefront' })
+  storefront?: Types.ObjectId;
   // — Working hours —
   @Prop({ type: [WorkingHourSchema], default: [] })
   workingHours: WorkingHour[];
 }
 
 export const MerchantSchema = SchemaFactory.createForClass(Merchant);
-
-MerchantSchema.pre<MerchantDocument>('save', function (next) {
-  if (
-    this.isNew ||
-    this.isModified('quickConfig') ||
-    this.isModified('currentAdvancedConfig.template') ||
-    this.isModified('advancedConfigHistory') ||
-    this.isModified('returnPolicy') ||
-    this.isModified('exchangePolicy') ||
-    this.isModified('shippingPolicy')
-  ) {
-    this.finalPromptTemplate = buildPromptFromMerchant(this);
-  }
-  next();
-});

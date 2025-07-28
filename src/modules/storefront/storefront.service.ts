@@ -11,6 +11,9 @@ import {
   Category,
   CategoryDocument,
 } from '../categories/schemas/category.schema';
+import { UpdateStorefrontDto } from './dto/update-storefront.dto';
+import { Storefront, StorefrontDocument } from './schemas/storefront.schema';
+import { CreateStorefrontDto } from './dto/create-storefront.dto';
 export interface StorefrontResult {
   merchant: Merchant;
   products: Product[];
@@ -22,8 +25,46 @@ export class StorefrontService {
     @InjectModel(Merchant.name) private merchantModel: Model<MerchantDocument>,
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
     @InjectModel(Category.name) private categoryModel: Model<CategoryDocument>,
+    @InjectModel(Storefront.name)
+    private storefrontModel: Model<StorefrontDocument>,
   ) {}
+  async create(dto: CreateStorefrontDto): Promise<Storefront> {
+    return this.storefrontModel.create(dto);
+  }
 
+  async findByMerchant(merchantId: string): Promise<StorefrontDocument | null> {
+    let id: any = merchantId;
+    if (Types.ObjectId.isValid(merchantId)) {
+      id = new Types.ObjectId(merchantId);
+    }
+    // جرّب البحث بكلا القيمتين (أحيانًا البيانات محفوظة كـ String أحيانًا كـ ObjectId)
+    return this.storefrontModel
+      .findOne({
+        $or: [{ merchant: merchantId }, { merchant: id }],
+      })
+      .exec();
+  }
+
+  async update(id: string, dto: UpdateStorefrontDto): Promise<Storefront> {
+    const storefront = await this.storefrontModel.findByIdAndUpdate(id, dto, {
+      new: true,
+    });
+    if (!storefront) throw new NotFoundException('Storefront not found');
+    return storefront;
+  }
+
+  async updateByMerchant(
+    merchantId: string,
+    dto: UpdateStorefrontDto,
+  ): Promise<Storefront> {
+    const storefront = await this.storefrontModel.findOneAndUpdate(
+      { merchant: merchantId },
+      dto,
+      { new: true },
+    );
+    if (!storefront) throw new NotFoundException('Storefront not found');
+    return storefront;
+  }
   async getStorefront(slugOrId: string): Promise<StorefrontResult> {
     const filter = Types.ObjectId.isValid(slugOrId)
       ? { $or: [{ _id: slugOrId }, { slug: slugOrId }] }

@@ -1,6 +1,15 @@
+import { Public } from 'src/common/decorators/public.decorator';
 // src/analytics/analytics.controller.ts
 
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import {
   AnalyticsService,
   Overview,
@@ -10,6 +19,7 @@ import {
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 import { Request } from 'express';
+import { CreateMissingResponseDto } from './dto/create-missing-response.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('analytics')
@@ -72,7 +82,12 @@ export class AnalyticsController {
       total: await this.analytics.getProductsCount(req.user.merchantId),
     };
   }
-
+  @Post('webhook')
+  @Public()
+  async webhook(@Body() body: CreateMissingResponseDto) {
+    const doc = await this.analytics.createFromWebhook(body);
+    return { success: true, id: doc._id };
+  }
   /**
    * GET /api/analytics/top-products?period=...&limit=...
    * Returns TopProduct[]

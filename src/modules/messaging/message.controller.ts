@@ -55,6 +55,7 @@ export class MessageController {
     },
   })
   @ApiBadRequestResponse({ description: 'البيانات غير صحيحة أو ناقصة' })
+  @Public()
   createOrAppend(@Body() dto: CreateMessageDto) {
     return this.messageService.createOrAppend(dto);
   }
@@ -70,6 +71,7 @@ export class MessageController {
   }
 
   @Get('session/:sessionId')
+  @Public()
   @ApiOperation({
     summary: 'جلب محادثة كاملة حسب sessionId (رقم الهاتف غالبًا)',
   })
@@ -82,6 +84,7 @@ export class MessageController {
   }
 
   @Get(':id')
+  @Public()
   @ApiOperation({ summary: 'جلب الجلسة حسب _id' })
   @ApiParam({ name: 'id', description: 'معرف الوثيقة في Mongo' })
   @ApiOkResponse()

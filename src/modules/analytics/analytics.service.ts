@@ -14,6 +14,11 @@ import {
 } from '../merchants/schemas/merchant.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
+import { CreateMissingResponseDto } from './dto/create-missing-response.dto';
+import {
+  MissingResponse,
+  MissingResponseDocument,
+} from './schemas/missing-response.schema';
 
 export interface KeywordCount {
   keyword: string;
@@ -56,6 +61,8 @@ export class AnalyticsService {
     private readonly productModel: Model<ProductDocument>,
     @InjectModel(Order.name)
     private readonly orderModel: Model<OrderDocument>,
+    @InjectModel(MissingResponse.name)
+    private missingResponseModel: Model<MissingResponseDocument>,
   ) {}
 
   /**
@@ -300,7 +307,10 @@ export class AnalyticsService {
     const mId = new Types.ObjectId(merchantId);
     return this.productModel.countDocuments({ merchantId: mId });
   }
-
+  async createFromWebhook(dto: CreateMissingResponseDto) {
+    // تحقق من القيم أو نظفها لو أردت
+    return await this.missingResponseModel.create(dto);
+  }
   async getTopProducts(
     merchantId: string,
     period: 'week' | 'month' | 'quarter',

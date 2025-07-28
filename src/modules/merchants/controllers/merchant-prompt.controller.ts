@@ -20,7 +20,8 @@ import { QuickConfigDto } from '../dto/quick-config.dto';
 import { AdvancedTemplateDto } from '../dto/advanced-template.dto';
 import { PreviewPromptDto } from '../dto/preview-prompt.dto';
 import { MerchantDocument } from '../schemas/merchant.schema';
-import { buildPromptFromMerchant } from '../utils/prompt-builder';
+import { StorefrontService } from '../../storefront/storefront.service';
+import { PromptBuilderService } from '../services/prompt-builder.service'; // إذا ستستخدمها هنا
 
 @ApiTags('Merchants • Prompt')
 @Controller('merchants/:id/prompt')
@@ -29,6 +30,8 @@ export class MerchantPromptController {
     private readonly merchantSvc: MerchantsService,
     private readonly versionSvc: PromptVersionService,
     private readonly previewSvc: PromptPreviewService,
+    private readonly storefrontService: StorefrontService, // أضف هذا
+    private readonly promptBuilder: PromptBuilderService,
   ) {}
 
   @Get('quick-config')
@@ -101,6 +104,11 @@ export class MerchantPromptController {
     // جلب التاجر الأصلي
     const m = await this.merchantSvc.findOne(id);
 
+    // جلب الـ Storefront المرتبط
+    const storefront = await this.storefrontService.findByMerchant(
+      m._id as string,
+    );
+
     // دمج quickConfig الأصلي مع ما أرسله العميل (جزئيًّا)
     const mergedConfig = { ...m.quickConfig, ...(dto.quickConfig || {}) };
 
@@ -111,9 +119,12 @@ export class MerchantPromptController {
     const rawTpl =
       dto.useAdvanced && m.currentAdvancedConfig.template
         ? m.currentAdvancedConfig.template
-        : buildPromptFromMerchant(tempMerchant as MerchantDocument);
+        : this.promptBuilder.buildFromQuickConfig(
+            tempMerchant as MerchantDocument,
+            storefront,
+          );
 
-    // نفّذ المعاينة (قد تكون دالة مزامنة أو وعد)
+    // نفّذ المعاينة
     const preview = this.previewSvc.preview(rawTpl, dto.testVars);
 
     return { preview };

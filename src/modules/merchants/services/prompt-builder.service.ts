@@ -3,6 +3,7 @@
 import { Injectable } from '@nestjs/common';
 import * as Handlebars from 'handlebars';
 import { MerchantDocument } from '../schemas/merchant.schema';
+import { StorefrontDocument } from 'src/modules/storefront/schemas/storefront.schema';
 
 // يمكنك تغيير هذا النص أو جعله في ملف .env أو constant في مكان مركزي حسب حاجة المشروع
 const SYSTEM_PROMPT_SUFFIX = `
@@ -14,7 +15,10 @@ export class PromptBuilderService {
   /**
    * يبني نص مبسّط من QuickConfig والحقول الجديدة
    */
-  buildFromQuickConfig(m: MerchantDocument): string {
+  buildFromQuickConfig(
+    m: MerchantDocument,
+    storefront?: StorefrontDocument | null,
+  ): string {
     const cfg = m.quickConfig; // موجود دائمًا حسب الـ schema
 
     const {
@@ -87,8 +91,8 @@ export class PromptBuilderService {
     }
 
     // الربط والحقول الإضافية
-    if (includeStoreUrl && m.storefrontUrl) {
-      lines.push(`🔗 رابط المتجر: ${m.storefrontUrl}`);
+    if (includeStoreUrl && storefront?.storefrontUrl) {
+      lines.push(`🔗 رابط المتجر: ${storefront?.storefrontUrl}`);
     }
     if (includeAddress && m.addresses) {
       const addr = m.addresses[0];
@@ -115,7 +119,10 @@ export class PromptBuilderService {
    * يختار بين القالب المتقدم أو QuickConfig، ثم يعالج الـ Handlebars
    * وأخيرًا يضيف النص الإجباري غير القابل للتعديل من العميل.
    */
-  compileTemplate(m: MerchantDocument): string {
+  compileTemplate(
+    m: MerchantDocument,
+    storefront?: StorefrontDocument | null,
+  ): string {
     // إذا هناك قالب متقدم فعلي استخدمه، وإلا بناء من QuickConfig
     const advancedTpl = m.currentAdvancedConfig?.template?.trim();
     const raw =
@@ -133,7 +140,7 @@ export class PromptBuilderService {
       returnPolicy: m.returnPolicy,
       exchangePolicy: m.exchangePolicy,
       shippingPolicy: m.shippingPolicy,
-      storefrontUrl: m.storefrontUrl,
+      storefrontUrl: storefront?.storefrontUrl,
       address: m.addresses,
       workingHours: m.workingHours,
       quickConfig: m.quickConfig,

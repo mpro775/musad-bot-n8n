@@ -253,6 +253,7 @@ export class MerchantsController {
     };
   }
   @Patch(':merchantId/leads-settings')
+  @Public()
   updateLeadsSettings(
     @Param('merchantId') merchantId: string,
     @Body('settings') settings: any[],

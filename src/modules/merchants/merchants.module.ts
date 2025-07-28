@@ -20,6 +20,7 @@ import {
   Category,
   CategorySchema,
 } from '../categories/schemas/category.schema';
+import { StorefrontModule } from '../storefront/storefront.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import {
       { name: Product.name, schema: ProductSchema }, // ← هنا
       { name: Category.name, schema: CategorySchema },
     ]),
+    StorefrontModule,
     forwardRef(() => AuthModule),
     MulterModule.register({ dest: './uploads' }),
 

@@ -20,15 +20,10 @@ import { AdvancedTemplateDto } from './advanced-template.dto';
 import { Prop } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
 import { LeadsSettingsDto } from './leads-settings.dto';
-import { BannerDto } from './banner.dto';
 
 export class CreateMerchantDto {
   @IsString()
   name: string;
-
-  @IsOptional()
-  @IsUrl()
-  storefrontUrl?: string;
 
   @IsOptional()
   @IsUrl()
@@ -39,10 +34,6 @@ export class CreateMerchantDto {
   @ValidateNested({ each: true })
   @Type(() => AddressDto)
   addresses?: AddressDto[];
-
-  @IsOptional()
-  @IsString()
-  slug?: string;
 
   @ValidateNested()
   @Type(() => SubscriptionPlanDto)
@@ -57,10 +48,6 @@ export class CreateMerchantDto {
   @IsOptional()
   @IsString()
   customCategory?: string;
-
-  @IsOptional()
-  @IsString()
-  domain?: string;
 
   @IsOptional()
   @IsString()
@@ -120,9 +107,6 @@ export class CreateMerchantDto {
   @ValidateNested()
   @Type(() => LeadsSettingsDto)
   leadsSettings?: LeadsSettingsDto;
-  @IsOptional()
-  @IsArray()
-  banners?: BannerDto[];
 
   @IsOptional()
   @IsString()

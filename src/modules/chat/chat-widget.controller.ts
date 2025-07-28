@@ -13,6 +13,7 @@ import { UpdateWidgetSettingsDto } from './dto/update-widget-settings.dto';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { HandoffDto } from './dto/handoff.dto';
+import { Public } from 'src/common/decorators/public.decorator';
 
 @ApiTags('Chat Widget')
 @UseGuards(JwtAuthGuard, RolesGuard) // تأكد من أنك عدلت الـ Guards ليتحققوا من الصلاحيات
@@ -21,12 +22,14 @@ export class ChatWidgetController {
   constructor(private readonly svc: ChatWidgetService) {}
 
   @Get()
+  @Public()
   @ApiOperation({ summary: 'Get widget settings for merchant' })
   getSettings(@Param('merchantId') merchantId: string) {
     return this.svc.getSettings(merchantId);
   }
 
   @Put()
+  @Public()
   @ApiOperation({ summary: 'Update widget settings for merchant' })
   updateSettings(
     @Param('merchantId') merchantId: string,
@@ -44,16 +47,19 @@ export class ChatWidgetController {
     return this.svc.handleHandoff(merchantId, dto);
   }
   @Get('embed-settings')
+  @Public()
   @ApiOperation({ summary: 'Get embed settings (mode + shareable URL)' })
   async getEmbedSettings(@Param('merchantId') merchantId: string) {
     return this.svc.getEmbedSettings(merchantId);
   }
   @Get('share-url')
+  @Public()
   async getShareUrl(@Param('merchantId') merchantId: string) {
     const settings = await this.svc.getSettings(merchantId);
     return { url: `http://localhost:5173/chat/${settings.widgetSlug}` };
   }
   @Post('slug')
+  @Public()
   generateSlug(@Param('merchantId') merchantId: string) {
     return this.svc.generateWidgetSlug(merchantId);
   }

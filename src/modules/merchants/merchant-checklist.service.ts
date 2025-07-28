@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { MerchantDocument } from './schemas/merchant.schema';
 import { ProductDocument } from '../products/schemas/product.schema';
 import { CategoryDocument } from '../categories/schemas/category.schema';
+import { StorefrontService } from '../storefront/storefront.service';
 
 export type ChecklistItem = {
   key: string;
@@ -26,6 +27,7 @@ export class MerchantChecklistService {
     @InjectModel('Merchant') private merchantModel: Model<MerchantDocument>,
     @InjectModel('Product') private productModel: Model<ProductDocument>,
     @InjectModel('Category') private categoryModel: Model<CategoryDocument>,
+    private readonly storefrontService: StorefrontService,
   ) {}
 
   async getChecklist(merchantId: string): Promise<ChecklistGroup[]> {
@@ -34,7 +36,7 @@ export class MerchantChecklistService {
     const skipped = Array.isArray(m.skippedChecklistItems)
       ? m.skippedChecklistItems
       : [];
-
+    const storefront = await this.storefrontService.findByMerchant(merchantId);
     // المنتجات
     const productCount = await this.productModel.countDocuments({
       merchantId: new Types.ObjectId(merchantId),
@@ -57,9 +59,11 @@ export class MerchantChecklistService {
       {
         key: 'storeUrl',
         title: 'رابط المتجر',
-        isComplete: !!m.storefrontUrl,
+        isComplete: !!storefront?.storefrontUrl,
         isSkipped: skipped.includes('storeUrl'),
-        message: m.storefrontUrl ? undefined : 'أضف رابط المتجر لعرضه للعملاء',
+        message: storefront?.storefrontUrl
+          ? undefined
+          : 'أضف رابط المتجر لعرضه للعملاء',
         actionPath: '/dashboard/marchinfo',
         skippable: true,
       },
