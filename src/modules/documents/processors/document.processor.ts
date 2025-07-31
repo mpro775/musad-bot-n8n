@@ -9,12 +9,22 @@ import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-
+import { promises as fs } from 'fs';
+import { tmpdir } from 'os';
 interface DocumentJobData {
   docId: string;
   merchantId: string;
 }
-
+async function downloadFromMinioToTemp(minio, key: string): Promise<string> {
+  const tempFile = join(tmpdir(), `${Date.now()}-${key}`);
+  const stream = await minio.getObject(process.env.MINIO_BUCKET!, key);
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk as Buffer);
+  }
+  await fs.writeFile(tempFile, Buffer.concat(chunks));
+  return tempFile;
+}
 @Processor('documents-processing-queue')
 export class DocumentProcessor {
   constructor(
@@ -27,6 +37,7 @@ export class DocumentProcessor {
   // 🔄 override required method
   async process(job: Job<DocumentJobData>): Promise<void> {
     const { docId } = job.data;
+    console.log('DocumentProcessor started job', job.data);
 
     // ✅ تحديث الحالة إلى "جاري المعالجة"
     await this.docModel
@@ -37,7 +48,10 @@ export class DocumentProcessor {
       const doc = await this.docModel.findById(docId).lean();
       if (!doc) throw new Error('Document not found');
 
-      const filePath = join(process.cwd(), 'uploads', doc.storageKey);
+      const filePath = await downloadFromMinioToTemp(
+        this.docsSvc.minio,
+        doc.storageKey,
+      );
       let text = '';
 
       if (doc.fileType === 'application/pdf') {

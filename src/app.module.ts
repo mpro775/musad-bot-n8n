@@ -47,6 +47,8 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { StorefrontModule } from './modules/storefront/storefront.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { KnowledgeModule } from './modules/knowledge/knowledge.module';
+import { FaqModule } from './modules/faq/faq.module';
 
 @Module({
   imports: [
@@ -125,7 +127,8 @@ import { OrdersModule } from './modules/orders/orders.module';
     DocumentsModule,
     N8nWorkflowModule,
     OrdersModule,
-
+    KnowledgeModule,
+    FaqModule,
     WorkflowHistoryModule,
     WebhooksModule,
     CategoriesModule,

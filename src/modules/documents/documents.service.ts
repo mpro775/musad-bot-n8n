@@ -12,7 +12,7 @@ import {
 
 @Injectable()
 export class DocumentsService {
-  private minio: MinioClient;
+  public minio: MinioClient;
 
   constructor(
     @InjectModel(DocumentSchemaClass.name)
