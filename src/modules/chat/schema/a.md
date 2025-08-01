@@ -13,6 +13,9 @@ graph TD
       APIGW --> ProductService
       APIGW --> ChatService
       APIGW --> WorkflowService
+      APIGW --> EmbeddingService
+      APIGW --> ExtractorService
+      APIGW --> RerankerService
       EventBus[(RabbitMQ/Kafka)]
       AuthService -->|publish/subscribe| EventBus
       OfferService -->|publish/subscribe| EventBus
