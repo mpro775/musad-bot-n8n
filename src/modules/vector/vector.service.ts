@@ -6,11 +6,18 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { QdrantClient } from '@qdrant/js-client-rest';
-import { EmbeddableProduct } from './types';
+import {
+  DocumentData,
+  EmbeddableProduct,
+  FAQData,
+  SearchResult,
+  WebData,
+} from './types';
 import { firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { v5 as uuidv5 } from 'uuid';
 import { ProductsService } from '../products/products.service';
+import { geminiRerankTopN } from './geminiRerank';
 const PRODUCT_NAMESPACE = 'd94a5f5a-2bfc-4c2d-9f10-1234567890ab';
 const FAQ_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 const NAMESPACE = '6ba7b811-9dad-11d1-80b4-00c04fd430c8';
@@ -21,6 +28,7 @@ export class VectorService implements OnModuleInit {
   private readonly collection = 'products';
   private readonly offerCollection = 'offers';
   public readonly faqCollection = 'faqs';
+  private readonly documentCollection = 'documents';
   private readonly webCollection = 'web_knowledge'; // 👈 مجموعات جديدة
   private readonly logger = new Logger(VectorService.name);
 
@@ -45,6 +53,7 @@ export class VectorService implements OnModuleInit {
       this.offerCollection,
       this.faqCollection,
       this.webCollection,
+      this.documentCollection,
     ];
 
     for (const coll of requiredCollections) {
@@ -59,22 +68,37 @@ export class VectorService implements OnModuleInit {
     }
   }
 
+  // vector.service.ts
   public async embed(text: string): Promise<number[]> {
-    const embeddingUrl = ' http://31.97.155.167:8000';
-    const response = await firstValueFrom(
-      this.http.post<{ embeddings: number[][] }>(`${embeddingUrl}/embed`, {
-        texts: [text],
-      }),
-    );
+    const embeddingUrl = 'http://31.97.155.167:8000'; // تأكد من إزالة المسافة الأولى قبل http
+    try {
+      console.log('🔤 Embedding text length:', text.length);
+      console.log('🌐 Sending to Embedding URL:', `${embeddingUrl}/embed`);
+      console.log('📦 Payload:', { texts: [text] });
 
-    const embedding = response.data.embeddings[0];
+      const response = await firstValueFrom(
+        this.http.post<{ embeddings: number[][] }>(`${embeddingUrl}/embed`, {
+          texts: [text],
+        }),
+      );
 
-    // ✅ تحقق من أن المتجه موجود ويحتوي على 384 عنصر
-    if (!embedding || embedding.length !== 384) {
-      throw new Error(`Invalid embedding: ${JSON.stringify(embedding)}`);
+      console.log('✅ Embedding response received:', response.data);
+
+      const embedding = response.data.embeddings[0];
+
+      // تحقق من أن المتجه موجود ويحتوي على 384 عنصر
+      if (!embedding || embedding.length !== 384) {
+        throw new Error(`Invalid embedding length: ${embedding.length}`);
+      }
+
+      return embedding;
+    } catch (error) {
+      console.error(
+        '❌ Embedding error:',
+        error.response?.data || error.message,
+      );
+      throw new Error(`Bad Request: ${error.response?.data || error.message}`);
     }
-
-    return embedding;
   }
   // في upsertWebKnowledge()
   public async upsertWebKnowledge(points: any[]) {
@@ -124,6 +148,38 @@ export class VectorService implements OnModuleInit {
       throw error;
     }
   }
+  async upsertDocumentChunks(
+    chunks: { id: string; vector: number[]; payload: any }[],
+  ): Promise<void> {
+    if (!chunks.length) return;
+
+    // نظف كل payload
+    const points = chunks.map((chunk) => ({
+      id: chunk.id || uuidv5(chunk.payload.text, PRODUCT_NAMESPACE),
+      vector: chunk.vector.length === 384 ? chunk.vector : [],
+      payload: {
+        merchantId: String(chunk.payload.merchantId ?? ''),
+        documentId: String(chunk.payload.documentId ?? ''),
+        text: (chunk.payload.text ?? '').toString().slice(0, 2000), // قلل الحجم للتجربة
+      },
+    }));
+
+    // لا ترفع إذا vector فاضي أو خاطئ
+    const validPoints = points.filter(
+      (p) => Array.isArray(p.vector) && p.vector.length === 384,
+    );
+
+    if (!validPoints.length) throw new Error('No valid points to upsert!');
+
+    const batchSize = 2;
+    for (let i = 0; i < validPoints.length; i += batchSize) {
+      const batch = validPoints.slice(i, i + batchSize);
+      await this.qdrant.upsert(this.documentCollection, {
+        wait: true,
+        points: batch,
+      });
+    }
+  }
 
   public async upsertProducts(products: EmbeddableProduct[]) {
     const points = await Promise.all(
@@ -158,11 +214,13 @@ export class VectorService implements OnModuleInit {
       score: number;
     }[]
   > {
+    // 1. استخرج embedding للسؤال
     const vector = await this.embed(text);
 
+    // 2. استخرج المنتجات من Qdrant
     const rawResults = await this.qdrant.search(this.collection, {
       vector,
-      limit: topK * 2,
+      limit: topK * 4, // عدد أكبر لأن Gemini سيعيد ترتيبهم!
       with_payload: {
         include: ['mongoId', 'name', 'price', 'url'],
       },
@@ -173,51 +231,39 @@ export class VectorService implements OnModuleInit {
 
     if (!rawResults.length) return [];
 
-    const candidateTexts = rawResults.map((item) => {
+    // 3. حضّر المرشحين للنموذج
+    const candidates = rawResults.map((item) => {
       const p = item.payload as any;
-      return `Name: ${p.name ?? ''}`;
+      // يمكنك إضافة تفاصيل إضافية (سعر/وصف) لو أردت زيادة دقة Gemini
+      return `اسم المنتج: ${p.name ?? ''}${p.price ? ` - السعر: ${p.price}` : ''}`;
     });
 
-    const rerankResponse = await firstValueFrom(
-      this.http.post<{
-        results: { text: string; score: number }[];
-      }>('http://musaidbot-reranker:8500/rerank', {
-        query: text,
-        candidates: candidateTexts,
-      }),
-    );
-
-    const reranked = rerankResponse.data.results.map((res, index) => {
-      const original = rawResults[index];
-      const payload = original.payload as any;
-      return {
-        id: payload.mongoId as string,
-        score: res.score,
-      };
+    // 4. استعمل Gemini لترتيب النتائج
+    const geminiResult = await geminiRerankTopN({
+      query: text,
+      candidates,
+      topN: topK,
     });
 
-    // إنشاء خريطة لربط ID مع Score
-    const productIdScoreMap = new Map<string, number>();
-    const productIds = reranked.slice(0, topK).map((r) => {
-      productIdScoreMap.set(r.id, r.score);
-      return r.id;
-    });
+    // 5. أرجع أفضل نتيجة واحدة أو عدة (يمكن تعديل البرومبت لإرجاع Top N)
+    if (geminiResult.length > 0) {
+      const bestItem = rawResults[geminiResult[0]];
+      const payload = bestItem.payload as any;
+      return [
+        {
+          id: payload.mongoId as string,
+          name: payload.name,
+          price: payload.price,
+          url: payload.url,
+          score: 1, // يمكنك إضافة سكّور ثابت أو تركه 1 للتمييز فقط
+        },
+      ];
+    }
 
-    // جلب التفاصيل من Mongo
-    const products = await this.productsService.getProductByIdList(
-      productIds,
-      merchantId,
-    );
-
-    // دمج score داخل المنتج
-    return products.map((p) => ({
-      id: p._id.toString(),
-      name: p.name,
-      price: p.price,
-      url: (p as any).url, // إذا موجود
-      score: productIdScoreMap.get(p._id.toString()) ?? 0,
-    }));
+    // إذا لم يجد Gemini جوابًا مناسبًا
+    return [];
   }
+
   public async upsertFaqs(points: any[]) {
     await this.ensureFaqCollection(); // تأكد من وجود الجمعية
     return this.qdrant.upsert(this.faqCollection, { wait: true, points });
@@ -242,6 +288,71 @@ export class VectorService implements OnModuleInit {
     }
 
     return uuidv5(`${merchantId}-${url}`, NAMESPACE);
+  }
+  public async unifiedSemanticSearch(
+    text: string,
+    merchantId: string,
+    topK = 5,
+  ): Promise<SearchResult[]> {
+    const vector = await this.embed(text);
+    const allResults: SearchResult[] = [];
+    const searchTargets: { name: string; type: 'faq' | 'document' | 'web' }[] =
+      [
+        { name: this.faqCollection, type: 'faq' },
+        { name: this.documentCollection, type: 'document' },
+        { name: this.webCollection, type: 'web' },
+      ];
+
+    // اجلب topK*2 من كل مصدر
+    await Promise.all(
+      searchTargets.map(async (target) => {
+        try {
+          const results = await this.qdrant.search(target.name, {
+            vector,
+            limit: topK * 2,
+            with_payload: true,
+            filter: {
+              must: [{ key: 'merchantId', match: { value: merchantId } }],
+            },
+          });
+          for (const item of results) {
+            allResults.push({
+              type: target.type,
+              score: item.score,
+              data: (item.payload ?? {}) as FAQData | DocumentData | WebData,
+              id: item.id,
+            });
+          }
+        } catch (err) {
+          this.logger.warn(
+            `[unifiedSemanticSearch] Search failed for ${target.name}: ${err.message}`,
+          );
+        }
+      }),
+    );
+
+    if (allResults.length === 0) return [];
+
+    // حضّر المرشحين
+    const candidates = allResults.map((r) => {
+      if (r.type === 'faq')
+        return `${r.data.question ?? ''} - ${r.data.answer ?? ''}`;
+      if (r.type === 'web' || r.type === 'document')
+        return `${r.data.text ?? ''}`;
+      return '';
+    });
+
+    // أرسل النتائج إلى Gemini Rerank فقط
+    const geminiResult = await geminiRerankTopN({
+      query: text,
+      candidates,
+      topN: topK,
+    });
+
+    if (geminiResult.length > 0) {
+      return geminiResult.slice(0, topK).map((idx) => allResults[idx]);
+    }
+    return [];
   }
 
   private async ensureFaqCollection() {

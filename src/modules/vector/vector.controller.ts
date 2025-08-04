@@ -37,4 +37,38 @@ export class VectorController {
     );
     return { recommendations: recs };
   }
+  @Post('all')
+  @Public()
+  async unifiedSearchBody(
+    @Body('merchantId') merchantId: string,
+    @Body('query') query: string,
+    @Body('topK') topK?: number,
+  ) {
+    if (!merchantId || !query) {
+      return {
+        status: 400,
+        error: 'merchantId and query are required',
+      };
+    }
+
+    const k = topK ?? 5;
+
+    try {
+      const results = await this.vector.unifiedSemanticSearch(
+        query,
+        merchantId,
+        k,
+      );
+      return {
+        status: 200,
+        results,
+        count: results.length,
+      };
+    } catch (err) {
+      return {
+        status: 500,
+        error: err.message || 'Unknown error',
+      };
+    }
+  }
 }

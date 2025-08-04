@@ -2,7 +2,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BullModule } from '@nestjs/bull';
-import MinioStorage from 'multer-minio-storage-engine'; // ✅ الصحيح
 import { MulterModule } from '@nestjs/platform-express';
 
 import { DocumentSchemaClass, DocumentSchema } from './schemas/document.schema';
@@ -19,23 +18,7 @@ import { VectorModule } from '../vector/vector.module';
     BullModule.registerQueue({ name: 'documents-processing-queue' }),
 
     MulterModule.register({
-      storage: MinioStorage({
-        minio: {
-          endPoint: process.env.MINIO_ENDPOINT!,
-          port: Number(process.env.MINIO_PORT ?? '9000'),
-          useSSL: process.env.MINIO_USE_SSL === 'true',
-          accessKey: process.env.MINIO_ACCESS_KEY!,
-          secretKey: process.env.MINIO_SECRET_KEY!,
-        },
-        bucketName: process.env.MINIO_BUCKET || 'documents', // ✅ استخدم bucketName بدل bucket
-        contentType: (_req: any, file: Express.Multer.File): string => {
-          return file.mimetype;
-        },
-        key: (_req, file, cb) => {
-          const filename = `${Date.now()}-${file.originalname}`;
-          cb(null, filename);
-        },
-      }),
+      dest: './uploads', // فقط تخزين محلي مؤقت!
     }),
     VectorModule, // ✅ أضف هذا هنا
   ],

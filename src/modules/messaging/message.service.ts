@@ -12,6 +12,7 @@ import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
 import { removeStopwords, ara, eng } from 'stopword';
 import { ChatGateway } from '../chat/chat.gateway';
+import { GeminiService } from './gemini.service';
 
 @Injectable()
 export class MessageService {
@@ -19,6 +20,7 @@ export class MessageService {
     @InjectModel(MessageSession.name)
     private readonly messageModel: Model<MessageSessionDocument>,
     private readonly chatGateway: ChatGateway,
+    private readonly geminiService: GeminiService,
   ) {}
 
   async createOrAppend(dto: CreateMessageDto): Promise<MessageSessionDocument> {
@@ -67,7 +69,43 @@ export class MessageService {
       });
     }
   }
+  async rateMessage(
+    sessionId: string,
+    messageId: string,
+    userId: string,
+    rating: number,
+    feedback?: string,
+    merchantId?: string,
+  ) {
+    // حدّث الرسالة (نفس ما تعمل الآن)
+    await this.messageModel.updateOne(
+      { sessionId, 'messages._id': messageId },
+      {
+        $set: {
+          'messages.$.rating': rating,
+          'messages.$.feedback': feedback,
+          'messages.$.ratedBy': userId,
+          'messages.$.ratedAt': new Date(),
+        },
+      },
+    );
 
+    // إذا التقييم سلبي، استخرج نص الرسالة وولّد التوجيه واحفظه
+    if (rating === 0) {
+      const session = await this.messageModel.findOne({ sessionId });
+      const msg = session?.messages.find(
+        (m) => m._id?.toString() === messageId,
+      );
+      if (msg) {
+        await this.geminiService.generateAndSaveInstructionFromBadReply(
+          msg.text,
+          merchantId,
+        );
+      }
+    }
+
+    return { status: 'ok' };
+  }
   async findBySession(
     sessionId: string,
   ): Promise<MessageSessionDocument | null> {
@@ -98,7 +136,26 @@ export class MessageService {
     const res = await this.messageModel.deleteOne({ _id: id }).exec();
     return { deleted: res.deletedCount > 0 };
   }
-
+  async getFrequentBadBotReplies(limit = 10) {
+    const agg = await this.messageModel.aggregate([
+      { $unwind: '$messages' },
+      { $match: { 'messages.rating': 0, 'messages.role': 'bot' } },
+      {
+        $group: {
+          _id: '$messages.text',
+          count: { $sum: 1 },
+          feedbacks: { $push: '$messages.feedback' },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: limit },
+    ]);
+    return agg.map((item) => ({
+      text: item._id,
+      count: item.count,
+      feedbacks: item.feedbacks.filter(Boolean),
+    }));
+  }
   async findAll(filters: {
     merchantId?: string;
     channel?: string;

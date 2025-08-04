@@ -69,13 +69,6 @@ export class MerchantsController {
     return this.svc.findAll();
   }
 
-  @Get('actions/onboarding/test')
-  @Public()
-  @ApiOperation({ summary: 'نقطة اختبار onboarding' })
-  test() {
-    return { ok: true };
-  }
-
   @Put('actions/onboarding')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'إكمال عملية onboarding للتاجر الحالي' })

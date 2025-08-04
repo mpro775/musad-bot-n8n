@@ -20,12 +20,12 @@ export class DocumentsController {
   constructor(private readonly svc: DocumentsService) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file')) // يجب أن يكون نفس الاسم
   upload(
     @Param('merchantId') merchantId: string,
     @UploadedFile() file: Express.Multer.File & { key: string },
   ) {
-    // file.bucket و file.key يأتيان من MinIO storage
+    console.log('[Upload Endpoint] File:', file);
     return this.svc.uploadFile(merchantId, file);
   }
 

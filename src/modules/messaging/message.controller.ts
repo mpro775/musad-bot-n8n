@@ -8,6 +8,7 @@ import {
   Delete,
   Query,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { MessageService } from './message.service';
 import { CreateMessageDto } from './dto/create-message.dto';
@@ -24,11 +25,18 @@ import {
 } from '@nestjs/swagger';
 import { Public } from 'src/common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-
+import { GeminiService } from './gemini.service';
+interface InstructionResult {
+  badReply: string;
+  instruction: string;
+}
 @UseGuards(JwtAuthGuard)
 @Controller('messages')
 export class MessageController {
-  constructor(private readonly messageService: MessageService) {}
+  constructor(
+    private readonly messageService: MessageService,
+    private readonly geminiService: GeminiService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'إنشاء جلسة جديدة أو إضافة رسائل لجلسة موجودة' })
@@ -137,5 +145,59 @@ export class MessageController {
       limit: parseInt(limit, 10),
       page: parseInt(page, 10),
     });
+  }
+  @Patch('session/:sessionId/messages/:messageId/rate')
+  async rateMessage(
+    @Param('sessionId') sessionId: string,
+    @Param('messageId') messageId: string,
+    @Body() body: { rating: number; feedback?: string },
+    @Req() req,
+  ) {
+    const userId = req.user._id;
+    const { rating, feedback } = body;
+    await this.messageService.rateMessage(
+      sessionId,
+      messageId,
+      userId,
+      rating,
+      feedback,
+    );
+    return { status: 'ok' };
+  }
+  @Post('generate-instructions-from-bad-replies')
+  async generateInstructions(
+    @Body() dto: { badReplies: string[]; merchantId?: string },
+  ) {
+    const results: InstructionResult[] = [];
+    for (const badReply of dto.badReplies) {
+      const res =
+        await this.geminiService.generateAndSaveInstructionFromBadReply(
+          badReply,
+          dto.merchantId,
+        );
+      results.push({ badReply, instruction: res.instruction });
+    }
+    return results;
+  }
+  @Get('bad-bot-instructions')
+  async getBadBotInstructions(@Query('limit') limit = 10) {
+    const badReplies = await this.messageService.getFrequentBadBotReplies(
+      Number(limit),
+    );
+    const instructions: string[] = [];
+    for (const reply of badReplies) {
+      const instruction =
+        await this.geminiService.generateInstructionFromBadReply(reply.text);
+      instructions.push(instruction);
+    }
+    // يمكن حفظها في قاعدة بيانات أو ملف أيضاً إذا رغبت
+    return { instructions };
+  }
+
+  @Get(':sessionId/ratings')
+  async getRatedMessages(@Param('sessionId') sessionId: string) {
+    const session = await this.messageService.findBySession(sessionId);
+    if (!session) return [];
+    return session.messages.filter((msg) => msg.rating !== null);
   }
 }

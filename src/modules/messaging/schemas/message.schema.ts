@@ -5,6 +5,29 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 
 export type MessageSessionDocument = HydratedDocument<MessageSession>;
+@Schema()
+export class SingleMessage {
+  @Prop()
+  _id?: Types.ObjectId;
+  @Prop({ type: String, enum: ['customer', 'bot', 'agent'], required: true })
+  role: string;
+  @Prop({ type: String, required: true })
+  text: string;
+  @Prop({ type: Date, required: true })
+  timestamp: Date;
+  @Prop({ type: Object, default: {} })
+  metadata?: Record<string, any>;
+  @Prop({ type: [String], default: [] })
+  keywords?: string[];
+  @Prop({ type: Number, enum: [1, 0, null], default: null })
+  rating?: number | null;
+  @Prop({ type: String, default: null })
+  feedback?: string | null;
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null })
+  ratedBy?: Types.ObjectId | null;
+  @Prop({ type: Date, default: null })
+  ratedAt?: Date | null;
+}
 
 @Schema({ timestamps: true })
 export class MessageSession {
@@ -19,28 +42,10 @@ export class MessageSession {
   @Prop({ type: Boolean, default: false })
   handoverToAgent: boolean;
   @Prop({
-    type: [
-      {
-        role: {
-          type: String,
-          enum: ['customer', 'bot', 'agent'],
-          required: true,
-        },
-        text: { type: String, required: true },
-        timestamp: { type: Date, required: true },
-        metadata: { type: Object, default: {} },
-        keywords: { type: [String], default: [] },
-      },
-    ],
+    type: [SingleMessage],
     default: [],
   })
-  messages: Array<{
-    role: 'customer' | 'bot' | 'agent';
-    text: string;
-    timestamp: Date;
-    metadata?: Record<string, any>;
-    keywords?: string[];
-  }>;
+  messages: SingleMessage[];
 }
 
 export const MessageSessionSchema =

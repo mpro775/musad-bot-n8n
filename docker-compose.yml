@@ -41,7 +41,25 @@ services:
     networks:
       - backnet
     restart: unless-stopped
-
+  whisper-asr:
+    image: ahmetoner/whisper-asr-webservice:latest
+    container_name: musaidbot-whisper-asr
+    ports:
+      - '9000:9000' # نفس المنفذ في كودك
+    environment:
+      - ASR_MODEL=medium # أو base/medium/large حسب سيرفرك
+      - ASR_PORT=9000
+      - ASR_BEAM_SIZE=5
+      - ASR_DEVICE=cpu # أو cuda لو سيرفرك يدعم GPU
+      # يمكنك إضافة أي إعدادات أخرى من الدوكيومنت الرسمي
+    restart: unless-stopped
+    networks:
+      - backnet
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
   mongo:
     image: mongo:5
     container_name: musaidbot-mongo

@@ -11,9 +11,10 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 
 import { AppModule } from './app.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { NestExpressApplication } from '@nestjs/platform-express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // نطبّق الــ global prefix "api" على كل المسارات ما عدا /api/metrics
   app.setGlobalPrefix('api', {
@@ -24,6 +25,7 @@ async function bootstrap() {
     (globalThis as any).crypto = { randomUUID };
   }
   app.useWebSocketAdapter(new IoAdapter(app));
+  console.log('REDIS_URL:', process.env.REDIS_URL);
 
   app.use(helmet());
   app.enableCors({
@@ -89,7 +91,7 @@ async function bootstrap() {
     customCssUrl:
       'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
   });
-
+  app.set('trust proxy', 1);
   // مسار مخصص لتخفيف الضغط على WhatsApp
   app.use('/api/whatsapp/reply', rateLimit({ windowMs: 1000, max: 20 }));
 
