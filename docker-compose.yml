@@ -42,7 +42,7 @@ services:
       - backnet
     restart: unless-stopped
   whisper-asr:
-    image: ghcr.io/ahmetoner/whisper-asr-webservice:latest
+    image: whisper-asr-webservice:latest
     container_name: musaidbot-whisper-asr
     ports:
       - '9000:9000'
