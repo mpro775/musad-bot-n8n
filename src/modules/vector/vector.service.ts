@@ -29,6 +29,8 @@ export class VectorService implements OnModuleInit {
   private readonly offerCollection = 'offers';
   public readonly faqCollection = 'faqs';
   private readonly documentCollection = 'documents';
+  private readonly botFaqCollection = 'bot_faqs'; // 👈 كولكشن منفصل لقاعدة معرفة كليم
+
   private readonly webCollection = 'web_knowledge'; // 👈 مجموعات جديدة
   private readonly logger = new Logger(VectorService.name);
 
@@ -54,6 +56,7 @@ export class VectorService implements OnModuleInit {
       this.faqCollection,
       this.webCollection,
       this.documentCollection,
+      this.botFaqCollection, // 👈 إضافة كولكشن جديدة
     ];
 
     for (const coll of requiredCollections) {
@@ -66,6 +69,16 @@ export class VectorService implements OnModuleInit {
         });
       }
     }
+  }
+  public async upsertBotFaqs(points: any[]) {
+    // تأكد من وجود الكولكشن
+    const existing = await this.qdrant.getCollections();
+    if (!existing.collections.find((c) => c.name === this.botFaqCollection)) {
+      await this.qdrant.createCollection(this.botFaqCollection, {
+        vectors: { size: 384, distance: 'Cosine' },
+      });
+    }
+    return this.qdrant.upsert(this.botFaqCollection, { wait: true, points });
   }
 
   // vector.service.ts
@@ -353,6 +366,22 @@ export class VectorService implements OnModuleInit {
       return geminiResult.slice(0, topK).map((idx) => allResults[idx]);
     }
     return [];
+  }
+  public async searchBotFaqs(text: string, topK = 5) {
+    const vector = await this.embed(text);
+
+    const results = await this.qdrant.search(this.botFaqCollection, {
+      vector,
+      limit: topK,
+      with_payload: true,
+    });
+
+    return results.map((item) => ({
+      id: item.id,
+      question: item.payload?.question,
+      answer: item.payload?.answer,
+      score: item.score,
+    }));
   }
 
   private async ensureFaqCollection() {

@@ -201,6 +201,7 @@ export class AuthService {
     };
   }
   // src/auth/auth.service.ts
+
   // src/auth/auth.service.ts
   async verifyEmail(dto: VerifyEmailDto): Promise<void> {
     const { code } = dto;

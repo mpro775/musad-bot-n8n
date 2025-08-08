@@ -31,6 +31,63 @@ export class Merchant {
   @Prop({ required: false })
   logoUrl?: string;
 
+  @Prop({
+    type: {
+      salla: {
+        active: { type: Boolean, default: false },
+        accessToken: { type: String },
+        refreshToken: { type: String },
+        storeId: { type: String },
+        storeUrl: { type: String },
+        lastSync: { type: Date },
+      },
+      zid: {
+        active: { type: Boolean, default: false },
+        accessToken: { type: String },
+        refreshToken: { type: String },
+        storeId: { type: String },
+        storeUrl: { type: String },
+        lastSync: { type: Date },
+      },
+      // لو أردت دعم مصادر أخرى مستقبلاً
+    },
+    default: {},
+  })
+  integrations: {
+    salla?: {
+      active: boolean;
+      accessToken?: string;
+      refreshToken?: string;
+      storeId?: string;
+      clientId?: string;
+      clientSecret?: string;
+      storeUrl?: string;
+      lastSync?: Date;
+      redirectUri?: string;
+    };
+  };
+  @Prop({
+    type: {
+      accessToken: String,
+      refreshToken: String,
+      storeId: String,
+      tokenType: String,
+      expiresIn: Number,
+      lastSync: Date,
+    },
+    default: {},
+  })
+  zidIntegration?: {
+    accessToken: string;
+    refreshToken: string;
+    storeId: string;
+    tokenType?: string;
+    expiresIn?: number;
+    lastSync?: Date;
+  };
+  @Prop({ enum: ['internal', 'salla', 'zid'], default: 'internal' })
+  productSource: 'internal' | 'salla' | 'zid';
+
   @Prop({ type: [AddressSchema], default: [] })
   addresses: Address[];
   @Prop({ type: Map, of: String, default: {} })

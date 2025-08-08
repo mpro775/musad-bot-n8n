@@ -37,6 +37,7 @@ export class VectorController {
     );
     return { recommendations: recs };
   }
+
   @Post('all')
   @Public()
   async unifiedSearchBody(

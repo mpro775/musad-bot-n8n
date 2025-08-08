@@ -5,11 +5,11 @@ import { extname } from 'path';
 import axios from 'axios';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
-import FormData from 'form-data';
 import Tesseract from 'tesseract.js';
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import * as xlsx from 'xlsx';
+import * as mime from 'mime-types';
 
 @Injectable()
 export class MediaService {
@@ -29,7 +29,7 @@ export class MediaService {
     switch (dto.type) {
       case MediaType.VOICE:
       case MediaType.AUDIO:
-        text = await this.transcribeAudio(tmpFile);
+        text = await this.transcribeAudioWithDeepgram(tmpFile);
         break;
 
       case MediaType.PHOTO:
@@ -53,16 +53,25 @@ export class MediaService {
   }
 
   // 🟢 صوت: Whisper Open Source
-  async transcribeAudio(filepath: string): Promise<string> {
-    const url = 'http://localhost:9000/asr';
-    const form = new FormData();
-    form.append('audio_file', fsSync.createReadStream(filepath));
+  async transcribeAudioWithDeepgram(filepath: string): Promise<string> {
+    const apiKey = '2ed019921677d533a3db04d9caae7167ce2cb875';
+    const audio = fsSync.readFileSync(filepath);
+    const contentType = mime.lookup(filepath) || 'application/octet-stream';
+
     try {
-      const resp = await axios.post(url, form, {
-        headers: form.getHeaders(),
-        timeout: 90_000,
-      });
-      const text = resp.data?.text;
+      const resp = await axios.post(
+        'https://api.deepgram.com/v1/listen',
+        audio,
+        {
+          headers: {
+            Authorization: `Token ${apiKey}`,
+            'Content-Type': contentType,
+          },
+          timeout: 90000,
+        },
+      );
+      const text =
+        resp.data?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '';
       if (typeof text === 'string' && text.trim().length > 0) {
         return text;
       }
@@ -71,7 +80,6 @@ export class MediaService {
       return `[خطأ في تحويل الصوت للنص]`;
     }
   }
-
   // 🟢 صورة: Tesseract OCR
   async describeImage(filepath: string): Promise<string> {
     try {

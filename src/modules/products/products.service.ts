@@ -8,7 +8,11 @@ import { ScrapeQueue } from './scrape.queue';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CreateProductDto, ProductSource } from './dto/create-product.dto';
 import { VectorService } from '../vector/vector.service';
-import { AnalyticsService } from '../analytics/analytics.service';
+import { ZidService } from '../zid/zid.service';
+interface ZidProductImage {
+  url: string;
+  [key: string]: any;
+}
 
 @Injectable()
 export class ProductsService {
@@ -17,7 +21,7 @@ export class ProductsService {
     private readonly productModel: Model<ProductDocument>,
     private readonly scrapeQueue: ScrapeQueue,
     private readonly vectorService: VectorService,
-    private readonly analyticsService: AnalyticsService,
+    private readonly zidService: ZidService,
   ) {}
 
   async create(
@@ -312,6 +316,84 @@ export class ProductsService {
     }
 
     return updated;
+  }
+  async importZidProducts(merchantId: string, zidAccessToken: string) {
+    const zidProducts = await this.zidService.fetchZidProducts(zidAccessToken);
+
+    for (const zProd of zidProducts) {
+      // جلب أو إضافة المنتج بناءً على externalId (معرف زد)
+      await this.createOrUpdateFromZid(merchantId, zProd);
+    }
+  }
+
+  // يمكنك وضع هذه الدالة في ProductsService:
+  async createOrUpdateFromZid(merchantId: string, zidProduct: any) {
+    // تحقق هل المنتج موجود
+    const existing = await this.productModel.findOne({
+      merchantId: new Types.ObjectId(merchantId),
+      source: 'api',
+      externalId: zidProduct.id,
+    });
+
+    const productData: CreateProductDto = {
+      merchantId,
+      source: ProductSource.API,
+      externalId: zidProduct.id,
+      name: zidProduct.name,
+      description: zidProduct.description,
+      price: zidProduct.price,
+      isAvailable: zidProduct.is_available,
+      images: Array.isArray(zidProduct.images)
+        ? zidProduct.images.map((img: ZidProductImage) => img.url)
+        : [],
+
+      category: zidProduct.category?.name ?? '',
+      sourceUrl: zidProduct.permalink ?? '', // استخدم permalink كرابط عام للمنتج (زد)
+      originalUrl: zidProduct.permalink ?? '', // أو أي رابط أساسي للمنتج (يفضل أن يكون الرابط العام)
+      keywords: [], // يمكنك توليدها لاحقاً
+    };
+    let productDoc: ProductDocument | null = null;
+    if (existing) {
+      productDoc = await this.productModel.findByIdAndUpdate(
+        existing._id,
+        productData,
+        { new: true },
+      );
+    } else {
+      productDoc = await this.create(productData as any);
+    }
+    if (!productDoc) {
+      throw new NotFoundException('فشل إضافة أو تحديث المنتج القادم من زد');
+    }
+    // أضف للفيكتور (embedding)
+    await this.vectorService.upsertProducts([
+      {
+        id: productDoc._id.toString(),
+        merchantId,
+        name: productDoc.name,
+        description: productDoc.description,
+        category:
+          typeof productDoc.category === 'object'
+            ? productDoc.category.toString()
+            : productDoc.category,
+        specsBlock: productDoc.specsBlock,
+        keywords: productDoc.keywords,
+      },
+    ]);
+
+    return productDoc;
+  }
+  async removeByExternalId(
+    merchantId: string,
+    externalId: string,
+  ): Promise<void> {
+    await this.productModel.deleteOne({
+      merchantId: new Types.ObjectId(merchantId),
+      externalId,
+      source: ProductSource.API,
+    });
+    // (اختياري) احذف من الفيكتور أيضا
+    // await this.vectorService.removeProductEmbedding(externalId);
   }
 
   /**

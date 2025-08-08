@@ -32,6 +32,7 @@ export class AuthController {
   register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
   }
+
   @Public()
   @Post('login')
   @ApiOperation({ summary: 'تسجيل الدخول وإرجاع توكن JWT' })

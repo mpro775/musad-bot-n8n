@@ -35,7 +35,7 @@ services:
   embedding:
     build:
       context: ./embedding-service
-    container_name: musaidbot-embedding
+    container_name: kaleem-embedding
     ports:
       - '8000:8000'
     networks:
@@ -44,7 +44,7 @@ services:
 
   mongo:
     image: mongo:5
-    container_name: musaidbot-mongo
+    container_name: kaleem-mongo
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: strongpassword
@@ -66,7 +66,7 @@ services:
 
   mongo-express:
     image: mongo-express:latest
-    container_name: musaidbot-mongo-express
+    container_name: kaleem-mongo-express
     environment:
       ME_CONFIG_MONGODB_SERVER: 'mongo'
       ME_CONFIG_MONGODB_ADMINUSERNAME: '${MONGO_INITDB_ROOT_USERNAME}'
@@ -83,7 +83,7 @@ services:
 
   redis-commander:
     image: rediscommander/redis-commander:latest
-    container_name: musaidbot-redis-commander
+    container_name: kaleem-redis-commander
     environment:
       REDIS_HOSTS: 'local:redis:6379'
     ports:
@@ -95,7 +95,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: musaidbot-minio
+    container_name: kaleem-minio
     command: server --console-address ":9001" /data
     ports:
       - '9000:9000'
@@ -125,7 +125,7 @@ services:
 
   api:
     build: .
-    container_name: musaidbot-api
+    container_name: kaleem-api
     ports:
       - '3000:3000'
     depends_on:
@@ -145,20 +145,11 @@ services:
       retries: 5
     networks:
       - backnet
-  reranker:
-    build:
-      context: ./vector-reranker
-    container_name: musaidbot-reranker
-    ports:
-      - '8500:8500'
-    networks:
-      - backnet
-    restart: unless-stopped
 
   extractor:
     build:
       context: ./extractor-service
-    container_name: musaidbot-extractor
+    container_name: kaleem-extractor
     ports:
       - '8001:8001'
     networks:
@@ -177,15 +168,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.n8n
-    container_name: musaidbot-n8n
+    container_name: kaleem-n8n
     env_file:
       - .env
     environment:
-      - N8N_HOST=n8n.smartagency-ye.com
+      - N8N_HOST=n8n.kaleem-ai.com
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
-      - WEBHOOK_URL=https://n8n.smartagency-ye.com
-      - VUE_APP_URL_BASE_API=https://n8n.smartagency-ye.com
+      - WEBHOOK_URL=https://n8n.kaleem-ai.com
+      - VUE_APP_URL_BASE_API=https://n8n.kaleem-ai.com
       - N8N_RUNNERS_ENABLED=true
       - N8N_CORS_ALLOW_ORIGIN=https://localhost:5173
       - N8N_CORS_ALLOW_CREDENTIALS=true

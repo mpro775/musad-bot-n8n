@@ -6,10 +6,9 @@ export type OrderDocument = Order & Document;
 
 @Schema({ timestamps: true })
 export class OrderProduct {
-  @Prop({ type: Types.ObjectId, ref: 'Product', required: true })
-  product: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'Product', required: false }) // productId قد لا يكون متاح دائمًا
+  product?: Types.ObjectId;
 
-  // Snapshot من بيانات المنتج لحظة الطلب (اختياري لكن أفضل)
   @Prop({ required: true })
   name: string;
 
@@ -19,8 +18,6 @@ export class OrderProduct {
   @Prop({ required: true })
   quantity: number;
 }
-
-export const OrderProductSchema = SchemaFactory.createForClass(OrderProduct);
 
 @Schema({ timestamps: true })
 export class Order {
@@ -33,11 +30,24 @@ export class Order {
   @Prop({ required: true, type: Object })
   customer: Record<string, any>;
 
-  @Prop({ type: [OrderProductSchema], required: true })
+  @Prop({ type: [OrderProduct], required: true })
   products: OrderProduct[];
 
-  @Prop({ default: 'pending', enum: ['pending', 'paid', 'canceled'] })
+  @Prop({
+    default: 'pending',
+    enum: ['pending', 'paid', 'canceled', 'shipped', 'delivered', 'refunded'],
+  })
   status: string;
+
+  @Prop()
+  externalId?: string;
+
+  @Prop({ default: 'manual', enum: ['manual', 'api', 'imported'] })
+  source?: string;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
+OrderSchema.index(
+  { merchantId: 1, externalId: 1 },
+  { unique: true, sparse: true },
+);
