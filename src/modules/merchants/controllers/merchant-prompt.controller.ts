@@ -104,11 +104,6 @@ export class MerchantPromptController {
     // جلب التاجر الأصلي
     const m = await this.merchantSvc.findOne(id);
 
-    // جلب الـ Storefront المرتبط
-    const storefront = await this.storefrontService.findByMerchant(
-      m._id as string,
-    );
-
     // دمج quickConfig الأصلي مع ما أرسله العميل (جزئيًّا)
     const mergedConfig = { ...m.quickConfig, ...(dto.quickConfig || {}) };
 
@@ -121,7 +116,6 @@ export class MerchantPromptController {
         ? m.currentAdvancedConfig.template
         : this.promptBuilder.buildFromQuickConfig(
             tempMerchant as MerchantDocument,
-            storefront,
           );
 
     // نفّذ المعاينة

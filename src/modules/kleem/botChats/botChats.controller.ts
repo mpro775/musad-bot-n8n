@@ -9,8 +9,14 @@ import {
   Query,
 } from '@nestjs/common';
 import { BotChatsService } from './botChats.service';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { UseGuards } from '@nestjs/common';
 
 @Controller('admin/kleem/bot-chats')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN')
 export class BotChatsController {
   constructor(private readonly svc: BotChatsService) {}
 

@@ -5,7 +5,7 @@ import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { Order, OrderSchema } from './schemas/order.schema';
 import { LeadsModule } from '../leads/leads.module';
-import { ZidModule } from '../zid/zid.module';
+import { ZidModule } from '../integrations/zid/zid.module';
 import { Merchant, MerchantSchema } from '../merchants/schemas/merchant.schema';
 import { forwardRef } from '@nestjs/common';
 @Module({

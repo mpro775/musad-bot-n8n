@@ -6,11 +6,18 @@ import { KleemChatService } from './chat/kleem-chat.service';
 import { BotChatsModule } from './botChats/botChats.module';
 import { BotFaqModule } from './botFaq/botFaq.module';
 import { KleemWebhookController } from './webhook/kleem-webhook.controller';
+import { BotPromptModule } from './botPrompt/botPrompt.module';
+import { KleemChatController } from './chat/kleem-chat.controller';
 
 @Module({
-  imports: [EventEmitterModule.forRoot(), BotChatsModule, BotFaqModule],
+  imports: [
+    EventEmitterModule.forRoot(),
+    BotChatsModule,
+    BotFaqModule,
+    BotPromptModule,
+  ],
   providers: [KleemGateway, KleemChatService],
-  controllers: [KleemWebhookController],
+  controllers: [KleemWebhookController, KleemChatController],
   exports: [KleemChatService],
 })
 export class KleemModule {}

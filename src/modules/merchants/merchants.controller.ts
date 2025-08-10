@@ -43,6 +43,8 @@ import {
   ChecklistGroup,
   MerchantChecklistService,
 } from './merchant-checklist.service';
+import { OnboardingBasicDto } from './dto/onboarding-basic.dto';
+import { UpdateProductSourceDto } from './dto/update-product-source.dto';
 
 @ApiTags('التجار')
 @ApiBearerAuth()
@@ -244,6 +246,21 @@ export class MerchantsController {
       message: 'تم التخطي',
       skippedChecklistItems: merchant.skippedChecklistItems,
     };
+  }
+  @Patch(':id/onboarding/basic')
+  saveBasic(@Param('id') id: string, @Body() dto: OnboardingBasicDto) {
+    return this.svc.saveBasicInfo(id, dto);
+  }
+
+  @Public()
+  @Get(':id/ai/store-context')
+  async aiStoreContext(@Param('id') id: string) {
+    return this.svc.getStoreContext(id);
+  }
+
+  @Patch(':id/product-source')
+  setSource(@Param('id') id: string, @Body() dto: UpdateProductSourceDto) {
+    return this.svc.setProductSource(id, dto.source);
   }
   @Patch(':merchantId/leads-settings')
   @Public()

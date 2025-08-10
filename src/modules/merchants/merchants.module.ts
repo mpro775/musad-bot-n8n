@@ -21,6 +21,7 @@ import {
   CategorySchema,
 } from '../categories/schemas/category.schema';
 import { StorefrontModule } from '../storefront/storefront.module';
+import { InstructionsModule } from '../instructions/instructions.module';
 
 @Module({
   imports: [
@@ -32,7 +33,7 @@ import { StorefrontModule } from '../storefront/storefront.module';
     StorefrontModule,
     forwardRef(() => AuthModule),
     MulterModule.register({ dest: './uploads' }),
-
+    forwardRef(() => InstructionsModule),
     HttpModule,
     forwardRef(() => N8nWorkflowModule),
     IntegrationsModule,

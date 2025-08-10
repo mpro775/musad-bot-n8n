@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { InstructionsService } from 'src/instructions/instructions.service';
+import { InstructionsService } from 'src/modules/instructions/instructions.service';
 
 @Injectable()
 export class GeminiService {

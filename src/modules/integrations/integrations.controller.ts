@@ -1,46 +1,81 @@
-// src/modules/integrations/integrations.controller.ts
 import {
   Controller,
   Get,
-  Post,
-  Delete,
-  Param,
-  Body,
+  Req,
   UseGuards,
+  NotFoundException,
 } from '@nestjs/common';
-import { IntegrationsService } from './integrations.service';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { RolesGuard } from 'src/common/guards/roles.guard';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Integration, IntegrationDocument } from './schemas/integration.schema';
+import {
+  Merchant,
+  MerchantDocument,
+} from '../merchants/schemas/merchant.schema';
 
-@ApiTags('Integrations')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('merchants/:merchantId/integrations')
+type StatusResp = {
+  salla: { active: boolean; connected: boolean; lastSync: string | null };
+  zid: { active: boolean; connected: boolean; lastSync: string | null };
+};
+
+@Controller('integrations')
+@UseGuards(JwtAuthGuard)
 export class IntegrationsController {
-  constructor(private readonly svc: IntegrationsService) {}
+  constructor(
+    @InjectModel(Integration.name)
+    private integModel: Model<IntegrationDocument>,
+    @InjectModel(Merchant.name) private merchantModel: Model<MerchantDocument>,
+  ) {}
 
-  @Get()
-  @ApiOperation({ summary: 'List all available integrations for merchant' })
-  list(@Param('merchantId') merchantId: string) {
-    return this.svc.list(merchantId);
-  }
+  @Get('status')
+  async status(@Req() req): Promise<StatusResp> {
+    const user = req.user;
+    const merchant = await this.merchantModel
+      .findOne({ userId: user.userId })
+      .lean();
+    if (!merchant) throw new NotFoundException('Merchant not found');
 
-  @Post(':key/connect')
-  @ApiOperation({ summary: 'Connect an integration' })
-  connect(
-    @Param('merchantId') merchantId: string,
-    @Param('key') key: string,
-    @Body() config: Record<string, any>,
-  ) {
-    return this.svc.connect(merchantId, key as any, config);
-  }
+    const [sallaInteg, zidInteg] = await Promise.all([
+      this.integModel
+        .findOne({ merchantId: merchant._id, provider: 'salla' })
+        .lean(),
+      this.integModel
+        .findOne({ merchantId: merchant._id, provider: 'zid' })
+        .lean(),
+    ]);
 
-  @Delete(':key/disconnect')
-  @ApiOperation({ summary: 'Disconnect an integration' })
-  disconnect(
-    @Param('merchantId') merchantId: string,
-    @Param('key') key: string,
-  ) {
-    return this.svc.disconnect(merchantId, key as any);
+    const now = new Date();
+
+    const sallaConnected =
+      !!sallaInteg?.accessToken &&
+      (!sallaInteg?.expiresAt || sallaInteg.expiresAt > now);
+
+    const zidConnected =
+      !!zidInteg?.accessToken &&
+      (!zidInteg?.expiresAt || zidInteg.expiresAt > now);
+
+    return {
+      salla: {
+        active: !!merchant.productSourceConfig?.salla?.active,
+        connected: sallaConnected,
+        lastSync:
+          (
+            merchant.productSourceConfig?.salla?.lastSync as any
+          )?.toISOString?.() ||
+          sallaInteg?.lastSync?.toISOString?.() ||
+          null,
+      },
+      zid: {
+        active: !!merchant.productSourceConfig?.zid?.active,
+        connected: zidConnected,
+        lastSync:
+          (
+            merchant.productSourceConfig?.zid?.lastSync as any
+          )?.toISOString?.() ||
+          zidInteg?.lastSync?.toISOString?.() ||
+          null,
+      },
+    };
   }
 }

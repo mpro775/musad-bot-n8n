@@ -31,6 +31,9 @@ import {
   downloadTelegramFile,
 } from './schemas/utils/download-files';
 import { ChatMediaService } from '../media/chat-media.service';
+import { EvolutionService } from '../integrations/evolution.service';
+import { ConfigService } from '@nestjs/config';
+import { ChatGateway } from '../chat/chat.gateway';
 function detectOrderIntent(msg: string): {
   step: string;
   orderId?: string;
@@ -62,43 +65,34 @@ export class WebhooksController {
     private readonly messageService: MessageService,
     private readonly ordersServices: OrdersService,
     private readonly chatMediaService: ChatMediaService,
+    private readonly evoService: EvolutionService,
+    private readonly config: ConfigService,
+    private readonly chatGateway: ChatGateway,
     @InjectModel(Merchant.name)
     private readonly merchantModel: Model<MerchantDocument>,
   ) {}
   async sendReplyToChannel({ sessionId, text, channel, merchantId }) {
     const merchant = await this.merchantModel.findById(merchantId).lean();
-    if (!merchant) {
-      throw new Error('Merchant not found');
-    }
+    if (!merchant) throw new Error('Merchant not found');
+
     if (channel === 'telegram') {
-      if (!merchant.channels?.telegram || !merchant.channels.telegram.token) {
-        throw new Error('Telegram channel is not configured for this merchant');
-      }
-      const telegramToken = merchant.channels.telegram.token;
-      await axios.post(
-        `https://api.telegram.org/bot${telegramToken}/sendMessage`,
-        {
-          chat_id: sessionId,
-          text,
-        },
-      );
+      const token = merchant.channels?.telegram?.token;
+      if (!token) throw new Error('Telegram not configured');
+      await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
+        chat_id: sessionId,
+        text,
+        // parse_mode: 'HTML' // إن احتجتم تنسيق
+      });
     } else if (channel === 'whatsapp') {
-      if (
-        !merchant.channels?.whatsapp ||
-        !merchant.channels.whatsapp.instanceId
-      ) {
-        throw new Error('WhatsApp channel is not configured for this merchant');
-      }
-      const instanceId = merchant.channels.whatsapp.instanceId;
-      await axios.post(
-        `http://your-whatsapp-api/message/sendText/${instanceId}`,
-        {
-          number: sessionId,
-          textMessage: { text },
-        },
-      );
+      const session = merchant.channels?.whatsapp?.sessionId;
+      if (!session) throw new Error('WhatsApp not configured');
+      await this.evoService.sendMessage(session, sessionId, text);
     } else if (channel === 'webchat') {
-      // socket.emit('botReply', { sessionId, text });
+      this.chatGateway.sendMessageToSession(sessionId, {
+        role: 'bot',
+        text,
+        ts: Date.now(),
+      });
     }
   }
   @Public()
@@ -273,15 +267,15 @@ export class WebhooksController {
       // الآن: أي رسالة لم يتم التقاطها كـ intent (أي step: 'normal') تذهب للذكاء الاصطناعي
       if (lastRole === 'customer' && !isHandover && isBotEnabled) {
         // أرسل الرسالة إلى n8n مباشرة
-        await axios.post(
-          `https://n8n.smartagency-ye.com/webhook-test/webhook/ai-agent`,
-          {
-            merchantId: normalized.merchantId,
-            sessionId: normalized.sessionId,
-            channel: normalized.channel,
-            text: normalized.text,
-          },
-        );
+        const base = this.config.get<string>('N8N_BASE')!.replace(/\/+$/, '');
+        const url = `${base}/webhook-test/ai-agent-${normalized.merchantId}`;
+        await axios.post(url, {
+          merchantId: normalized.merchantId,
+          sessionId: normalized.sessionId,
+          channel: normalized.channel,
+          text: normalized.text,
+        });
+
         return {
           sessionId: normalized.sessionId,
           action: 'ask_ai',

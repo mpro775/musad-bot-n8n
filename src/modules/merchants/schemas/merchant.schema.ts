@@ -30,63 +30,35 @@ export class Merchant {
 
   @Prop({ required: false })
   logoUrl?: string;
-
+  @Prop({ enum: ['internal', 'salla', 'zid'], default: 'internal' })
+  productSource: 'internal' | 'salla' | 'zid';
   @Prop({
     type: {
+      internal: { enabled: { type: Boolean, default: true } },
       salla: {
         active: { type: Boolean, default: false },
-        accessToken: { type: String },
-        refreshToken: { type: String },
-        storeId: { type: String },
-        storeUrl: { type: String },
-        lastSync: { type: Date },
+        storeId: String,
+        storeUrl: String,
+        lastSync: Date,
       },
       zid: {
         active: { type: Boolean, default: false },
-        accessToken: { type: String },
-        refreshToken: { type: String },
-        storeId: { type: String },
-        storeUrl: { type: String },
-        lastSync: { type: Date },
+        storeId: String,
+        lastSync: Date,
       },
-      // لو أردت دعم مصادر أخرى مستقبلاً
     },
     default: {},
   })
-  integrations: {
+  productSourceConfig?: {
+    internal?: { enabled: boolean };
     salla?: {
       active: boolean;
-      accessToken?: string;
-      refreshToken?: string;
       storeId?: string;
-      clientId?: string;
-      clientSecret?: string;
       storeUrl?: string;
       lastSync?: Date;
-      redirectUri?: string;
     };
+    zid?: { active: boolean; storeId?: string; lastSync?: Date };
   };
-  @Prop({
-    type: {
-      accessToken: String,
-      refreshToken: String,
-      storeId: String,
-      tokenType: String,
-      expiresIn: Number,
-      lastSync: Date,
-    },
-    default: {},
-  })
-  zidIntegration?: {
-    accessToken: string;
-    refreshToken: string;
-    storeId: string;
-    tokenType?: string;
-    expiresIn?: number;
-    lastSync?: Date;
-  };
-  @Prop({ enum: ['internal', 'salla', 'zid'], default: 'internal' })
-  productSource: 'internal' | 'salla' | 'zid';
 
   @Prop({ type: [AddressSchema], default: [] })
   addresses: Address[];

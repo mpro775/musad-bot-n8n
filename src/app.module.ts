@@ -49,7 +49,8 @@ import { StorefrontModule } from './modules/storefront/storefront.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { KnowledgeModule } from './modules/knowledge/knowledge.module';
 import { FaqModule } from './modules/faq/faq.module';
-import { ZidModule } from './modules/zid/zid.module';
+import { ZidModule } from './modules/integrations/zid/zid.module';
+import { KleemModule } from './modules/kleem/kleem.module';
 
 @Module({
   imports: [
@@ -138,6 +139,7 @@ import { ZidModule } from './modules/zid/zid.module';
     LeadsModule,
     IntegrationsModule,
     ScraperModule,
+    KleemModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

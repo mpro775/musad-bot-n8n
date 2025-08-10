@@ -8,7 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 
@@ -29,6 +29,30 @@ import { QuickConfig } from './schemas/quick-config.schema';
 import { EvolutionService } from '../integrations/evolution.service';
 import { randomUUID } from 'crypto';
 import { StorefrontService } from '../storefront/storefront.service';
+import { OnboardingBasicDto } from './dto/onboarding-basic.dto';
+function toRecord(input: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (input instanceof Map) {
+    for (const [key, value] of input as Map<unknown, unknown>) {
+      if (typeof value !== 'string') continue;
+      if (typeof key === 'string') out[key] = value;
+      else if (typeof key === 'number') out[String(key)] = value;
+    }
+    return out;
+  }
+  if (typeof input === 'object' && input !== null && !Array.isArray(input)) {
+    for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+      if (typeof v === 'string') out[k] = v;
+    }
+  }
+  return out;
+}
+const normUrl = (u?: string) =>
+  u && u.trim()
+    ? /^https?:\/\//i.test(u)
+      ? u.trim()
+      : `https://${u.trim()}`
+    : undefined;
 
 @Injectable()
 export class MerchantsService {
@@ -63,7 +87,7 @@ export class MerchantsService {
     const doc: any = {
       name: createDto.name,
       logoUrl: createDto.logoUrl ?? '',
-      addresses: createDto.addresses ?? {},
+      addresses: createDto.addresses ?? [],
 
       subscription,
       categories: createDto.categories ?? [],
@@ -140,7 +164,7 @@ export class MerchantsService {
 
       // 6) أعد بناء وحفظ finalPromptTemplate
       merchant.finalPromptTemplate =
-        this.promptBuilder.compileTemplate(merchant);
+        await this.promptBuilder.compileTemplate(merchant);
       await merchant.save();
 
       await this.storefrontService.create({
@@ -224,7 +248,8 @@ export class MerchantsService {
 
     // 4) أعد بناء finalPromptTemplate بحذر
     try {
-      updated.finalPromptTemplate = this.promptBuilder.compileTemplate(updated);
+      updated.finalPromptTemplate =
+        await this.promptBuilder.compileTemplate(updated);
       await updated.save();
     } catch (err) {
       this.logger.error('Error compiling prompt template after update', err);
@@ -244,12 +269,41 @@ export class MerchantsService {
       { new: true },
     );
   }
+  async saveBasicInfo(
+    merchantId: string,
+    dto: OnboardingBasicDto,
+  ): Promise<MerchantDocument> {
+    const m = await this.merchantModel.findById(merchantId).exec();
+    if (!m) throw new NotFoundException('Merchant not found');
+
+    m.name = dto.name ?? m.name;
+    m.logoUrl = dto.logoUrl ?? m.logoUrl;
+    m.businessType = dto.businessType ?? m.businessType;
+    m.businessDescription = dto.businessDescription ?? m.businessDescription;
+    if (dto.phone !== undefined) m.phone = dto.phone;
+    if (dto.categories) m.categories = dto.categories;
+    if (dto.customCategory) m.customCategory = dto.customCategory;
+    if (dto.addresses) m.addresses = dto.addresses;
+
+    await m.save();
+
+    // (اختياري) أعِد بناء prompt بعد اكتمال الأساسيات
+    try {
+      m.finalPromptTemplate = await this.promptBuilder.compileTemplate(m);
+      await m.save();
+    } catch {
+      this.logger.warn('Prompt compile skipped after basic info');
+    }
+
+    return m;
+  }
   /** جلب تاجر واحد */
   async findOne(id: string): Promise<MerchantDocument> {
     const merchant = await this.merchantModel.findById(id).exec();
     if (!merchant) throw new NotFoundException('Merchant not found');
     // تأكد من تحديث الـ finalPromptTemplate
-    merchant.finalPromptTemplate = this.promptBuilder.compileTemplate(merchant);
+    merchant.finalPromptTemplate =
+      await this.promptBuilder.compileTemplate(merchant);
     return merchant;
   }
 
@@ -272,7 +326,7 @@ export class MerchantsService {
   async buildFinalPrompt(id: string): Promise<string> {
     const m = await this.merchantModel.findById(id).exec();
     if (!m) throw new NotFoundException('Merchant not found');
-    const tpl = this.promptBuilder.compileTemplate(m);
+    const tpl = await this.promptBuilder.compileTemplate(m);
     m.finalPromptTemplate = tpl;
     await m.save();
     return tpl;
@@ -322,7 +376,6 @@ export class MerchantsService {
       .select([
         'quickConfig',
         'categories',
-        'storefrontUrl',
         'addresses',
         'workingHours',
         'returnPolicy',
@@ -336,21 +389,109 @@ export class MerchantsService {
     if (!updatedDoc) {
       throw new NotFoundException('Merchant not found');
     }
-    const storefront = await this.storefrontService.findByMerchant(
-      (updatedDoc._id as Types.ObjectId).toString(),
-    );
 
     // أعد بناء finalPromptTemplate
-    const newPrompt = this.promptBuilder.buildFromQuickConfig(
-      updatedDoc,
-      storefront,
-    );
+    const newPrompt = await this.promptBuilder.compileTemplate(updatedDoc);
+
     await this.merchantModel
       .findByIdAndUpdate(id, { $set: { finalPromptTemplate: newPrompt } })
       .exec();
 
     // الآن updatedDoc.quickConfig مُعرّفة من MerchantDocument
     return updatedDoc.quickConfig;
+  }
+
+  async getStoreContext(merchantId: string) {
+    const m = await this.merchantModel
+      .findById(merchantId)
+      .select([
+        'addresses',
+        'workingHours',
+        'returnPolicy',
+        'exchangePolicy',
+        'shippingPolicy',
+        'channels',
+        'phone',
+        'socialLinks',
+        'productSourceConfig.salla.storeUrl',
+        'storefront', // لقراءة الـ storefront
+      ])
+      .lean();
+
+    if (!m) throw new NotFoundException('Merchant not found');
+
+    // 1) socials من map
+    const raw = toRecord((m as any).socialLinks);
+    const socials: Record<string, string> = {};
+    const SIMPLE = [
+      'facebook',
+      'twitter',
+      'instagram',
+      'linkedin',
+      'youtube',
+      'website',
+    ];
+    for (const key of SIMPLE) {
+      const v = normUrl(raw[key]);
+      if (v) socials[key] = v;
+    }
+
+    // 2) telegram
+    const tg = m?.channels?.telegram?.chatId;
+    if (tg) socials.telegram = `https://t.me/${String(tg).replace(/^@/, '')}`;
+
+    // 3) whatsapp (من القناة أو الهاتف)
+    const waNum = m?.channels?.whatsapp?.phone
+      ? String(m.channels.whatsapp.phone)
+      : m?.phone
+        ? String(m.phone)
+        : '';
+    if (waNum) {
+      const digits = waNum.replace(/\D/g, '');
+      if (digits) socials.whatsapp = `https://wa.me/${digits}`;
+    }
+
+    // 4) website من سلة إذا غير موجود
+    if (!socials.website && m?.productSourceConfig?.salla?.storeUrl) {
+      const u = normUrl(m.productSourceConfig.salla.storeUrl);
+      if (u) socials.website = u;
+    }
+
+    // 5) website من الـ Storefront (إن وُجد وكان عندك URL جاهز)
+    // نحاول جلب مستند الـ storefront وإخراج رابط جاهز إن متاح
+    let website: string | undefined = socials.website;
+    try {
+      if (!website && m.storefront) {
+        const sf = await this.storefrontService.findByMerchant(merchantId); // عندك بالخدمة
+        // إن كان لدى الـ storefront حقل جاهز:
+        const fromDoc = (sf as any)?.storefrontUrl as string | undefined;
+        if (fromDoc) website = normUrl(fromDoc);
+        // أو ابنه من base + slug:
+        if (!website && (sf as any)?.slug) {
+          const base = this.config.get<string>('PUBLIC_STOREFRONT_BASE'); // مثلاً: https://shop.kaleem-ai.com
+          if (base)
+            website = `${base.replace(/\/+$/, '')}/s/${(sf as any).slug}`;
+        }
+      }
+    } catch {
+      // تجاهُل أي خطأ غير مهم هنا
+    }
+
+    // إن حصلنا website عبر storefront ولم يكن في socials، انسخه هناك أيضاً
+    if (website && !socials.website) socials.website = website;
+
+    return {
+      merchantId,
+      addresses: m.addresses ?? [],
+      workingHours: m.workingHours ?? [],
+      policies: {
+        returnPolicy: m.returnPolicy || '',
+        exchangePolicy: m.exchangePolicy || '',
+        shippingPolicy: m.shippingPolicy || '',
+      },
+      website: website || null, // ← سهل على الـ Agent
+      socials, // وفيه website أيضاً لو موجود
+    };
   }
   /** معاينة برومبت */
   async previewPrompt(
@@ -431,42 +572,58 @@ export class MerchantsService {
     return { merchant, webhookInfo };
   }
 
+  async setProductSource(id: string, source: 'internal' | 'salla' | 'zid') {
+    const m = await this.merchantModel.findById(id);
+    if (!m) throw new NotFoundException('Merchant not found');
+
+    m.productSource = source as any;
+    m.productSourceConfig = m.productSourceConfig || {};
+
+    if (source === 'internal') {
+      m.productSourceConfig.internal = { enabled: true };
+      // عطّل الباقي
+      if (m.productSourceConfig.salla)
+        m.productSourceConfig.salla.active = false;
+      if (m.productSourceConfig.zid) m.productSourceConfig.zid.active = false;
+    } else if (source === 'salla') {
+      m.productSourceConfig.internal = { enabled: false };
+      m.productSourceConfig.salla = {
+        ...(m.productSourceConfig.salla || {}),
+        active: true,
+      };
+    } else {
+      m.productSourceConfig.internal = { enabled: false };
+      m.productSourceConfig.zid = {
+        ...(m.productSourceConfig.zid || {}),
+        active: true,
+      };
+    }
+
+    await m.save();
+    return m;
+  }
   /** تسجيل Webhook لتليجرام */
-  public async registerTelegramWebhook(
-    merchantId: string,
-    botToken: string,
-  ): Promise<{ hookUrl: string; telegramResponse?: any }> {
+  // merchants.service.ts
+  public async registerTelegramWebhook(merchantId: string, botToken: string) {
     const m = await this.merchantModel.findById(merchantId).exec();
-    if (!m || !m.workflowId) {
-      throw new BadRequestException('Workflow not initialized');
-    }
+    if (!m) throw new BadRequestException('merchant not found');
 
-    const base = this.config.get<string>('N8N_WEBHOOK_BASE');
-    if (!base) {
-      throw new InternalServerErrorException('N8N_WEBHOOK_BASE not set');
-    }
-
-    const hookUrl = `${base.replace(/\/+$/, '')}/webhook/${m.workflowId}/webhooks/incoming/${merchantId}`;
+    const hookUrl = `${this.config.get('PUBLIC_WEBHOOK_BASE')}/incoming/${merchantId}`;
     this.logger.log(`Setting Telegram webhook: ${hookUrl}`);
 
-    let telegramResponse: any;
     try {
-      const resp = await firstValueFrom(
+      await firstValueFrom(
         this.http.get(
           `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(hookUrl)}`,
         ),
       );
-      telegramResponse = resp.data;
-      this.logger.log('Telegram setWebhook response', telegramResponse);
-    } catch (err: any) {
-      // نسجل الخطأ ولكن لا نفشل الأونبوردنج
+    } catch (err) {
       this.logger.error(
-        `Failed to set Telegram webhook (ignored): ${err.message}`,
+        `Failed to set Telegram webhook: ${err.message}`,
         err.stack,
       );
     }
 
-    // نحفظ الـ webhookUrl دائماً، حتى لو فشل الطلب
     await this.merchantModel
       .findByIdAndUpdate(
         merchantId,
@@ -475,7 +632,7 @@ export class MerchantsService {
       )
       .exec();
 
-    return { hookUrl, telegramResponse };
+    return { hookUrl };
   }
 
   // في merchants.service.ts
@@ -519,31 +676,23 @@ export class MerchantsService {
       },
     };
   }
+  // merchants.service.ts
   async connectWhatsapp(merchantId: string): Promise<{ qr: string }> {
     const merchant = await this.merchantModel.findById(merchantId);
     if (!merchant) throw new NotFoundException('Merchant not found');
 
     const instanceName = `whatsapp_${merchantId}`;
-    let token = merchant.channels.whatsapp?.token;
+    const token = merchant.channels.whatsapp?.token ?? randomUUID();
 
-    // إذا لا يوجد توكن أو الجلسة انتهت، أنشئ توكن جديد
-    if (!token || merchant.channels.whatsapp?.status === 'expired') {
-      token = randomUUID();
-    }
-
-    // حذف الجلسة السابقة لو كانت موجودة (إعادة تهيئة)
     await this.evoService.deleteInstance(instanceName);
 
-    // **استخدم الدالة المحدثة الآن**
     const { qr, instanceId } = await this.evoService.startSession(
       instanceName,
       token,
     );
 
-    // بناء رابط الـ webhook الخاص بالتاجر
-    const webhookUrl = `${this.config.get('N8N_WEBHOOK_BASE')}/webhook/${merchant.workflowId}/webhooks/incoming/${merchantId}`;
+    const webhookUrl = `${this.config.get('PUBLIC_WEBHOOK_BASE')}/incoming/${merchantId}`;
 
-    // تعيين الـ webhook من جديد
     await this.evoService.setWebhook(
       instanceName,
       webhookUrl,

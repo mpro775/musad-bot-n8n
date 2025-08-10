@@ -42,6 +42,7 @@ export class AuthController {
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
   }
+  @Public()
   @Post('resend-verification')
   @ApiOperation({ summary: 'إعادة إرسال كود تفعيل البريد الإلكتروني' })
   @ApiOkResponse({ description: 'تم إرسال كود التفعيل بنجاح' })

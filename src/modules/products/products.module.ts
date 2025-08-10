@@ -21,7 +21,7 @@ import {
   Category,
   CategorySchema,
 } from '../categories/schemas/category.schema';
-import { ZidModule } from '../zid/zid.module';
+import { ZidModule } from '../integrations/zid/zid.module';
 
 @Module({
   imports: [
@@ -34,7 +34,7 @@ import { ZidModule } from '../zid/zid.module';
     BullModule.registerQueue({ name: 'scrape' }),
     forwardRef(() => VectorModule), // ← حوّل هنا إلى forwardRef
     forwardRef(() => AnalyticsModule),
-    ZidModule,
+    forwardRef(() => ZidModule),
   ],
   providers: [
     ProductsService,

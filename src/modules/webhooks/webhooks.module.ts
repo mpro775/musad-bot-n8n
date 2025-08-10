@@ -10,6 +10,8 @@ import { MessagingModule } from '../messaging/message.module';
 import { OrdersModule } from '../orders/orders.module';
 import { Merchant, MerchantSchema } from '../merchants/schemas/merchant.schema';
 import { ChatMediaModule } from '../media/chat-media.module';
+import { IntegrationsModule } from '../integrations/integrations.module';
+import { ChatModule } from '../chat/chat.module';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { ChatMediaModule } from '../media/chat-media.module';
     ]),
     OrdersModule,
     ChatMediaModule,
+    IntegrationsModule,
+    ChatModule,
     // وحدات الاعتمادية
     MessagingModule, // لحفظ الرسائل (MessageService)
   ],

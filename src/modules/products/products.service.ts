@@ -1,5 +1,9 @@
 // src/modules/products/products.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
@@ -8,7 +12,9 @@ import { ScrapeQueue } from './scrape.queue';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CreateProductDto, ProductSource } from './dto/create-product.dto';
 import { VectorService } from '../vector/vector.service';
-import { ZidService } from '../zid/zid.service';
+import { ZidService } from '../integrations/zid/zid.service';
+import { ExternalProduct } from '../integrations/types';
+import { mapZidImageUrls } from './utils/map-image-urls';
 interface ZidProductImage {
   url: string;
   [key: string]: any;
@@ -317,14 +323,84 @@ export class ProductsService {
 
     return updated;
   }
-  async importZidProducts(merchantId: string, zidAccessToken: string) {
-    const zidProducts = await this.zidService.fetchZidProducts(zidAccessToken);
+  // داخل ProductsService
+  async upsertExternalProduct(
+    merchantId: string,
+    provider: 'zid' | 'salla',
+    p: ExternalProduct,
+  ): Promise<{ created: boolean; id: string }> {
+    const filter = {
+      merchantId: new Types.ObjectId(merchantId),
+      source: ProductSource.API,
+      externalId: p.externalId,
+    };
 
-    for (const zProd of zidProducts) {
-      // جلب أو إضافة المنتج بناءً على externalId (معرف زد)
-      await this.createOrUpdateFromZid(merchantId, zProd);
+    const productData: CreateProductDto = {
+      merchantId,
+      source: ProductSource.API,
+      externalId: p.externalId,
+      name: p.title,
+      description:
+        typeof p.raw === 'object' && p.raw
+          ? ((p.raw as any).description ?? '')
+          : '',
+      price: p.price ?? 0,
+      isAvailable: (p.stock ?? 0) > 0,
+      images: mapZidImageUrls((p.raw as any)?.images),
+      category: (p.raw as any)?.category?.name ?? '',
+      sourceUrl: (p.raw as any)?.permalink ?? '',
+      originalUrl: (p.raw as any)?.permalink ?? '',
+      keywords: [],
+    };
+
+    const doc = await this.productModel.findOneAndUpdate(
+      filter,
+      { $set: productData, $setOnInsert: { createdAt: new Date() } },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+
+    if (!doc) {
+      throw new InternalServerErrorException('Failed to upsert product');
     }
+
+    // Vector embedding
+    await this.vectorService.upsertProducts([
+      {
+        id: doc._id.toString(),
+        merchantId,
+        name: doc.name,
+        description: doc.description,
+        category:
+          typeof doc.category === 'object'
+            ? String(doc.category)
+            : doc.category,
+        specsBlock: doc.specsBlock,
+        keywords: doc.keywords,
+      },
+    ]);
+
+    // created = لم يكن موجودًا قبل التحديث
+    const created =
+      (doc as any).wasNew ?? !(await this.productModel.exists(filter));
+    return { created, id: doc._id.toString() };
   }
+
+  // async importZidProducts(merchantId: string, zidAccessToken: string) {
+  //   const zidProducts = await this.zidService.fetchZidProducts(
+  //     new Types.ObjectId(merchantId),
+  //     zidAccessToken,
+  //   );
+
+  //   for (const zProd of zidProducts) {
+  //     // جلب أو إضافة المنتج بناءً على externalId (معرف زد)
+  //     await this.createOrUpdateFromZid(merchantId, zProd);
+  //   }
+  // }
 
   // يمكنك وضع هذه الدالة في ProductsService:
   async createOrUpdateFromZid(merchantId: string, zidProduct: any) {

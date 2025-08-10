@@ -11,8 +11,15 @@ import {
 } from '@nestjs/common';
 import { BotFaqService } from './botFaq.service';
 import { CreateBotFaqDto } from './dto/create-botFaq.dto';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { UseGuards } from '@nestjs/common';
+import { Public } from 'src/common/decorators/public.decorator';
 
 @Controller('admin/kleem/bot-faqs')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN')
 export class BotFaqController {
   constructor(private readonly svc: BotFaqService) {}
 
@@ -36,6 +43,7 @@ export class BotFaqController {
     return this.svc.delete(id);
   }
   @Get('semantic-search')
+  @Public()
   async semanticSearch(@Query('q') q: string, @Query('topK') topK?: string) {
     if (!q || !q.trim()) {
       return [];

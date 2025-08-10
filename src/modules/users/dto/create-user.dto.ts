@@ -1,6 +1,13 @@
 // src/modules/users/dto/create-user.dto.ts
-import { IsString, IsEmail, MinLength, IsOptional } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  MinLength,
+  IsOptional,
+  IsEnum,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { UserRole } from '../schemas/user.schema';
 
 export class CreateUserDto {
   id: string;
@@ -24,12 +31,13 @@ export class CreateUserDto {
 
   merchantId: string | null;
   firstLogin: boolean;
+
   @ApiPropertyOptional({
     description: 'الدور الخاص بالمستخدم',
-    example: 'ADMIN',
-    enum: ['ADMIN', 'MERCHANT'],
+    enum: UserRole,
+    example: UserRole.ADMIN,
   })
   @IsOptional()
-  @IsString()
-  role?: string; // مثلاً ADMIN أو MERCHANT
+  @IsEnum(UserRole)
+  role?: UserRole;
 }

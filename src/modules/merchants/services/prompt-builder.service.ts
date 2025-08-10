@@ -1,157 +1,123 @@
 // src/modules/merchants/services/prompt-builder.service.ts
-
 import { Injectable } from '@nestjs/common';
 import * as Handlebars from 'handlebars';
 import { MerchantDocument } from '../schemas/merchant.schema';
-import { StorefrontDocument } from 'src/modules/storefront/schemas/storefront.schema';
+import { InstructionsService } from 'src/modules/instructions/instructions.service'; // ← جديد
 
-// يمكنك تغيير هذا النص أو جعله في ملف .env أو constant في مكان مركزي حسب حاجة المشروع
 const SYSTEM_PROMPT_SUFFIX = `
 [system-only]: استخدم بيانات المنتجات من المصدر الرسمي فقط. يُمنع تأليف أو اختلاق بيانات غير حقيقية، ويجب استخدام API الربط الداخلي دائماً لأي استعلام عن المنتجات أو الأسعار أو التوافر.
 `;
 
+// ← توجيهات إجبارية "ثابتة" تُضاف دائمًا داخل البرومبت
+const MANDATORY_TOOLING = [
+  'عند سؤال العميل عن معلومات المتجر (العناوين/التواصل/الدوام/السياسات) استخدم أداة getStoreContext فقط.',
+  'عند سؤال العميل عن المنتجات/الأسعار/التوافر استخدم أداة searchProducts فقط، ولا تخمّن.',
+  'عند الحاجة لمعلومات إضافية غير موجودة في النتائج استخدم أداة searchKnowledge.',
+  'لا تكرّر نفس الإجابة داخل الجلسة، واختصر.',
+  'لا تفترض معلومات غير موجودة؛ إن لم تجد قل لا أملكها.',
+  'تتبّع الطلبات يُعالَج في الباك-إند؛ لا تنفّذه من هنا.',
+  'عند طلب رابط المتجر/التصفّح استدعِ getStoreContext، وإن وُجد website أعِده مع دعوة للتصفّح، وإلا أعِد أفضل قناة سويشال لدينا متاحة (facebook/instagram) مع دعوة للمساعدة.',
+];
+
 @Injectable()
 export class PromptBuilderService {
-  /**
-   * يبني نص مبسّط من QuickConfig والحقول الجديدة
-   */
-  buildFromQuickConfig(
-    m: MerchantDocument,
-    storefront?: StorefrontDocument | null,
-  ): string {
-    const cfg = m.quickConfig; // موجود دائمًا حسب الـ schema
+  constructor(private readonly instructionsSvc: InstructionsService) {} // ← جديد
 
+  /**
+   * يبني نصًا مبسّطًا من QuickConfig فقط (بدون بيانات متجر ثابتة)
+   * نحجب: السياسات/العناوين/الدوام/روابط المتجر لأنها ستأتي من Tool.
+   */
+  buildFromQuickConfig(m: MerchantDocument): string {
+    const cfg = m.quickConfig;
     const {
       dialect,
       tone,
       customInstructions,
       sectionOrder,
-      includeStoreUrl,
-      includeAddress,
-      includePolicies,
-      includeWorkingHours,
       includeClosingPhrase,
       closingText,
-      customerServicePhone, // الحقل الجديد
     } = cfg;
 
     const lines: string[] = [];
-
-    // مقدمة
     lines.push(`أنت مساعد ذكي لخدمة عملاء متجر "${m.name}".`);
     lines.push(`استخدم اللهجة "${dialect}" وبنغمة "${tone}".`);
 
-    // الأقسام حسب sectionOrder
     for (const section of sectionOrder) {
       switch (section) {
         case 'products':
           lines.push(
-            '📦 المنتجات: استخدم البحث الداخلي للتوصل للمنتج، واقترح بدائل عند الضرورة.',
+            '📦 المنتجات: استخدم أدوات البحث الداخلية فقط؛ لا تعتمد على التخمين.',
           );
           break;
 
         case 'instructions':
-          if (customInstructions.length) {
-            lines.push('🎯 التعليمات الخاصة:');
-            for (const inst of customInstructions) {
-              lines.push(`- ${inst}`);
-            }
+          if (customInstructions?.length) {
+            lines.push('🎯 تعليمات التاجر الخاصة:');
+            for (const inst of customInstructions) lines.push(`- ${inst}`);
           }
           break;
 
         case 'categories':
           if (m.categories?.length) {
             lines.push('🗂️ أقسام المتجر:');
-            for (const cat of m.categories) {
-              lines.push(`- ${cat}`);
-            }
+            for (const cat of m.categories) lines.push(`- ${cat}`);
           }
           break;
 
         case 'policies':
-          if (includePolicies) {
-            const policyLines: string[] = [];
-            if (m.returnPolicy)
-              policyLines.push(`- الإرجاع: ${m.returnPolicy}`);
-            if (m.exchangePolicy)
-              policyLines.push(`- الاستبدال: ${m.exchangePolicy}`);
-            if (m.shippingPolicy)
-              policyLines.push(`- الشحن: ${m.shippingPolicy}`);
-            if (policyLines.length) {
-              lines.push('📋 السياسات:');
-              lines.push(...policyLines);
-            }
-          }
-          break;
-
         case 'custom':
-          // القالب المتقدم لا يُعرض هنا في الإعداد السريع
+          // محجوب: السياسات/العناوين/الدوام/روابط المتجر تُجلب من Tool عند الحاجة
           break;
       }
     }
 
-    // الربط والحقول الإضافية
-    if (includeStoreUrl && storefront?.storefrontUrl) {
-      lines.push(`🔗 رابط المتجر: ${storefront?.storefrontUrl}`);
-    }
-    if (includeAddress && m.addresses) {
-      const addr = m.addresses[0];
-      lines.push(
-        `📍 العنوان: ${addr.street}, ${addr.city}${addr.state ? ', ' + addr.state : ''}, ${addr.country}`,
-      );
-    }
-    if (includeWorkingHours && m.workingHours.length) {
-      lines.push('⏰ ساعات العمل:');
-      for (const wh of m.workingHours) {
-        lines.push(`- ${wh.day}: ${wh.openTime} إلى ${wh.closeTime}`);
-      }
-    }
-    if (includeClosingPhrase) {
-      lines.push(closingText);
-    }
-    if (customerServicePhone) {
-      lines.push(`☎️ للتواصل مع خدمة العملاء: ${customerServicePhone}`);
-    }
+    if (includeClosingPhrase) lines.push(closingText);
+
     return lines.join('\n\n');
   }
 
   /**
-   * يختار بين القالب المتقدم أو QuickConfig، ثم يعالج الـ Handlebars
-   * وأخيرًا يضيف النص الإجباري غير القابل للتعديل من العميل.
+   * يختار بين القالب المتقدم أو QuickConfig ويضيف دائمًا:
+   * - التوجيهات الإجبارية (MANDATORY_TOOLING)
+   * - تعليمات عدم التكرار من قاعدة البيانات (active instructions)
+   * - SYSTEM_PROMPT_SUFFIX
    */
-  compileTemplate(
-    m: MerchantDocument,
-    storefront?: StorefrontDocument | null,
-  ): string {
-    // إذا هناك قالب متقدم فعلي استخدمه، وإلا بناء من QuickConfig
+  async compileTemplate(m: MerchantDocument): Promise<string> {
     const advancedTpl = m.currentAdvancedConfig?.template?.trim();
     const raw =
       advancedTpl && advancedTpl.length
         ? advancedTpl
         : this.buildFromQuickConfig(m);
 
-    // جهّز دالة Handlebars
     const tpl = Handlebars.compile(raw);
-
-    // سياق الحقن: نجعل جميع خصائص التاجر متاحة
     const context = {
       merchantName: m.name,
       categories: m.categories,
-      returnPolicy: m.returnPolicy,
-      exchangePolicy: m.exchangePolicy,
-      shippingPolicy: m.shippingPolicy,
-      storefrontUrl: storefront?.storefrontUrl,
-      address: m.addresses,
-      workingHours: m.workingHours,
+      // نحجب: returnPolicy/exchangePolicy/shippingPolicy/address/workingHours/storefrontUrl
       quickConfig: m.quickConfig,
     };
+    const base = tpl(context);
+    if (typeof base !== 'string')
+      throw new Error('PromptBuilder: expected string');
 
-    const result = tpl(context);
-    if (typeof result !== 'string') {
-      throw new Error('PromptBuilderService: expected string result');
-    }
+    // اسحب تعليمات عدم التكرار من DB (فعّالة فقط)
+    const penalties = await this.instructionsSvc.getActiveInstructions(
+      m._id?.toString(),
+    );
+    const penaltyLines = penalties.map((p) => p.instruction);
 
-    // دمج النص الإجباري (system prompt) في النهاية
-    return result + '\n\n' + SYSTEM_PROMPT_SUFFIX;
+    const merged =
+      base +
+      '\n\n' +
+      '[التوجيهات الإجباريّة]\n- ' +
+      MANDATORY_TOOLING.join('\n- ') +
+      (penaltyLines.length
+        ? '\n\n[توجيهات إضافية من تقييمات سابقة]\n- ' +
+          penaltyLines.join('\n- ')
+        : '') +
+      '\n\n' +
+      SYSTEM_PROMPT_SUFFIX;
+
+    return merged;
   }
 }

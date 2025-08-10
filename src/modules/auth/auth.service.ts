@@ -1,4 +1,4 @@
-import { Connection } from 'mongoose';
+import { ClientSession, Connection } from 'mongoose';
 import {
   Injectable,
   InternalServerErrorException,
@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 
@@ -34,64 +34,80 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
   ) {}
+  private async hasReplicaSet(): Promise<boolean> {
+    try {
+      // يضمن أن العميل موجود ومتصل
+      const client = this.connection.getClient(); // MongoClient
+      const res = await client.db().admin().command({ replSetGetStatus: 1 });
+      return res?.ok === 1;
+    } catch {
+      return false;
+    }
+  }
+
   async register(registerDto: RegisterDto) {
-    // فكّ فقط الحقلين اللذين نريد أن نستخدمهما هنا
-    const { password, confirmPassword } = registerDto;
-
-    // استخدم الحقلين للتحقق من تطابق كلمة المرور
-    if (password !== confirmPassword) {
+    const { password, confirmPassword, email, name } = registerDto;
+    if (password !== confirmPassword)
       throw new BadRequestException('كلمتا المرور غير متطابقتين');
-    }
 
-    // بقية الحقول نأخذها مباشرة من registerDto حين الحاجة
-    const email = registerDto.email;
-    const username = registerDto.username; // سمّيتها username لتجنّب الاصطدام
-
-    // 1) تأكد من عدم وجود مستخدم بالإيميل نفسه
-    if (await this.userModel.exists({ email })) {
+    if (await this.userModel.exists({ email }))
       throw new ConflictException('Email already in use');
-    }
 
-    // 2) هشّ لكلمة المرور
-    const hashed = await bcrypt.hash(password, 10);
+    const useTxn = await this.hasReplicaSet(); // 👈 شغّل المعاملة فقط إذا متوفرة
+    let session: ClientSession | undefined;
 
-    // 3) أنشئ المستخدم باستخدام الحقول الواضحة
-    let userDoc: UserDocument;
     try {
-      userDoc = await this.userModel.create({
-        name: username,
-        email,
-        password: hashed,
-        role: 'MERCHANT',
-        firstLogin: true,
-      });
-    } catch (err: any) {
-      this.logger.error('Failed to create user', err.stack || err);
-      if (err.code === 11000) {
-        throw new ConflictException('Email already in use');
+      if (useTxn) {
+        session = await this.connection.startSession();
+        await session.withTransaction(async () => {
+          await this._registerWork({ name, email, password }, session);
+        });
+      } else {
+        // بدون معاملة + تعويض (Compensation) عند الفشل
+        await this._registerWork({ name, email, password }, undefined);
       }
-      throw new InternalServerErrorException('Failed to create user');
-    }
-    // 3) ارسال كود التفعيل
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    userDoc.emailVerificationCode = code;
-    userDoc.emailVerificationExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    await userDoc.save().catch((err) => {
-      this.logger.error('Failed to save verification code', err);
-    });
-    this.mailService.sendVerificationEmail(email, code).catch((err) => {
-      this.logger.error('Failed sending verification email', err);
-    });
 
-    // 4) إنشاء التاجر
-    let merchant: MerchantDocument;
+      return await this._issueTokenAndReturn(email);
+    } catch (err) {
+      if (session) await session.endSession();
+      this.logger.error('Register failed', err?.stack || err);
+      throw new InternalServerErrorException('Failed to register');
+    } finally {
+      if (session) await session.endSession();
+    }
+  }
+
+  private async _registerWork(
+    data: { name: string; email: string; password: string },
+    session?: ClientSession,
+  ) {
+    const { name, email, password } = data;
+
+    // 1) أنشئ المستخدم
+    const userDoc = await new this.userModel({
+      name,
+      email,
+      password, // pre-save يعمل الهاش
+      role: 'MERCHANT',
+      firstLogin: true,
+    }).save(session ? { session } : undefined);
+
     try {
-      merchant = await this.merchantModel.create({
+      // 2) كود التفعيل
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      userDoc.emailVerificationCode = code;
+      userDoc.emailVerificationExpiresAt = new Date(
+        Date.now() + 15 * 60 * 1000,
+      );
+      await userDoc.save(session ? { session } : undefined);
+
+      // 3) أنشئ التاجر (مطابق للـ schema الحالية)
+      const merchantDoc = await new this.merchantModel({
         userId: userDoc._id,
-        name: `متجر ${username}`,
-        storefrontUrl: '',
-        logoUrl: '',
-        address: {},
+        name: `متجر ${name}`,
+        // لا ترسل address مفردة، schema تعتمد addresses []
+        addresses: [],
+        // الاشتراك مطلوب
         subscription: {
           tier: PlanTier.Free,
           startDate: new Date(),
@@ -106,6 +122,9 @@ export class AuthService {
           ],
         },
         categories: [],
+        socialLinks: {},
+
+        // يطابق QuickConfig/AdvancedConfig Schemas
         quickConfig: {
           dialect: 'خليجي',
           tone: 'ودّي',
@@ -119,7 +138,7 @@ export class AuthService {
           closingText: 'هل أقدر أساعدك بشي ثاني؟ 😊',
         },
         currentAdvancedConfig: {
-          template: '', // <-- تمّ تصحيح اسم الحقل هنا
+          template: '',
           updatedAt: new Date(),
           note: '',
         },
@@ -128,60 +147,62 @@ export class AuthService {
         returnPolicy: '',
         exchangePolicy: '',
         shippingPolicy: '',
+
+        // channels مطابق للـ schema (سيترجم ChannelConfigSchema داخليًا)
         channels: {},
-        chatThemeColor: '#D84315',
-        chatGreeting: 'مرحباً! كيف أستطيع مساعدتك اليوم؟',
-        chatWebhooksUrl: '/api/webhooks',
-        chatApiBaseUrl: '',
+        // workingHours حسب schema
         workingHours: [],
-      });
-    } catch (err: any) {
-      this.logger.error('Failed to create merchant', err.stack || err);
-      // rollback: حذف المستخدم
-      await this.userModel.findByIdAndDelete(userDoc._id).exec();
-      throw new InternalServerErrorException('Failed to create merchant');
+      }).save(session ? { session } : undefined);
+
+      // 4) اربط merchantId بالمستخدم
+      userDoc.merchantId = merchantDoc._id as any;
+      await userDoc.save(session ? { session } : undefined);
+
+      // 5) أرسل الإيميل (خارج المعاملة)
+      this.mailService
+        .sendVerificationEmail(email, userDoc.emailVerificationCode)
+        .catch((err) =>
+          this.logger.error('Failed sending verification email', err),
+        );
+    } catch (e) {
+      // تعويض عند عدم وجود معاملة: احذف المستخدم الذي تم إنشاؤه
+      if (!session) {
+        await this.userModel.deleteOne({ _id: userDoc._id });
+      }
+      throw e;
     }
+  }
 
-    // 5) ربط merchantId ثم حفظ
-    userDoc.merchantId = merchant._id as Types.ObjectId;
-    await userDoc.save().catch((err) => {
-      this.logger.error('Failed to link merchantId', err);
-    });
-
-    // 6) إصدار JWT والرد
+  private async _issueTokenAndReturn(email: string) {
+    const userDoc = await this.userModel.findOne({ email });
     const payload = {
-      userId: userDoc._id,
-      role: userDoc.role,
-      merchantId: merchant._id,
+      userId: userDoc!._id,
+      role: userDoc!.role,
+      merchantId: userDoc!.merchantId,
     };
     return {
       accessToken: this.jwtService.sign(payload),
       user: {
-        id: userDoc._id,
-        name: userDoc.name,
-        email: userDoc.email,
-        role: userDoc.role,
-        merchantId: merchant._id,
-        firstLogin: userDoc.firstLogin,
+        id: userDoc!._id,
+        name: userDoc!.name,
+        email: userDoc!.email,
+        role: userDoc!.role,
+        merchantId: userDoc!.merchantId,
+        firstLogin: userDoc!.firstLogin,
+        emailVerified: userDoc!.emailVerified,
       },
     };
   }
 
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;
-    const userDoc = await this.userModel.findOne({ email });
+    const userDoc = await this.userModel.findOne({ email }).select('+password');
     if (!userDoc) throw new BadRequestException('Invalid credentials');
 
     const isMatch = await bcrypt.compare(password, userDoc.password);
     if (!isMatch) throw new BadRequestException('Invalid credentials');
-    this.logger.debug(
-      'All merchants in DB:',
-      await this.merchantModel.find().lean(),
-    );
 
-    // جلب التاجر المرتبط
     const merchant = await this.merchantModel.findOne({ userId: userDoc._id });
-    this.logger.debug('Found merchant for user:', merchant);
 
     const payload = {
       userId: userDoc._id,
@@ -197,21 +218,17 @@ export class AuthService {
         role: userDoc.role,
         merchantId: merchant?._id || null,
         firstLogin: userDoc.firstLogin,
+        emailVerified: userDoc.emailVerified, // 👈 جديد
       },
     };
   }
-  // src/auth/auth.service.ts
-
-  // src/auth/auth.service.ts
   async verifyEmail(dto: VerifyEmailDto): Promise<void> {
-    const { code } = dto;
+    const { email, code } = dto;
     const user = await this.userModel
-      .findOne({ emailVerificationCode: code })
+      .findOne({ email, emailVerificationCode: code })
       .exec();
+    if (!user) throw new BadRequestException('رمز التفعيل غير صحيح');
 
-    if (!user) {
-      throw new BadRequestException('رمز التفعيل غير صحيح');
-    }
     if (
       !user.emailVerificationExpiresAt ||
       user.emailVerificationExpiresAt.getTime() < Date.now()

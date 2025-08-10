@@ -7,7 +7,7 @@ import { MessageController } from './message.controller';
 import { ChatLinksController } from './chat-links.controller';
 import { ChatModule } from '../chat/chat.module';
 import { GeminiService } from './gemini.service';
-import { InstructionsModule } from 'src/instructions/instructions.module';
+import { InstructionsModule } from 'src/modules/instructions/instructions.module';
 @Module({
   imports: [
     MongooseModule.forFeature([

@@ -10,8 +10,12 @@ import {
 import { BotChatsService } from '../botChats/botChats.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { KleemWsMessage } from '../ws/kleem-ws.types';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { UseGuards } from '@nestjs/common';
+import { Public } from 'src/common/decorators/public.decorator';
 
 @Controller('webhooks/kleem')
+@UseGuards(JwtAuthGuard)
 export class KleemWebhookController {
   constructor(
     private readonly chatsSvc: BotChatsService,
@@ -20,6 +24,7 @@ export class KleemWebhookController {
 
   // استقبال رسالة جديدة من صفحة الهبوط (Landing WebChat)
   @Post('conversation/:sessionId')
+  @Public()
   async handleKleemConversation(
     @Param('sessionId') sessionId: string,
     @Body() body: { messages: any[] },
@@ -27,6 +32,7 @@ export class KleemWebhookController {
     return this.chatsSvc.createOrAppend(sessionId, body.messages);
   }
   @Post('bot-reply/:sessionId')
+  @Public()
   async botReply(
     @Param('sessionId') sessionId: string,
     @Body() body: { text?: string; metadata?: Record<string, unknown> },

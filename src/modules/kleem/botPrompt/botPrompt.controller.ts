@@ -13,7 +13,12 @@ import { BotPromptService } from './botPrompt.service';
 import { CreateBotPromptDto } from './dto/create-botPrompt.dto';
 import { UpdateBotPromptDto } from './dto/update-botPrompt.dto';
 import { SetActiveDto } from './dto/set-active.dto';
-
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { UseGuards } from '@nestjs/common';
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN')
 @Controller('admin/kleem/bot-prompts')
 export class BotPromptController {
   constructor(private readonly svc: BotPromptService) {}

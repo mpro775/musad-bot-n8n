@@ -43,7 +43,7 @@ export class KleemChatService {
 
     // 4) أرسل إلى n8n (بدون merchantId) مع مُعرّف البوت + البرومبت + ميتاداتا
     try {
-      await this.n8n.post('/webhook-test/webhook/ai-agent', {
+      await this.n8n.post('/webhook-test/webhooks/kleem/incoming', {
         bot: 'kleem', // 👈 يُعرّف أن المصدر كليم
         sessionId, // لربط الردّ بنفس الجلسة
         channel: 'webchat', // قناة كليم

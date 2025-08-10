@@ -68,7 +68,7 @@ export class N8nWorkflowService {
     const keyName = 'X-N8N-API-KEY';
     const apiKey =
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiZWExMTI3Yi0zZDg3LTQ1ODAtODlhNi00ZmZkOTU0ZTg1YWUiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzUwMjAzODk3fQ.eSJGKYsoQ3ZY4FLUF1fmuHgSM3uxTDyQAkPavpzJcnY';
-    const baseUrl = 'https://n8n.smartagency-ye.com'.replace(/\/+$/, '');
+    const baseUrl = 'https://n8n.kaleem-ai.com'.replace(/\/+$/, '');
 
     this.logger.log(`▶️ [n8n.baseURL] = ${baseUrl}`);
     this.logger.log(`▶️ [n8n.header]  = ${keyName}: ${apiKey}`);
@@ -147,8 +147,10 @@ export class N8nWorkflowService {
     // clone
     const raw = JSON.parse(JSON.stringify(templateJson));
     raw.name = `wf-${merchantId}`;
+    const aiPath = (merchantId: string) => `ai-agent-${merchantId}`;
+
     // ✔️ هكذا Route سيكون صحيحاً: /webhook/webhooks/incoming/...
-    raw.nodes[0].parameters.path = `webhooks/incoming/${merchantId}`;
+    raw.nodes[0].parameters.path = aiPath(merchantId); // كان ثابت، الآن فريد لكل تاجر
 
     const payload = this.sanitizeTemplate(raw);
 
