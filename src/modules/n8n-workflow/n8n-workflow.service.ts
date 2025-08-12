@@ -15,6 +15,16 @@ import templateJson from './workflow-template.json';
 import { WorkflowHistoryService } from '../workflow-history/workflow-history.service';
 import { MerchantsService } from '../merchants/merchants.service';
 
+function setWebhookPath(raw: any, merchantId: string) {
+  const hook = Array.isArray(raw?.nodes)
+    ? raw.nodes.find((n: any) => n?.type === 'n8n-nodes-base.webhook')
+    : undefined;
+  if (hook?.parameters) {
+    hook.parameters.path = `ai-agent-${merchantId}`; // مسار فريد لكل تاجر
+  }
+  // لا ترسِل webhookId إطلاقًا (sanitizeTemplate يتولى عدم نسخه)
+}
+
 /**
  * الهيكل الكامل الذي يعيده n8n عند GET /workflows/:id
  */
@@ -93,50 +103,88 @@ export class N8nWorkflowService {
   }
 
   /** نظّف القالب من الحقول غير المدعومة */
-  private sanitizeTemplate(raw: any): WorkflowCreatePayload {
-    // ننشئ نسخة قابلة للتعديل
-    const cleanRaw: any = { ...raw };
-    const {
-      ...rest // כל השאר
-    } = raw;
-    // نحذف الحقول العلوية الزائدة
-    delete cleanRaw.id;
-    delete cleanRaw.versionId;
-    delete cleanRaw.meta;
-    delete cleanRaw.tags;
-
-    const staticData = cleanRaw.pinData ?? {};
-    delete cleanRaw.pinData;
-
-    // نُعرّف نوعًا للعُقدة
+  private sanitizeTemplate(raw: unknown): WorkflowCreatePayload {
+    // ---------- helpers ----------
     type NodeDef = WorkflowCreatePayload['nodes'][number];
-    const nodes: NodeDef[] = (rest.nodes as any[]).map((n) => {
-      const node: NodeDef = {
-        name: n.name,
-        type: n.type,
-        typeVersion: n.typeVersion,
-        position: n.position as [number, number],
-        parameters: n.parameters,
-        ...(n.credentials && {
-          credentials: Object.fromEntries(
-            Object.entries(n.credentials).map(([k, cred]: [string, any]) => [
-              k,
-              { name: cred.name },
-            ]),
-          ) as Record<string, { name: string }>,
-        }),
-      };
-      return node;
-    });
 
-    // 4) בונים את ה־payload הסופי
+    const isObj = (v: unknown): v is Record<string, unknown> =>
+      typeof v === 'object' && v !== null && !Array.isArray(v);
+    const isStr = (v: unknown): v is string => typeof v === 'string';
+    const isNum = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v);
+    const isPos = (v: unknown): v is [number, number] =>
+      Array.isArray(v) && v.length === 2 && isNum(v[0]) && isNum(v[1]);
+    const asRecord = (v: unknown): Record<string, unknown> =>
+      isObj(v) ? v : {};
+    const get = (o: unknown, k: string): unknown => {
+      if (!isObj(o)) return undefined;
+      return o[k]; // ✅ بعد الـ guard صار o: Record<string, unknown>
+    };
+
+    const isCred = (v: unknown): v is { name: string } =>
+      isObj(v) && isStr(v.name);
+
+    const toNodeDef = (rawNode: unknown): NodeDef | null => {
+      if (!isObj(rawNode)) return null;
+
+      const nameRaw = get(rawNode, 'name');
+      const typeRaw = get(rawNode, 'type');
+      const verRaw = get(rawNode, 'typeVersion');
+
+      if (!isStr(nameRaw) || !isStr(typeRaw) || !isNum(verRaw)) {
+        return null;
+      }
+
+      const posRaw = get(rawNode, 'position');
+      const parametersRaw = get(rawNode, 'parameters');
+      const credsRaw = get(rawNode, 'credentials');
+
+      const position: [number, number] = isPos(posRaw) ? posRaw : [0, 0];
+      const parameters: Record<string, unknown> = asRecord(parametersRaw);
+
+      let credentials: Record<string, { name: string }> | undefined;
+      if (isObj(credsRaw)) {
+        const entries = Object.entries(credsRaw)
+          .filter(([, v]) => isCred(v))
+          .map(([k, v]) => [k, { name: (v as { name: string }).name }]);
+        if (entries.length) credentials = Object.fromEntries(entries);
+      }
+
+      return {
+        name: nameRaw,
+        type: typeRaw,
+        typeVersion: verRaw,
+        position,
+        parameters,
+        ...(credentials && { credentials }),
+      };
+    };
+
+    // ---------- pick only allowed top-level fields ----------
+    const nameVal = get(raw, 'name');
+    const nodesVal = get(raw, 'nodes');
+    const connectionsVal = get(raw, 'connections');
+    const settingsVal = get(raw, 'settings');
+
+    const name = isStr(nameVal) ? nameVal : 'Untitled Workflow';
+
+    const nodes: NodeDef[] = Array.isArray(nodesVal)
+      ? nodesVal.map(toNodeDef).filter((n): n is NodeDef => n !== null)
+      : [];
+
+    const connections: Record<string, unknown> = asRecord(connectionsVal);
+    const settings: Record<string, unknown> | undefined = isObj(settingsVal)
+      ? settingsVal
+      : undefined;
+
+    // ⚠️ لا نُدرج: active, pinData, staticData, id, versionId, meta, tags
+    // لأن n8n يرفضها عند POST /workflows (active read-only وقت الإنشاء)
+
     const payload: WorkflowCreatePayload = {
-      name: rest.name,
+      name,
       nodes,
-      connections: rest.connections,
-      ...(typeof rest.active === 'boolean' && { active: rest.active }),
-      ...(rest.settings && { settings: rest.settings }),
-      ...(Object.keys(staticData).length > 0 && { staticData }),
+      connections,
+      ...(settings && { settings }),
     };
 
     return payload;
@@ -144,36 +192,32 @@ export class N8nWorkflowService {
 
   /** إنشاء workflow جديد */
   async createForMerchant(merchantId: string): Promise<string> {
-    // clone
     const raw = JSON.parse(JSON.stringify(templateJson));
     raw.name = `wf-${merchantId}`;
-    const aiPath = (merchantId: string) => `ai-agent-${merchantId}`;
+    setWebhookPath(raw, merchantId);
 
-    // ✔️ هكذا Route سيكون صحيحاً: /webhook/webhooks/incoming/...
-    raw.nodes[0].parameters.path = aiPath(merchantId); // كان ثابت، الآن فريد لكل تاجر
-
-    const payload = this.sanitizeTemplate(raw);
-
-    this.logger.log('▶️ Payload to n8n:', JSON.stringify(payload, null, 2));
+    const payload = this.sanitizeTemplate(raw); // ← يزيل id/webhookId/active/...
+    const resp = await this.api.post('/workflows', payload);
+    const wfId = (resp.data as { id: string }).id;
 
     try {
-      const resp = await this.api.post('/workflows', payload);
-      const wfId = (resp.data as { id: string }).id;
-
-      await this.merchants.update(merchantId, { workflowId: wfId });
-      await this.history.create({
-        merchantId,
-        workflowId: wfId,
-        version: 1,
-        workflowJson: payload,
-        updatedBy: 'system',
-        isRollback: false,
-      });
-      return wfId;
-    } catch (err) {
-      this.wrapError(err, 'CREATE');
+      await this.setActive(wfId, true);
+    } catch (e) {
+      this.logger.warn(`activate failed`, e);
     }
+
+    await this.merchants.update(merchantId, { workflowId: wfId });
+    await this.history.create({
+      merchantId,
+      workflowId: wfId,
+      version: 1,
+      workflowJson: payload,
+      updatedBy: 'system',
+      isRollback: false,
+    });
+    return wfId;
   }
+
   /** جلب الـ JSON الكامل */
   async get(workflowId: string): Promise<WorkflowDefinition> {
     try {
@@ -246,27 +290,32 @@ export class N8nWorkflowService {
     targetMerchantId: string,
     createdBy: string,
   ): Promise<string> {
+    const source = await this.get(sourceId);
+    const raw = JSON.parse(JSON.stringify(source));
+
+    raw.name = `wf-${targetMerchantId}`;
+    setWebhookPath(raw, targetMerchantId);
+
+    const payload = this.sanitizeTemplate(raw); // ← يمنع تسريب webhookId و node.id و active...
+    const resp = await this.api.post('/workflows', payload);
+    const wfId = (resp.data as { id: string }).id;
+
     try {
-      const source = await this.get(sourceId);
-      source.name = `wf-${targetMerchantId}`;
-      source.nodes[0].parameters.path = `/webhooks/incoming/${targetMerchantId}`;
-
-      const resp = await this.api.post('/workflows', source);
-      const wfId = (resp.data as { id: string }).id;
-
-      await this.merchants.update(targetMerchantId, { workflowId: wfId });
-      await this.history.create({
-        merchantId: targetMerchantId,
-        workflowId: wfId,
-        version: 1,
-        workflowJson: source,
-        updatedBy: createdBy,
-        isRollback: false,
-      });
-      return wfId;
-    } catch (err) {
-      this.wrapError(err, 'CLONE');
+      await this.setActive(wfId, true);
+    } catch (e) {
+      this.logger.warn(`activate failed`, e);
     }
+
+    await this.merchants.update(targetMerchantId, { workflowId: wfId });
+    await this.history.create({
+      merchantId: targetMerchantId,
+      workflowId: wfId,
+      version: 1,
+      workflowJson: payload,
+      updatedBy: createdBy,
+      isRollback: false,
+    });
+    return wfId;
   }
 
   /** تفعيل/تعطيل workflow */

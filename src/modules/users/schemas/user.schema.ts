@@ -64,6 +64,7 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+UserSchema.index({ email: 1 }, { unique: true });
 
 // هاش لكلمة المرور قبل الحفظ
 UserSchema.pre('save', async function (next) {

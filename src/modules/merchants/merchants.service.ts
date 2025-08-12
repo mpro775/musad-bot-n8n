@@ -85,6 +85,7 @@ export class MerchantsService {
 
     // 2) جهّز المستند مع تزويد جميع الحقول الافتراضية
     const doc: any = {
+      userId: createDto.userId,
       name: createDto.name,
       logoUrl: createDto.logoUrl ?? '',
       addresses: createDto.addresses ?? [],
@@ -518,7 +519,19 @@ export class MerchantsService {
     };
     return this.update(id, { channels: channelsDto });
   }
-
+  async ensureWorkflow(merchantId: string): Promise<string> {
+    const m = await this.merchantModel
+      .findById(merchantId)
+      .select('workflowId')
+      .exec();
+    if (!m) throw new NotFoundException('Merchant not found');
+    if (m.workflowId) return String(m.workflowId);
+    const wfId = await this.n8n.createForMerchant(merchantId);
+    await this.merchantModel
+      .updateOne({ _id: merchantId }, { $set: { workflowId: wfId } })
+      .exec();
+    return wfId;
+  }
   /** إكمال onboarding (شمل الحقول الجديدة) */
   async completeOnboarding(
     merchantId: string,

@@ -8,47 +8,77 @@ import {
   Param,
   Body,
   Query,
+  UseGuards,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { BotFaqService } from './botFaq.service';
-import { CreateBotFaqDto } from './dto/create-botFaq.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { UseGuards } from '@nestjs/common';
 import { Public } from 'src/common/decorators/public.decorator';
+import { seconds, Throttle } from '@nestjs/throttler';
+import { BotFaqService } from './botFaq.service';
+import { CreateBotFaqDto } from './dto/create-botFaq.dto';
+import { UpdateBotFaqDto } from './dto/update-botFaq.dto';
+import { BulkImportDto } from './dto/bulk-import.dto';
 
-@Controller('admin/kleem/bot-faqs')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
+@Controller('admin/kleem/bot-faqs')
 export class BotFaqController {
   constructor(private readonly svc: BotFaqService) {}
 
   @Post()
-  async create(@Body() dto: CreateBotFaqDto) {
+  create(@Body() dto: CreateBotFaqDto) {
     return this.svc.create(dto);
   }
 
   @Get()
-  async list() {
+  list() {
     return this.svc.findAll();
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() dto: Partial<CreateBotFaqDto>) {
+  update(@Param('id') id: string, @Body() dto: UpdateBotFaqDto) {
     return this.svc.update(id, dto);
   }
 
   @Delete(':id')
-  async delete(@Param('id') id: string) {
+  delete(@Param('id') id: string) {
     return this.svc.delete(id);
   }
+
+  @Post('import')
+  bulk(@Body() body: BulkImportDto) {
+    return this.svc.bulkImport(body);
+  }
+
+  // رفع ملف JSON من لوحة التحكم (بديل اختياري)
+  @Post('import/file')
+  @UseInterceptors(FileInterceptor('file'))
+  async bulkFile(@UploadedFile() file: Express.Multer.File) {
+    const text = file?.buffer?.toString('utf8') || '[]';
+    const items = JSON.parse(text);
+    return this.svc.bulkImport({ items });
+  }
+
+  @Post('reindex')
+  reindex() {
+    return this.svc.reindexAll();
+  }
+}
+
+// مسار عام للبحث الدلالي (للاستخدام من الودجت)
+@Controller('kleem/faq')
+export class BotFaqPublicController {
+  constructor(private readonly svc: BotFaqService) {}
+
+  @Throttle({ public: { limit: 30, ttl: seconds(60) } }) // ← وسيط واحد: اسم المجموعة
   @Get('semantic-search')
   @Public()
   async semanticSearch(@Query('q') q: string, @Query('topK') topK?: string) {
-    if (!q || !q.trim()) {
-      return [];
-    }
-    const results = await this.svc.semanticSearch(q, Number(topK) || 5);
-    return results;
+    if (!q?.trim()) return [];
+    return this.svc.semanticSearch(q, Number(topK) || 5);
   }
 }

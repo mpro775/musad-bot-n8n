@@ -62,7 +62,7 @@ export class MailService {
       await this.transporter.sendMail({
         from: this.mailFrom,
         to: email,
-        subject: 'تفعيل حسابك على MusaidBot',
+        subject: 'تفعيل حسابك على منصة كليم',
         html,
       });
       this.logger.log(`Verification email sent to ${email}`);
@@ -199,7 +199,7 @@ export class MailService {
     <div class="content">
       <h2 class="title">تفعيل حسابك</h2>
       
-      <p>مرحباً بك في MusaidBot،</p>
+      <p>مرحباً بك في كليم</p>
       <p>لإكمال عملية إنشاء حسابك، يرجى استخدام كود التفعيل التالي:</p>
       
       <div class="code-container">
@@ -218,7 +218,7 @@ export class MailService {
     </div>
     
     <div class="footer">
-      <p>© ${new Date().getFullYear()} MusaidBot. جميع الحقوق محفوظة</p>
+      <p>© ${new Date().getFullYear()} كليم . جميع الحقوق محفوظة</p>
       <p>هذه الرسالة أرسلت تلقائياً، يرجى عدم الرد عليها</p>
     </div>
   </div>

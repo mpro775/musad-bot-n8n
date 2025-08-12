@@ -63,7 +63,10 @@ export class BotPromptController {
   remove(@Param('id') id: string) {
     return this.svc.remove(id);
   }
-
+  @Get('system/active')
+  async activeSystem() {
+    return this.svc.getActiveSystemPrompt();
+  }
   @Get('system/active/content')
   async activeSystemContent() {
     const content = await this.svc.getActiveSystemPromptOrDefault();

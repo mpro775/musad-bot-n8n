@@ -148,3 +148,4 @@ export class Merchant {
 }
 
 export const MerchantSchema = SchemaFactory.createForClass(Merchant);
+MerchantSchema.index({ userId: 1 }, { unique: true }); // واحد-لواحد

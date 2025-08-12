@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Integration, IntegrationDocument } from './schemas/integration.schema';
 import {
@@ -14,9 +14,25 @@ import {
   MerchantDocument,
 } from '../merchants/schemas/merchant.schema';
 
+type ProviderState = {
+  active: boolean;
+  connected: boolean;
+  lastSync: string | null;
+};
 type StatusResp = {
-  salla: { active: boolean; connected: boolean; lastSync: string | null };
-  zid: { active: boolean; connected: boolean; lastSync: string | null };
+  productSource: 'internal' | 'salla' | 'zid';
+  skipped?: true; // موجودة فقط عند internal
+  salla?: ProviderState;
+  zid?: ProviderState;
+};
+
+const toIso = (v: unknown): string | null => {
+  if (v instanceof Date) return v.toISOString();
+  // يدعم حالات lean() حيث lastSync قد يكون string أصلاً:
+  if (typeof v === 'string') return v;
+  // يدعم Mongoose Date-like:
+  const maybe = (v as any)?.toISOString?.();
+  return typeof maybe === 'string' ? maybe : null;
 };
 
 @Controller('integrations')
@@ -30,12 +46,23 @@ export class IntegrationsController {
 
   @Get('status')
   async status(@Req() req): Promise<StatusResp> {
-    const user = req.user;
-    const merchant = await this.merchantModel
-      .findOne({ userId: user.userId })
-      .lean();
+    const user = req.user as { userId: string; merchantId?: string };
+    const byId = user?.merchantId && Types.ObjectId.isValid(user.merchantId);
+
+    const merchant = byId
+      ? await this.merchantModel.findById(user.merchantId).lean()
+      : await this.merchantModel.findOne({ userId: user.userId }).lean();
+
     if (!merchant) throw new NotFoundException('Merchant not found');
 
+    const source = merchant.productSource ?? 'internal';
+
+    // ✅ لو داخلي: لا نحسب أي تكاملات ونرجّع skipped
+    if (source === 'internal') {
+      return { productSource: 'internal', skipped: true };
+    }
+
+    // غير داخلي → نحسب حالة سلة/زد
     const [sallaInteg, zidInteg] = await Promise.all([
       this.integModel
         .findOne({ merchantId: merchant._id, provider: 'salla' })
@@ -46,7 +73,6 @@ export class IntegrationsController {
     ]);
 
     const now = new Date();
-
     const sallaConnected =
       !!sallaInteg?.accessToken &&
       (!sallaInteg?.expiresAt || sallaInteg.expiresAt > now);
@@ -56,25 +82,20 @@ export class IntegrationsController {
       (!zidInteg?.expiresAt || zidInteg.expiresAt > now);
 
     return {
+      productSource: source,
       salla: {
         active: !!merchant.productSourceConfig?.salla?.active,
         connected: sallaConnected,
         lastSync:
-          (
-            merchant.productSourceConfig?.salla?.lastSync as any
-          )?.toISOString?.() ||
-          sallaInteg?.lastSync?.toISOString?.() ||
-          null,
+          toIso((merchant.productSourceConfig as any)?.salla?.lastSync) ??
+          toIso(sallaInteg?.lastSync),
       },
       zid: {
         active: !!merchant.productSourceConfig?.zid?.active,
         connected: zidConnected,
         lastSync:
-          (
-            merchant.productSourceConfig?.zid?.lastSync as any
-          )?.toISOString?.() ||
-          zidInteg?.lastSync?.toISOString?.() ||
-          null,
+          toIso((merchant.productSourceConfig as any)?.zid?.lastSync) ??
+          toIso(zidInteg?.lastSync),
       },
     };
   }

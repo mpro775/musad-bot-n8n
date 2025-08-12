@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { QdrantClient } from '@qdrant/js-client-rest';
 import {
+  BotFaqSearchItem,
   DocumentData,
   EmbeddableProduct,
   FAQData,
@@ -193,7 +194,10 @@ export class VectorService implements OnModuleInit {
       });
     }
   }
-
+  async deleteBotFaqPoint(pointId: string) {
+    // REST client:
+    return this.qdrant.delete(this.botFaqCollection, { points: [pointId] });
+  }
   public async upsertProducts(products: EmbeddableProduct[]) {
     const points = await Promise.all(
       products.map(async (p) => ({
@@ -367,7 +371,10 @@ export class VectorService implements OnModuleInit {
     }
     return [];
   }
-  public async searchBotFaqs(text: string, topK = 5) {
+  public async searchBotFaqs(
+    text: string,
+    topK = 5,
+  ): Promise<BotFaqSearchItem[]> {
     const vector = await this.embed(text);
 
     const results = await this.qdrant.search(this.botFaqCollection, {
@@ -377,10 +384,12 @@ export class VectorService implements OnModuleInit {
     });
 
     return results.map((item) => ({
-      id: item.id,
-      question: item.payload?.question,
-      answer: item.payload?.answer,
-      score: item.score,
+      id: String(item.id),
+      question:
+        typeof item.payload?.question === 'string' ? item.payload.question : '',
+      answer:
+        typeof item.payload?.answer === 'string' ? item.payload.answer : '',
+      score: Number(item.score ?? 0),
     }));
   }
 

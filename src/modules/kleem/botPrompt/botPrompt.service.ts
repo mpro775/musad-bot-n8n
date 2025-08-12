@@ -52,7 +52,26 @@ export class BotPromptService {
     }
     return doc;
   }
+  async publish(id: string) {
+    const doc = await this.model.findById(id);
+    if (!doc || doc.type !== 'system') throw new NotFoundException();
 
+    await this.model.updateMany(
+      { type: 'system' },
+      { $set: { active: false } },
+    );
+    const last = await this.model
+      .findOne({ type: 'system', archived: { $ne: true } })
+      .sort({ version: -1 })
+      .lean();
+    doc.version = (last?.version ?? 0) + 1;
+    doc.active = true;
+    await doc.save();
+    return doc.toObject();
+  }
+  async getActiveSystemPrompt(): Promise<string> {
+    return this.getActiveSystemPromptOrDefault();
+  }
   async setActive(id: string, active: boolean) {
     const doc = await this.model.findById(id);
     if (!doc) throw new NotFoundException('Prompt not found');

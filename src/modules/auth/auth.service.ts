@@ -1,4 +1,3 @@
-import { ClientSession, Connection } from 'mongoose';
 import {
   Injectable,
   InternalServerErrorException,
@@ -6,8 +5,8 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 
@@ -22,6 +21,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { LoginDto } from './dto/login.dto';
 import { PlanTier } from '../merchants/schemas/subscription-plan.schema';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { MerchantsService } from '../merchants/merchants.service';
 
 @Injectable()
 export class AuthService {
@@ -30,84 +30,47 @@ export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Merchant.name) private merchantModel: Model<MerchantDocument>,
-    @InjectConnection() private readonly connection: Connection,
     private readonly jwtService: JwtService,
+    private readonly merchants: MerchantsService,
     private readonly mailService: MailService,
   ) {}
-  private async hasReplicaSet(): Promise<boolean> {
-    try {
-      // يضمن أن العميل موجود ومتصل
-      const client = this.connection.getClient(); // MongoClient
-      const res = await client.db().admin().command({ replSetGetStatus: 1 });
-      return res?.ok === 1;
-    } catch {
-      return false;
-    }
-  }
 
   async register(registerDto: RegisterDto) {
     const { password, confirmPassword, email, name } = registerDto;
-    if (password !== confirmPassword)
+
+    if (password !== confirmPassword) {
       throw new BadRequestException('كلمتا المرور غير متطابقتين');
-
-    if (await this.userModel.exists({ email }))
-      throw new ConflictException('Email already in use');
-
-    const useTxn = await this.hasReplicaSet(); // 👈 شغّل المعاملة فقط إذا متوفرة
-    let session: ClientSession | undefined;
-
-    try {
-      if (useTxn) {
-        session = await this.connection.startSession();
-        await session.withTransaction(async () => {
-          await this._registerWork({ name, email, password }, session);
-        });
-      } else {
-        // بدون معاملة + تعويض (Compensation) عند الفشل
-        await this._registerWork({ name, email, password }, undefined);
-      }
-
-      return await this._issueTokenAndReturn(email);
-    } catch (err) {
-      if (session) await session.endSession();
-      this.logger.error('Register failed', err?.stack || err);
-      throw new InternalServerErrorException('Failed to register');
-    } finally {
-      if (session) await session.endSession();
     }
-  }
+    if (await this.userModel.exists({ email })) {
+      throw new ConflictException('Email already in use');
+    }
 
-  private async _registerWork(
-    data: { name: string; email: string; password: string },
-    session?: ClientSession,
-  ) {
-    const { name, email, password } = data;
-
-    // 1) أنشئ المستخدم
-    const userDoc = await new this.userModel({
-      name,
-      email,
-      password, // pre-save يعمل الهاش
-      role: 'MERCHANT',
-      firstLogin: true,
-    }).save(session ? { session } : undefined);
+    let userDoc: UserDocument | null = null;
+    let merchantDoc: MerchantDocument | null = null;
 
     try {
+      // 1) إنشاء المستخدم
+      userDoc = await new this.userModel({
+        name,
+        email,
+        password, // pre-save يعمل الهاش
+        role: 'MERCHANT',
+        firstLogin: true,
+      }).save();
+
       // 2) كود التفعيل
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       userDoc.emailVerificationCode = code;
       userDoc.emailVerificationExpiresAt = new Date(
         Date.now() + 15 * 60 * 1000,
       );
-      await userDoc.save(session ? { session } : undefined);
+      await userDoc.save();
 
-      // 3) أنشئ التاجر (مطابق للـ schema الحالية)
-      const merchantDoc = await new this.merchantModel({
-        userId: userDoc._id,
+      // 3) إنشاء التاجر عبر MerchantsService.create (هذا ينشئ الـ workflow + storefront + finalPromptTemplate)
+      merchantDoc = await this.merchants.create({
+        userId: String(userDoc._id),
         name: `متجر ${name}`,
-        // لا ترسل address مفردة، schema تعتمد addresses []
         addresses: [],
-        // الاشتراك مطلوب
         subscription: {
           tier: PlanTier.Free,
           startDate: new Date(),
@@ -122,9 +85,6 @@ export class AuthService {
           ],
         },
         categories: [],
-        socialLinks: {},
-
-        // يطابق QuickConfig/AdvancedConfig Schemas
         quickConfig: {
           dialect: 'خليجي',
           tone: 'ودّي',
@@ -143,55 +103,56 @@ export class AuthService {
           note: '',
         },
         advancedConfigHistory: [],
-        finalPromptTemplate: '',
         returnPolicy: '',
         exchangePolicy: '',
         shippingPolicy: '',
+        // channels تُترك فارغة هنا، ويتم ضبطها لاحقاً حسب الحاجة
+      } as any); // إن كان DTO صارم جداً، أبقه مطابقًا لتعريفك
 
-        // channels مطابق للـ schema (سيترجم ChannelConfigSchema داخليًا)
-        channels: {},
-        // workingHours حسب schema
-        workingHours: [],
-      }).save(session ? { session } : undefined);
+      // 4) ربط user ↔ merchant
+      userDoc.merchantId = merchantDoc._id as Types.ObjectId;
+      await userDoc.save();
 
-      // 4) اربط merchantId بالمستخدم
-      userDoc.merchantId = merchantDoc._id as any;
-      await userDoc.save(session ? { session } : undefined);
-
-      // 5) أرسل الإيميل (خارج المعاملة)
+      // 5) إرسال الإيميل بعد نجاح كل شيء
       this.mailService
-        .sendVerificationEmail(email, userDoc.emailVerificationCode)
+        .sendVerificationEmail(email, code)
         .catch((err) =>
           this.logger.error('Failed sending verification email', err),
         );
-    } catch (e) {
-      // تعويض عند عدم وجود معاملة: احذف المستخدم الذي تم إنشاؤه
-      if (!session) {
-        await this.userModel.deleteOne({ _id: userDoc._id });
-      }
-      throw e;
-    }
-  }
 
-  private async _issueTokenAndReturn(email: string) {
-    const userDoc = await this.userModel.findOne({ email });
-    const payload = {
-      userId: userDoc!._id,
-      role: userDoc!.role,
-      merchantId: userDoc!.merchantId,
-    };
-    return {
-      accessToken: this.jwtService.sign(payload),
-      user: {
-        id: userDoc!._id,
-        name: userDoc!.name,
-        email: userDoc!.email,
-        role: userDoc!.role,
-        merchantId: userDoc!.merchantId,
-        firstLogin: userDoc!.firstLogin,
-        emailVerified: userDoc!.emailVerified,
-      },
-    };
+      // 6) JWT
+      const payload = {
+        userId: userDoc._id,
+        role: userDoc.role,
+        merchantId: userDoc.merchantId,
+      };
+      return {
+        accessToken: this.jwtService.sign(payload),
+        user: {
+          id: userDoc._id,
+          name: userDoc.name,
+          email: userDoc.email,
+          role: userDoc.role,
+          merchantId: userDoc.merchantId,
+          firstLogin: userDoc.firstLogin,
+          emailVerified: userDoc.emailVerified,
+        },
+      };
+    } catch (err: any) {
+      // تعويض منطقي: لو أنشأنا Merchant أو User احذفهم
+      try {
+        if (merchantDoc?._id) {
+          await this.merchantModel.findByIdAndDelete(merchantDoc._id).exec();
+        }
+        if (userDoc?._id) {
+          await this.userModel.findByIdAndDelete(userDoc._id).exec();
+        }
+      } catch (cleanupErr) {
+        this.logger.error('Cleanup after register failed', cleanupErr);
+      }
+      this.logger.error('Register failed', err?.stack || err);
+      throw new InternalServerErrorException('Failed to register');
+    }
   }
 
   async login(loginDto: LoginDto) {

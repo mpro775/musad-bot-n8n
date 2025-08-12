@@ -20,7 +20,18 @@ export class BotPrompt extends Document {
 
   @Prop({ default: true })
   active: boolean;
-
+  @Prop({ type: Number, default: 1 }) version?: number; // للـ system
+  @Prop({ type: String, enum: ['ar', 'en'], default: 'ar' }) locale?:
+    | 'ar'
+    | 'en';
+  @Prop({
+    type: String,
+    enum: ['landing', 'whatsapp', 'ig', 'email'],
+    default: 'landing',
+  })
+  channel?: string;
+  @Prop({ type: Object, default: {} }) variables?: Record<string, string>;
+  @Prop({ type: String, default: 'convince' }) goal?: string; // أو 'support'
   @Prop({ default: false })
   archived: boolean;
 }

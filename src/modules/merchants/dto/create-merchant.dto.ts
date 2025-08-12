@@ -9,6 +9,7 @@ import {
   ArrayNotEmpty,
   ValidateNested,
   IsObject,
+  IsMongoId,
 } from 'class-validator';
 
 import { AddressDto } from './address.dto';
@@ -17,8 +18,7 @@ import { QuickConfigDto } from './quick-config.dto';
 import { ChannelsDto } from './channel.dto';
 import { WorkingHourDto } from './working-hours.dto';
 import { AdvancedTemplateDto } from './advanced-template.dto';
-import { Prop } from '@nestjs/mongoose';
-import { Types } from 'mongoose';
+
 import { LeadsSettingsDto } from './leads-settings.dto';
 
 export class CreateMerchantDto {
@@ -69,9 +69,9 @@ export class CreateMerchantDto {
   @Type(() => QuickConfigDto)
   quickConfig?: QuickConfigDto;
   // src/merchants/schemas/merchant.schema.ts
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  userId: Types.ObjectId;
 
+  @IsMongoId()
+  userId!: string;
   @IsOptional()
   @ValidateNested()
   @Type(() => AdvancedTemplateDto)

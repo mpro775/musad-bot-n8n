@@ -251,7 +251,11 @@ export class MerchantsController {
   saveBasic(@Param('id') id: string, @Body() dto: OnboardingBasicDto) {
     return this.svc.saveBasicInfo(id, dto);
   }
-
+  @Post(':id/workflow/ensure')
+  async ensureWorkflow(@Param('id') id: string) {
+    const wfId = await this.svc.ensureWorkflow(id);
+    return { workflowId: wfId };
+  }
   @Public()
   @Get(':id/ai/store-context')
   async aiStoreContext(@Param('id') id: string) {

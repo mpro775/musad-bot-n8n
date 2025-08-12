@@ -1,23 +1,23 @@
-// src/modules/kleem/kleem.module.ts
+// kleem.module.ts
 import { Module } from '@nestjs/common';
-import { EventEmitterModule } from '@nestjs/event-emitter';
-import { KleemGateway } from './ws/kleem.gateway';
 import { KleemChatService } from './chat/kleem-chat.service';
 import { BotChatsModule } from './botChats/botChats.module';
-import { BotFaqModule } from './botFaq/botFaq.module';
-import { KleemWebhookController } from './webhook/kleem-webhook.controller';
 import { BotPromptModule } from './botPrompt/botPrompt.module';
-import { KleemChatController } from './chat/kleem-chat.controller';
+import { SettingsModule } from './settings/settings.module';
+import { VectorModule } from '../vector/vector.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { BotFaqModule } from './botFaq/botFaq.module';
 
 @Module({
   imports: [
-    EventEmitterModule.forRoot(),
     BotChatsModule,
-    BotFaqModule,
     BotPromptModule,
+    BotFaqModule,
+    SettingsModule,
+    VectorModule,
+    EventEmitterModule.forRoot(),
   ],
-  providers: [KleemGateway, KleemChatService],
-  controllers: [KleemWebhookController, KleemChatController],
+  providers: [KleemChatService],
   exports: [KleemChatService],
 })
 export class KleemModule {}

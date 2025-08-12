@@ -35,3 +35,9 @@ export interface EmbeddableOffer {
   code?: string;
   // أي حقول أخرى مهمة لتوصيف العرض
 }
+export interface BotFaqSearchItem {
+  id: string | number;
+  question: string;
+  answer: string;
+  score: number;
+}

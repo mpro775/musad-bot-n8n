@@ -42,6 +42,35 @@ services:
       - backnet
     restart: unless-stopped
 
+  n8n_sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.n8n
+    container_name: kaleem-n8n-sandbox
+    env_file:
+      - .env.sandbox
+    environment:
+      - N8N_HOST=n8n2.kaleem-ai.com
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://n8n2.kaleem-ai.com
+      - N8N_EDITOR_BASE_URL=https://n8n2.kaleem-ai.com
+      - N8N_RUNNERS_ENABLED=true
+      # حدّد CORS لو تحتاج الوصول من واجهة خارجية
+      - N8N_CORS_ALLOW_ORIGIN=https://localhost:5173
+      - N8N_CORS_ALLOW_CREDENTIALS=true
+    ports:
+      - '5679:5678' # منفذ مختلف على الهوست
+    volumes:
+      - n8n_data_sandbox:/home/node/.n8n
+    networks:
+      - backnet
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:5678/rest/healthz']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   mongo:
     image: mongo:5
     container_name: kaleem-mongo
