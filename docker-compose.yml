@@ -242,6 +242,7 @@ volumes:
   n8n_data:
   minio_data:
   qdrant_data:
+  n8n_data_sandbox:
 
 networks:
   backnet:
