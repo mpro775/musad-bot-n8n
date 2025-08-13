@@ -71,6 +71,15 @@ services:
       timeout: 10s
       retries: 3
 
+  structurizr:
+    image: structurizr/lite
+    container_name: kaleem-structurizr
+    ports:
+      - '18080:8080'
+    volumes:
+      - ./docs/structurizr:/usr/local/structurizr
+    networks: [backnet]
+
   mongo:
     image: mongo:5
     container_name: kaleem-mongo
