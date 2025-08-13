@@ -1,98 +1,72 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Musaid Bot Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+هذا المشروع يحتوي على البنية الخلفية لـ **Musaid Bot** وهي منصة دردشة ومتابعة للتجار تعتمد على [NestJS](https://nestjs.com/) وتتكامل مع محرك الأتمتة [n8n](https://n8n.io/). يتضمن المشروع عدّة خدمات مساعدة مكتوبة بـ **FastAPI** لتوليد المتجهات (Embeddings)، وإعادة الترتيب (Vector Reranker)، واستخلاص معلومات المنتجات من صفحات الويب.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## المميزات
 
-## Description
+- واجهات REST و WebSocket لإدارة التجار، المنتجات، الطلبات، الفئات، العملاء المحتملين وغيرها.
+- دمج مع قاعدة بيانات **MongoDB** و **Redis** لإدارة الجلسات والطوابير.
+- تخزين الملفات باستخدام **MinIO**.
+- بحث دلالي في المنتجات باستخدام **Qdrant** وخدمة توليد المتجهات.
+- تشغيل مهام الأتمتة عبر **n8n**، مع إمكانية إنشاء وتعديل الـ Workflows من خلال الـ API.
+- خدمات Python مساعدة:
+  - `embedding-service` لتوليد المتجهات عبر مكتبة `sentence-transformers`.
+  - `vector-reranker` لإعادة ترتيب النتائج باستخدام نموذج BGE.
+  - `extractor-service` لاستخلاص تفاصيل المنتجات من الروابط.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## تشغيل المشروع محلياً
 
-## Project setup
+1. انسخ ملف المتغيرات:
+   ```bash
+   cp .env.example .env
+   ```
+   ثم عدّل القيم بما يناسب بيئتك (بيانات MongoDB، مفاتيح JWT، إعدادات Redis وMinIO ... إلخ).
 
-```bash
-$ npm install
-```
+2. شغّل الحزمة الكاملة عبر Docker Compose:
+   ```bash
+   docker-compose up --build
+   ```
+   سيقوم هذا الأمر بتشغيل الخدمات التالية:
+   - قاعدة MongoDB وواجهة `mongo-express`.
+   - خادوم Redis وواجهة `redis-commander`.
+   - قاعدة Qdrant للبحث الدلالي.
+   - خادم MinIO لتخزين الملفات.
+   - خدمات Python (`embedding`, `reranker`, `extractor`).
+   - تطبيق NestJS نفسه على المنفذ `3000`.
+   - حاوية n8n على المنفذ `5678`.
 
-## Compile and run the project
+3. لتشغيل الخادم فقط بدون Docker:
+   ```bash
+   npm install
+   npm run start:dev
+   ```
 
-```bash
-# development
-$ npm run start
+## الأوامر المفيدة
 
-# watch mode
-$ npm run start:dev
+- بناء المشروع للإنتاج:
+  ```bash
+  npm run build
+  ```
+- تشغيل الاختبارات:
+  ```bash
+  npm run test
+  npm run test:e2e
+  npm run test:cov
+  ```
+- إنشاء مستخدم أدمن تجريبي (بعد ضبط المتغيرات في `.env`):
+  ```bash
+  npx ts-node scripts/seed-admin.ts
+  ```
 
-# production mode
-$ npm run start:prod
-```
+## هيكل المجلدات
 
-## Run tests
+- `src/` – الشيفرة المصدرية لتطبيق NestJS وبداخلها الوحدات (Modules) المختلفة مثل `merchants`, `products`, `chat`, `vector` ... إلخ.
+- `embedding-service/` – خدمة FastAPI لتوليد Embeddings.
+- `vector-reranker/` – خدمة FastAPI لإعادة ترتيب النتائج.
+- `extractor-service/` – خدمة FastAPI لاستخراج بيانات المنتجات.
+- `docker-compose.yml` – يعرّف الخدمات اللازمة لتشغيل النظام كاملاً محلياً.
 
-```bash
-# unit tests
-$ npm run test
+## الرخصة
 
-# e2e tests
-$ npm run test:e2e
+الشفرة في هذا المستودع مرخّصة تحت بند **UNLICENSED** كما هو مذكور في `package.json`، مما يعني أنها ليست برمجية مفتوحة المصدر بشكل كامل.
 
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
