@@ -39,29 +39,29 @@ workspace "Kaleem — Unified C4" "Context + Containers + Components + Deploymen
       container minio   "MinIO"              "S3-compatible" "ملفات (اختياري)"
 
       // علاقات الواجهات مع الـ API
-      kaleem.platform_admin_portal -> kaleem.api "REST/JSON"
-      kaleem.merchant_portal       -> kaleem.api "REST/JSON"
-      kaleem.web_chat              -> kaleem.api "جلسات/رسائل" "REST/WebSocket"
-      kaleem.storefront            -> kaleem.api "Browsing/Cart" "REST/JSON"
+      platform_admin_portal -> api "REST/JSON"
+      merchant_portal       -> api "REST/JSON"
+      web_chat              -> api "جلسات/رسائل" "REST/WebSocket"
+      storefront            -> api "Browsing/Cart" "REST/JSON"
 
       // قرار الذكاء: إرسال إلى n8n عند الحاجة
-      kaleem.api -> kaleem.n8n "Invoke AI workflow إذا كانت المحادثة غير موقوفة وتحتاج ردًا ذكيًا" "REST"
+      api -> n8n "Invoke AI workflow إذا كانت المحادثة غير موقوفة وتحتاج ردًا ذكيًا" "REST"
 
       // استخراج/فهرسة
-      kaleem.api       -> kaleem.extractor "Trigger extraction" "HTTP"
-      kaleem.extractor -> kaleem.rabbit    "ينشر مهام فهرسة/تنظيف" "AMQP"
-      kaleem.workers   -> kaleem.qdrant    "Upsert vectors (indexing)" "HTTP"
+      api       -> extractor "Trigger extraction" "HTTP"
+      extractor -> rabbit    "ينشر مهام فهرسة/تنظيف" "AMQP"
+      workers   -> qdrant    "Upsert vectors (indexing)" "HTTP"
 
       // قواعد البيانات والكاش والرسائل
-      kaleem.api     -> kaleem.mongodb "CRUD" "Driver"
-      kaleem.api     -> kaleem.redis   "Cache" "TCP"
-      kaleem.api     -> kaleem.rabbit  "ينشر أحداث/مهام" "AMQP"
-      kaleem.workers -> kaleem.rabbit  "يستهلك مهام" "AMQP"
-      kaleem.api     -> kaleem.qdrant  "بحث" "HTTP"
-      kaleem.api     -> kaleem.embed   "طلب Embedding" "HTTP"
+      api     -> mongodb "CRUD" "Driver"
+      api     -> redis   "Cache" "TCP"
+      api     -> rabbit  "ينشر أحداث/مهام" "AMQP"
+      workers -> rabbit  "يستهلك مهام" "AMQP"
+      api     -> qdrant  "بحث" "HTTP"
+      api     -> embed   "طلب Embedding" "HTTP"
 
       // أدوات من n8n إلى API
-      kaleem.n8n -> kaleem.api "Tool-calls (searchProducts/knowledge)" "REST"
+      n8n -> api "Tool-calls (searchProducts/knowledge)" "REST"
 
       // === مكوّنات الـ API (Components) ===
       container api {
