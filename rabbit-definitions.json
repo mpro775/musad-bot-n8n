@@ -1,0 +1,178 @@
+{
+  "rabbit_version": "3.13",
+  "users": [],
+  "vhosts": [{ "name": "/" }],
+  "permissions": [],
+  "parameters": [],
+  "policies": [
+    {
+      "vhost": "/",
+      "name": "dlq-ttl",
+      "pattern": ".*\\.dlq$",
+      "apply-to": "queues",
+      "definition": { "message-ttl": 604800000 },
+      "priority": 0
+    }
+  ],
+  "exchanges": [
+    { "name": "chat.incoming", "vhost": "/", "type": "topic", "durable": true },
+    { "name": "chat.reply", "vhost": "/", "type": "topic", "durable": true },
+    {
+      "name": "knowledge.index",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true
+    },
+    { "name": "commerce.sync", "vhost": "/", "type": "topic", "durable": true },
+    {
+      "name": "webhook.dispatch",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true
+    },
+    {
+      "name": "analytics.events",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true
+    }
+  ],
+  "queues": [
+    {
+      "name": "ai.reply-worker.q",
+      "vhost": "/",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "ai.reply-worker.q.dlq"
+      }
+    },
+    { "name": "ai.reply-worker.q.dlq", "vhost": "/", "durable": true },
+
+    {
+      "name": "whatsapp.out.q",
+      "vhost": "/",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "whatsapp.out.q.dlq"
+      }
+    },
+    { "name": "whatsapp.out.q.dlq", "vhost": "/", "durable": true },
+
+    {
+      "name": "telegram.out.q",
+      "vhost": "/",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "telegram.out.q.dlq"
+      }
+    },
+    { "name": "telegram.out.q.dlq", "vhost": "/", "durable": true },
+
+    {
+      "name": "web.out.q",
+      "vhost": "/",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "web.out.q.dlq"
+      }
+    },
+    { "name": "web.out.q.dlq", "vhost": "/", "durable": true },
+
+    {
+      "name": "indexing.q",
+      "vhost": "/",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "indexing.q.dlq"
+      }
+    },
+    { "name": "indexing.q.dlq", "vhost": "/", "durable": true },
+
+    {
+      "name": "commerce.sync.q",
+      "vhost": "/",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "commerce.sync.q.dlq"
+      }
+    },
+    { "name": "commerce.sync.q.dlq", "vhost": "/", "durable": true },
+
+    {
+      "name": "webhook.dispatch.q",
+      "vhost": "/",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "",
+        "x-dead-letter-routing-key": "webhook.dispatch.q.dlq"
+      }
+    },
+    { "name": "webhook.dispatch.q.dlq", "vhost": "/", "durable": true }
+  ],
+  "bindings": [
+    {
+      "vhost": "/",
+      "source": "chat.incoming",
+      "destination": "ai.reply-worker.q",
+      "destination_type": "queue",
+      "routing_key": "#",
+      "arguments": {}
+    },
+
+    {
+      "vhost": "/",
+      "source": "chat.reply",
+      "destination": "whatsapp.out.q",
+      "destination_type": "queue",
+      "routing_key": "whatsapp",
+      "arguments": {}
+    },
+    {
+      "vhost": "/",
+      "source": "chat.reply",
+      "destination": "telegram.out.q",
+      "destination_type": "queue",
+      "routing_key": "telegram",
+      "arguments": {}
+    },
+    {
+      "vhost": "/",
+      "source": "chat.reply",
+      "destination": "web.out.q",
+      "destination_type": "queue",
+      "routing_key": "web",
+      "arguments": {}
+    },
+
+    {
+      "vhost": "/",
+      "source": "knowledge.index",
+      "destination": "indexing.q",
+      "destination_type": "queue",
+      "routing_key": "#",
+      "arguments": {}
+    },
+    {
+      "vhost": "/",
+      "source": "commerce.sync",
+      "destination": "commerce.sync.q",
+      "destination_type": "queue",
+      "routing_key": "#",
+      "arguments": {}
+    },
+    {
+      "vhost": "/",
+      "source": "webhook.dispatch",
+      "destination": "webhook.dispatch.q",
+      "destination_type": "queue",
+      "routing_key": "#",
+      "arguments": {}
+    }
+  ]
+}

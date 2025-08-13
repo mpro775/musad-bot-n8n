@@ -12,14 +12,16 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { HttpMetricsInterceptor } from './common/interceptors/http-metrics.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // نطبّق الــ global prefix "api" على كل المسارات ما عدا /api/metrics
   app.setGlobalPrefix('api', {
-    exclude: [{ path: 'api/metrics', method: RequestMethod.GET }],
+    exclude: [{ path: 'metrics', method: RequestMethod.GET }],
   });
+
   if (typeof globalThis.crypto === 'undefined') {
     // نعرف كائن crypto عالمي يستخدم دالة randomUUID من Node
     (globalThis as any).crypto = { randomUUID };
@@ -51,7 +53,10 @@ async function bootstrap() {
 
   const logger = app.get(PinoLogger);
   app.useLogger(logger);
-  app.useGlobalInterceptors(new LoggingInterceptor());
+  app.useGlobalInterceptors(
+    new LoggingInterceptor(),
+    app.get(HttpMetricsInterceptor),
+  );
 
   const config = new DocumentBuilder()
     .setTitle('MusaidBot API')

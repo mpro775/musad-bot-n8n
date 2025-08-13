@@ -1,7 +1,7 @@
 // src/app.module.ts
 
 import { Module } from '@nestjs/common';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD } from '@nestjs/core';
 
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -9,10 +9,6 @@ import { CacheModule } from '@nestjs/cache-manager';
 import * as redisStore from 'cache-manager-ioredis';
 import { BullModule, BullModuleOptions } from '@nestjs/bull';
 
-import {
-  PrometheusModule,
-  makeHistogramProvider,
-} from '@willsoto/nestjs-prometheus';
 import { LoggerModule } from 'nestjs-pino';
 
 import configuration from './configuration';
@@ -26,7 +22,6 @@ import { PlansModule } from './modules/plans/plans.module';
 import { ScraperModule } from './modules/scraper/scraper.module';
 
 import { RolesGuard } from './common/guards/roles.guard';
-import { HttpMetricsInterceptor } from './common/interceptors/http-metrics.interceptor';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { MessagingModule } from './modules/messaging/message.module';
 import { RedisConfig } from './config/redis.config';
@@ -51,6 +46,11 @@ import { KnowledgeModule } from './modules/knowledge/knowledge.module';
 import { FaqModule } from './modules/faq/faq.module';
 import { ZidModule } from './modules/integrations/zid/zid.module';
 import { KleemModule } from './modules/kleem/kleem.module';
+import { AmqpMetrics, AmqpMetricsProviders } from './metrics/amqp.metrics';
+import { RabbitModule } from './infra/rabbit/rabbit.module';
+import { OutboxModule } from './common/outbox/outbox.module';
+import { OutboxDispatcher } from './common/outbox/outbox.dispatcher';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -60,6 +60,7 @@ import { KleemModule } from './modules/kleem/kleem.module';
         level: process.env.NODE_ENV !== 'production' ? 'debug' : 'info',
       },
     }),
+    MetricsModule,
     // فعّل Passport و JWT هنا
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
@@ -76,10 +77,6 @@ import { KleemModule } from './modules/kleem/kleem.module';
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',
     }),
-    // Prometheus – يفتح endpoint تحت /api/metrics
-    PrometheusModule.register({
-      path: '/api/metrics',
-    }),
 
     // Cache (Redis)
     CacheModule.register({
@@ -93,7 +90,8 @@ import { KleemModule } from './modules/kleem/kleem.module';
     // Scheduler
     ScheduleModule.forRoot(),
     RedisModule,
-
+    OutboxModule,
+    RabbitModule,
     // Bull (Redis) for queues
     BullModule.forRootAsync({
       imports: [RedisModule],
@@ -143,20 +141,14 @@ import { KleemModule } from './modules/kleem/kleem.module';
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-
+    ...AmqpMetricsProviders,
+    AmqpMetrics,
     // 1) Guard للأدوار
     { provide: APP_GUARD, useClass: RolesGuard },
     RedisConfig,
-    // 2) تعريف الـ histogram لقياس زمن الطلبات
-    makeHistogramProvider({
-      name: 'http_request_duration_seconds',
-      help: 'Duration of HTTP requests in seconds',
-      labelNames: ['method', 'route', 'status_code'],
-      buckets: [0.1, 0.5, 1, 1.5, 2, 5],
-    }),
-
+    OutboxDispatcher,
     // 3) Interceptor لجمع المقاييس على كل طلب HTTP
-    { provide: APP_INTERCEPTOR, useClass: HttpMetricsInterceptor },
   ],
+  exports: [AmqpMetrics],
 })
 export class AppModule {}

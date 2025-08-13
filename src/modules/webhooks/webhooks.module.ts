@@ -12,6 +12,7 @@ import { Merchant, MerchantSchema } from '../merchants/schemas/merchant.schema';
 import { ChatMediaModule } from '../media/chat-media.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { ChatModule } from '../chat/chat.module';
+import { OutboxModule } from 'src/common/outbox/outbox.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { ChatModule } from '../chat/chat.module';
     OrdersModule,
     ChatMediaModule,
     IntegrationsModule,
+    OutboxModule,
     ChatModule,
     // وحدات الاعتمادية
     MessagingModule, // لحفظ الرسائل (MessageService)

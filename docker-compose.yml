@@ -92,18 +92,7 @@ services:
       retries: 5
     networks:
       - backnet
-  mongo-init-replica:
-    image: mongo:5
-    depends_on:
-      - mongo
-    entrypoint:
-      [
-        'bash',
-        '-lc',
-        'sleep 3; mongosh --host 31.97.155.167:27017 -u admin -p strongpassword --eval ''rs.initiate({_id:"rs0", members:[{_id:0, host:"31.97.155.167:27017"}]})'' || true',
-      ]
-    networks:
-      - backnet
+
   mongo-express:
     image: mongo-express:latest
     container_name: kaleem-mongo-express
@@ -169,6 +158,8 @@ services:
     ports:
       - '3000:3000'
     depends_on:
+      rabbitmq:
+        condition: service_healthy
       redis:
         condition: service_healthy
       mongo:
@@ -177,6 +168,8 @@ services:
         condition: service_healthy
     env_file:
       - .env
+    environment:
+      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672
     restart: unless-stopped
     healthcheck:
       test: ['CMD-SHELL', 'curl -f http://localhost:3000/health || exit 1']
@@ -204,6 +197,152 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
+    # docker-compose.yml (إضافات)
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: kaleem-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    ports:
+      - '9090:9090'
+    networks: [backnet]
+    restart: unless-stopped
+    depends_on:
+      - rabbitmq
+
+    # === Grafana ===
+  grafana:
+    image: grafana/grafana:10.4.5
+    container_name: kaleem-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_DEFAULT_THEME=light
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./observability/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - '3001:3000'
+    networks: [backnet]
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+    # === Node Exporter (مقاييس النظام من داخل الكونتينرات صعب؛ نستخدم cAdvisor بدلاً منه) ===
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: kaleem-cadvisor
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - '8080:8080'
+    networks: [backnet]
+    restart: unless-stopped
+
+    # === Redis Exporter ===
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.61.0
+    container_name: kaleem-redis-exporter
+    environment:
+      - REDIS_ADDR=redis:6379
+    ports:
+      - '9121:9121'
+    networks: [backnet]
+    restart: unless-stopped
+    depends_on:
+      - redis
+
+    # === MongoDB Exporter ===
+  mongodb-exporter:
+    image: bitnami/mongodb-exporter:0.40.0
+    container_name: kaleem-mongodb-exporter
+    environment:
+      - MONGODB_URI=mongodb://admin:strongpassword@mongo:27017/admin
+    ports:
+      - '9216:9216'
+    networks: [backnet]
+    restart: unless-stopped
+    depends_on:
+      - mongo
+
+    # === RabbitMQ (تفعيل الـ Prometheus plugin وفتح 15692) ===
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    volumes:
+      - ./rabbit-defs.json:/etc/rabbitmq/definitions.json:ro
+      - rabbitmq_data:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: kaleem
+      RABBITMQ_DEFAULT_PASS: supersecret
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: >
+        -rabbitmq_prometheus listener [{port,15692}] 
+        -rabbitmq_management load_definitions "/etc/rabbitmq/definitions.json"
+    command: >
+      bash -lc "rabbitmq-plugins enable --offline rabbitmq_prometheus &&
+                rabbitmq-server"
+    ports:
+      - '5672:5672'
+      - '15672:15672' # UI
+      - '15692:15692' # /metrics
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'status']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [backnet]
+    restart: unless-stopped
+
+    # اختياري: عمّال مستقلين (نفس صورة api لو عندك nest start:worker)
+  ai-reply-worker:
+    build: .
+    container_name: kaleem-ai-reply
+    command: ['node', 'dist/workers/ai-reply.worker.js']
+    env_file: [.env]
+    environment:
+      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+      qdrant: { condition: service_started }
+      embedding: { condition: service_started }
+    networks: [backnet]
+    restart: unless-stopped
+
+  webhook-dispatcher:
+    build: .
+    container_name: kaleem-webhook-dispatcher
+    command: ['node', 'dist/workers/webhook-dispatcher.worker.js']
+    env_file: [.env]
+    environment:
+      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+    networks: [backnet]
+    restart: unless-stopped
+
+  indexing-worker:
+    build: ./extractor-service # أو نفس api لو الكود هناك
+    container_name: kaleem-indexing
+    command: ['python', '-m', 'workers.indexing']
+    environment:
+      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+      qdrant: { condition: service_started }
+      minio: { condition: service_started }
+      embedding: { condition: service_started }
+    networks: [backnet]
+    restart: unless-stopped
+
   n8n:
     build:
       context: .
@@ -239,10 +378,14 @@ services:
 volumes:
   redis_data:
   mongo_data:
-  n8n_data:
-  minio_data:
   qdrant_data:
+  minio_data:
+  n8n_data:
   n8n_data_sandbox:
+  rabbitmq_data:
+  grafana_data:
+  prom_data:
+  hf_cache:
 
 networks:
   backnet:

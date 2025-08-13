@@ -1,0 +1,52 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: kaleem
+
+scrape_configs:
+  # Prometheus نفسه
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['prometheus:9090']
+  # RabbitMQ metrics (بعد تفعيل plugin)
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692']
+
+  # Redis exporter
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # Mongo exporter
+  - job_name: 'mongodb'
+    static_configs:
+      - targets: ['mongodb-exporter:9216']
+
+  # cAdvisor (حالة كل كونتينر)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # NestJS API (/metrics عبر prom-client)
+  - job_name: 'api'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['api:3000']
+
+  # Workers (إفضّل فتح /metrics على كل عامل)
+  - job_name: 'ai-reply-worker'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['kaleem-ai-reply:9101']
+
+  - job_name: 'webhook-dispatcher'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['kaleem-webhook-dispatcher:9102']
+
+  - job_name: 'indexing-worker'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['kaleem-indexing:9103']

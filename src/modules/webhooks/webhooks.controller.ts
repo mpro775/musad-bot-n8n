@@ -14,8 +14,8 @@ import { Public } from 'src/common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { normalizeIncomingMessage } from './schemas/utils/normalize-incoming';
 import axios from 'axios';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { Connection, Model } from 'mongoose';
 import {
   Merchant,
   MerchantDocument,
@@ -34,6 +34,7 @@ import { ChatMediaService } from '../media/chat-media.service';
 import { EvolutionService } from '../integrations/evolution.service';
 import { ConfigService } from '@nestjs/config';
 import { ChatGateway } from '../chat/chat.gateway';
+import { OutboxService } from 'src/common/outbox/outbox.service';
 function detectOrderIntent(msg: string): {
   step: string;
   orderId?: string;
@@ -68,6 +69,8 @@ export class WebhooksController {
     private readonly evoService: EvolutionService,
     private readonly config: ConfigService,
     private readonly chatGateway: ChatGateway,
+    @InjectConnection() private readonly conn: Connection, // NEW
+    private readonly outbox: OutboxService,
     @InjectModel(Merchant.name)
     private readonly merchantModel: Model<MerchantDocument>,
   ) {}
@@ -101,15 +104,15 @@ export class WebhooksController {
     @Param('merchantId') merchantId: string,
     @Body() body: any,
   ) {
-    // 1. Normalize الرسالة
     const normalized = normalizeIncomingMessage(body, merchantId);
+
+    // ====== فرع الملفات (كما هو، مع إضافة Outbox بعد الحفظ) ======
     if (normalized.fileId || normalized.fileUrl) {
       let tmpPath: string | undefined;
       let originalName: string | undefined;
       const mimeType: string =
         normalized.mimeType || 'application/octet-stream';
 
-      // Telegram
       if (normalized.channel === 'telegram' && normalized.fileId) {
         const merchant = await this.merchantModel.findById(merchantId).lean();
         const telegramToken = merchant?.channels?.telegram?.token;
@@ -117,9 +120,7 @@ export class WebhooksController {
         const dl = await downloadTelegramFile(normalized.fileId, telegramToken);
         tmpPath = dl.tmpPath;
         originalName = normalized.fileName || dl.originalName;
-      }
-      // WhatsApp/WebChat أو أي رابط مباشر
-      else if (normalized.fileUrl) {
+      } else if (normalized.fileUrl) {
         const dl = await downloadRemoteFile(
           normalized.fileUrl,
           normalized.fileName,
@@ -128,9 +129,8 @@ export class WebhooksController {
         originalName = normalized.fileName || dl.originalName;
       }
       if (!originalName) originalName = 'file';
-
-      // رفع الملف على MinIO
       if (!tmpPath) throw new Error('File path missing');
+
       const { presignedUrl } = await this.chatMediaService.uploadChatMedia(
         merchantId,
         tmpPath,
@@ -138,30 +138,66 @@ export class WebhooksController {
         mimeType,
       );
 
-      // حفظ الرسالة مع معلومات الملف
-      await this.messageService.createOrAppend({
-        merchantId,
-        sessionId: normalized.sessionId,
-        channel: normalized.channel,
-        messages: [
-          {
-            role: normalized.role,
-            text: normalized.text || '[تم استقبال ملف]',
-            timestamp: normalized.timestamp,
-            metadata: {
-              ...normalized.metadata,
-              mediaUrl: presignedUrl,
-              mediaType: normalized.mediaType,
-              fileName: originalName,
-              mimeType,
+      // NEW: نفّذ حفظ+Outbox داخل معاملة لضمان at-least-once
+      const session = await this.conn.startSession();
+      try {
+        await session.withTransaction(async () => {
+          await this.messageService.createOrAppend(
+            {
+              merchantId,
+              sessionId: normalized.sessionId,
+              channel: normalized.channel,
+              messages: [
+                {
+                  role: normalized.role,
+                  text: normalized.text || '[تم استقبال ملف]',
+                  timestamp: normalized.timestamp,
+                  metadata: {
+                    ...normalized.metadata,
+                    mediaUrl: presignedUrl,
+                    mediaType: normalized.mediaType,
+                    fileName: originalName,
+                    mimeType,
+                  },
+                },
+              ],
             },
-          },
-        ],
-      });
+            session,
+          );
 
-      // يمكن إرسال النص المستخرج للذكاء الاصطناعي، أو فقط رسالة وصول الملف
-      return { status: 'ok', sessionId: normalized.sessionId };
+          // NEW: ادفع حدث chat.incoming.<channel> للـ AI worker
+          await this.outbox.enqueueEvent(
+            {
+              aggregateType: 'conversation',
+              aggregateId: normalized.sessionId,
+              eventType: 'chat.incoming',
+              payload: {
+                merchantId,
+                sessionId: normalized.sessionId,
+                channel: normalized.channel,
+                text: normalized.text || '[file]',
+                metadata: {
+                  ...normalized.metadata,
+                  mediaUrl: presignedUrl,
+                  mediaType: normalized.mediaType,
+                  fileName: originalName,
+                  mimeType,
+                },
+              },
+              exchange: 'chat.incoming',
+              routingKey: normalized.channel, // whatsapp | telegram | web
+            },
+            session,
+          );
+        });
+
+        return { status: 'ok', sessionId: normalized.sessionId };
+      } finally {
+        await session.endSession();
+      }
     }
+
+    // ====== تحقق الحقول النصيّة ======
     if (
       !normalized.merchantId ||
       !normalized.sessionId ||
@@ -171,133 +207,236 @@ export class WebhooksController {
       throw new BadRequestException('Payload missing required fields');
     }
 
-    // 2. خزّن الرسالة
-    const session = await this.messageService.createOrAppend({
-      merchantId: normalized.merchantId,
-      sessionId: normalized.sessionId,
-      channel: normalized.channel,
-      messages: [
-        {
-          role: normalized.role,
-          text: normalized.text,
-          timestamp: normalized.timestamp,
-          metadata: normalized.metadata,
-        },
-      ],
-    });
-    const intent = detectOrderIntent(normalized.text);
-
-    if (intent.step === 'orderDetails') {
-      // هنا جلب الطلب من DB أو خدمة منفصلة
-      const order = await this.ordersServices.findOne(intent.orderId!);
-      const reply = buildOrderDetailsMessage(order);
-      await this.sendReplyToChannel({
-        sessionId: normalized.sessionId,
-        text: reply.text,
-        channel: normalized.channel,
-        merchantId,
-      });
-      return {
-        sessionId: normalized.sessionId,
-        action: 'orderDetails',
-        handoverToAgent: false,
-        role: normalized.role,
-      };
-    }
-
-    if (intent.step === 'orders') {
-      // جلب الطلبات من DB
-      const ordersFromDb = await this.ordersServices.findByCustomer(
-        merchantId,
-        intent.phone!,
-      );
-      const orders = ordersFromDb.map(mapOrderDocumentToOrder);
-
-      const reply = buildOrdersListMessage(orders);
-      await this.sendReplyToChannel({
-        sessionId: normalized.sessionId,
-        text: reply.text,
-        channel: normalized.channel,
-        merchantId,
-      });
-      return {
-        sessionId: normalized.sessionId,
-        action: 'ordersList',
-        handoverToAgent: false,
-        role: normalized.role,
-      };
-    }
-
-    if (intent.step === 'askPhone') {
-      const reply = { text: 'يرجى تزويدنا برقم الجوال الذي تم الطلب به.' };
-      await this.sendReplyToChannel({
-        sessionId: normalized.sessionId,
-        text: reply.text,
-        channel: normalized.channel,
-        merchantId,
-      });
-      return {
-        sessionId: normalized.sessionId,
-        action: 'askPhone',
-        handoverToAgent: false,
-        role: normalized.role,
-      };
-    }
-
-    // منطق handover أو وكيل (كما هو عندك)
-    const messages = session.messages;
-    const lastRole = messages.length
-      ? messages[messages.length - 1].role
-      : 'customer';
-    const isHandover = session.handoverToAgent === true;
-
-    const merchant = await this.merchantModel.findById(merchantId).lean();
-    const isBotEnabled =
-      merchant?.channels?.[normalized.channel]?.enabled === true;
-
-    if (lastRole === 'agent' || isHandover) {
-      return {
-        sessionId: normalized.sessionId,
-        action: 'wait_agent',
-        handoverToAgent: true,
-        role: normalized.role,
-      };
-    }
+    // ====== فرع الرسائل النصية (نفس منطقك + Outbox داخل معاملة) ======
+    const tx = await this.conn.startSession();
     try {
-      // الآن: أي رسالة لم يتم التقاطها كـ intent (أي step: 'normal') تذهب للذكاء الاصطناعي
-      if (lastRole === 'customer' && !isHandover && isBotEnabled) {
-        // أرسل الرسالة إلى n8n مباشرة
+      let sessionDoc: any;
+      await tx.withTransaction(async () => {
+        // 2. خزّن الرسالة
+        sessionDoc = await this.messageService.createOrAppend(
+          {
+            merchantId: normalized.merchantId,
+            sessionId: normalized.sessionId,
+            channel: normalized.channel,
+            messages: [
+              {
+                role: normalized.role,
+                text: normalized.text,
+                timestamp: normalized.timestamp,
+                metadata: normalized.metadata,
+              },
+            ],
+          },
+          tx,
+        );
+
+        // NEW: ادفع الحدث إلى AI عبر Rabbit (بدل النداء المباشر للنود n8n)
+        await this.outbox.enqueueEvent(
+          {
+            aggregateType: 'conversation',
+            aggregateId: normalized.sessionId,
+            eventType: 'chat.incoming',
+            payload: {
+              merchantId: normalized.merchantId,
+              sessionId: normalized.sessionId,
+              channel: normalized.channel,
+              text: normalized.text,
+              metadata: normalized.metadata,
+            },
+            exchange: 'chat.incoming',
+            routingKey: normalized.channel,
+          },
+          tx,
+        );
+      });
+
+      // ====== نفس منطق الـ intents الخاص بك ======
+      const intent = detectOrderIntent(normalized.text);
+
+      if (intent.step === 'orderDetails') {
+        const order = await this.ordersServices.findOne(intent.orderId!);
+        const reply = buildOrderDetailsMessage(order);
+
+        // NEW: خزّن ردّ البوت + Outbox للرد (بدل الإرسال المباشر)
+        await this.messageService.createOrAppend({
+          merchantId,
+          sessionId: normalized.sessionId,
+          channel: normalized.channel,
+          messages: [{ role: 'bot', text: reply.text, timestamp: new Date() }],
+        });
+
+        await this.outbox.enqueueEvent({
+          aggregateType: 'conversation',
+          aggregateId: normalized.sessionId,
+          eventType: 'chat.reply',
+          payload: {
+            merchantId,
+            sessionId: normalized.sessionId,
+            channel: normalized.channel,
+            text: reply.text,
+          },
+          exchange: 'chat.reply',
+          routingKey: normalized.channel,
+        });
+
+        // (اختياري أثناء الانتقال) إرسال مباشر خلف Feature Flag
+        if (process.env.DIRECT_SEND_FALLBACK === 'true') {
+          await this.sendReplyToChannel({
+            sessionId: normalized.sessionId,
+            text: reply.text,
+            channel: normalized.channel,
+            merchantId,
+          });
+        }
+
+        return {
+          sessionId: normalized.sessionId,
+          action: 'orderDetails',
+          handoverToAgent: false,
+          role: normalized.role,
+        };
+      }
+
+      if (intent.step === 'orders') {
+        const ordersFromDb = await this.ordersServices.findByCustomer(
+          merchantId,
+          intent.phone!,
+        );
+        const orders = ordersFromDb.map(mapOrderDocumentToOrder);
+        const reply = buildOrdersListMessage(orders);
+
+        await this.messageService.createOrAppend({
+          merchantId,
+          sessionId: normalized.sessionId,
+          channel: normalized.channel,
+          messages: [{ role: 'bot', text: reply.text, timestamp: new Date() }],
+        });
+
+        await this.outbox.enqueueEvent({
+          aggregateType: 'conversation',
+          aggregateId: normalized.sessionId,
+          eventType: 'chat.reply',
+          payload: {
+            merchantId,
+            sessionId: normalized.sessionId,
+            channel: normalized.channel,
+            text: reply.text,
+          },
+          exchange: 'chat.reply',
+          routingKey: normalized.channel,
+        });
+
+        if (process.env.DIRECT_SEND_FALLBACK === 'true') {
+          await this.sendReplyToChannel({
+            sessionId: normalized.sessionId,
+            text: reply.text,
+            channel: normalized.channel,
+            merchantId,
+          });
+        }
+
+        return {
+          sessionId: normalized.sessionId,
+          action: 'ordersList',
+          handoverToAgent: false,
+          role: normalized.role,
+        };
+      }
+
+      if (intent.step === 'askPhone') {
+        const reply = { text: 'يرجى تزويدنا برقم الجوال الذي تم الطلب به.' };
+
+        await this.messageService.createOrAppend({
+          merchantId,
+          sessionId: normalized.sessionId,
+          channel: normalized.channel,
+          messages: [{ role: 'bot', text: reply.text, timestamp: new Date() }],
+        });
+
+        await this.outbox.enqueueEvent({
+          aggregateType: 'conversation',
+          aggregateId: normalized.sessionId,
+          eventType: 'chat.reply',
+          payload: {
+            merchantId,
+            sessionId: normalized.sessionId,
+            channel: normalized.channel,
+            text: reply.text,
+          },
+          exchange: 'chat.reply',
+          routingKey: normalized.channel,
+        });
+
+        if (process.env.DIRECT_SEND_FALLBACK === 'true') {
+          await this.sendReplyToChannel({
+            sessionId: normalized.sessionId,
+            text: reply.text,
+            channel: normalized.channel,
+            merchantId,
+          });
+        }
+
+        return {
+          sessionId: normalized.sessionId,
+          action: 'askPhone',
+          handoverToAgent: false,
+          role: normalized.role,
+        };
+      }
+
+      // ====== handover (كما هو)
+      const messages = sessionDoc.messages;
+      const lastRole = messages.length
+        ? messages[messages.length - 1].role
+        : 'customer';
+      const isHandover = sessionDoc.handoverToAgent === true;
+      const merchant = await this.merchantModel.findById(merchantId).lean();
+      const isBotEnabled =
+        merchant?.channels?.[normalized.channel]?.enabled === true;
+
+      if (lastRole === 'agent' || isHandover) {
+        return {
+          sessionId: normalized.sessionId,
+          action: 'wait_agent',
+          handoverToAgent: true,
+          role: normalized.role,
+        };
+      }
+
+      // CHANGED: بدل استدعاء n8n المباشر، احنا أصلاً دفعنا chat.incoming فوق.
+      // لو تبغى تحافظ مؤقتًا على النداء المباشر (للتحقق/المقارنة) خلّه خلف علم:
+      if (
+        lastRole === 'customer' &&
+        !isHandover &&
+        isBotEnabled &&
+        process.env.N8N_DIRECT_CALL_FALLBACK === 'true'
+      ) {
         const base = this.config.get<string>('N8N_BASE')!.replace(/\/+$/, '');
-        const url = `${base}/webhook-test/ai-agent-${normalized.merchantId}`;
+        const url = `${base}/webhook/ai-agent`; // أو مسارك الحالي
         await axios.post(url, {
           merchantId: normalized.merchantId,
           sessionId: normalized.sessionId,
           channel: normalized.channel,
           text: normalized.text,
         });
-
-        return {
-          sessionId: normalized.sessionId,
-          action: 'ask_ai',
-          handoverToAgent: false,
-          role: normalized.role,
-        };
       }
 
       return {
         sessionId: normalized.sessionId,
-        action: 'wait',
-        handoverToAgent: !!session.handoverToAgent,
+        action: 'ask_ai',
+        handoverToAgent: false,
         role: normalized.role,
       };
-    } catch (err) {
-      // لو حصل أي خطأ، سجله لكن أرسل 200 للويب هوك!
+    } catch (err: any) {
+      // نفس سلوكك: لا نفشل الويبهوك حتى لو صار خطأ
       console.error('Webhook error:', err);
       return {
         sessionId: normalized.sessionId,
         status: 'received_with_error',
         error: err.message,
       };
+    } finally {
+      await tx.endSession();
     }
   }
   @Public()

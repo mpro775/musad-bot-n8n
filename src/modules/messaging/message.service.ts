@@ -3,7 +3,7 @@
 // ---------------------------
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import {
   MessageSession,
   MessageSessionDocument,
@@ -23,24 +23,24 @@ export class MessageService {
     private readonly geminiService: GeminiService,
   ) {}
 
-  async createOrAppend(dto: CreateMessageDto): Promise<MessageSessionDocument> {
-    console.log('==== ENTERED createOrAppend! ====');
-
+  async createOrAppend(
+    dto: CreateMessageDto,
+    session?: ClientSession,
+  ): Promise<MessageSessionDocument> {
     const mId = new Types.ObjectId(dto.merchantId);
-    const existing = await this.messageModel.findOne({
-      merchantId: mId,
-      sessionId: dto.sessionId,
-      channel: dto.channel,
-    });
 
-    // حول كل عنصر في dto.messages ليشمل الكلمات المفتاحية والتوقيت
+    const existing = await this.messageModel
+      .findOne({
+        merchantId: mId,
+        sessionId: dto.sessionId,
+        channel: dto.channel,
+      })
+      .session(session ?? null) // ✅
+      .exec();
+
     const toInsert = dto.messages.map((m) => {
-      // استخراج الكلمات المفتاحية من نص كل رسالة
       const tokens = m.text.split(/\s+/);
-      console.log('tokens:', tokens);
       const keywords = removeStopwords(tokens, [...ara, ...eng]);
-      console.log('keywords:', keywords);
-
       return {
         role: m.role,
         text: m.text,
@@ -49,24 +49,28 @@ export class MessageService {
         keywords,
       };
     });
-    console.log('Will insert:', JSON.stringify(toInsert, null, 2));
+
     const lastMsg = toInsert[toInsert.length - 1];
-    if (lastMsg) {
-      this.chatGateway.sendMessageToSession(dto.sessionId, lastMsg);
-    }
-    console.log('Sending to WS room:', dto.sessionId, lastMsg);
+    if (lastMsg) this.chatGateway.sendMessageToSession(dto.sessionId, lastMsg);
 
     if (existing) {
       existing.messages.push(...toInsert);
       existing.markModified('messages');
-      return existing.save();
+      await existing.save({ session }); // ✅
+      return existing;
     } else {
-      return this.messageModel.create({
-        merchantId: mId,
-        sessionId: dto.sessionId,
-        channel: dto.channel,
-        messages: toInsert,
-      });
+      const [created] = await this.messageModel.create(
+        [
+          {
+            merchantId: mId,
+            sessionId: dto.sessionId,
+            channel: dto.channel,
+            messages: toInsert,
+          },
+        ],
+        { session }, // ✅
+      );
+      return created;
     }
   }
   async rateMessage(

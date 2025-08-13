@@ -1,17 +1,11 @@
 // src/modules/webhooks/webhooks.service.ts
-import {
-  Injectable,
-  BadRequestException,
-  Post,
-  Param,
-  Body,
-} from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Injectable, BadRequestException } from '@nestjs/common';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { Connection, Model } from 'mongoose';
 import { Webhook, WebhookDocument } from './schemas/webhook.schema';
 import { MessageService } from '../messaging/message.service';
 import { BotReplyDto } from './dto/bot-reply.dto';
-import { ConversationDto } from './dto/conversation.dto';
+import { OutboxService } from 'src/common/outbox/outbox.service';
 
 @Injectable()
 export class WebhooksService {
@@ -19,93 +13,108 @@ export class WebhooksService {
     private readonly messageService: MessageService,
     @InjectModel(Webhook.name)
     private readonly webhookModel: Model<WebhookDocument>,
+    @InjectConnection() private readonly conn: Connection, // NEW
+    private readonly outbox: OutboxService, // NEW
   ) {}
 
-  // في نهاية Workflow: أرسل كل الرسائل دفعة واحدة
-  @Post('conversation/:merchantId')
-  async handleConversation(
-    @Param('merchantId') merchantId: string,
-    @Body() dto: ConversationDto,
-  ) {
-    const { sessionId, channel, messages } = dto;
-    if (!merchantId || !sessionId || !channel || !messages?.length) {
-      throw new BadRequestException('Missing conversation fields');
-    }
-
-    // حضّر المُدخلات مع timestamp افتراضي
-    const timestamped = messages.map((m) => ({
-      role: m.role,
-      text: m.text,
-      metadata: m.metadata || {},
-      timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
-    }));
-
-    // استدعي الخدمة لتخزين الجلسة كاملة (إنشاؤها أو الإلحاق)
-    const session = await this.messageService.createOrAppend({
-      merchantId,
-      sessionId,
-      channel,
-      messages: timestamped,
-    });
-
-    return { sessionId: session.sessionId, storedMessages: timestamped.length };
-  }
   async handleEvent(eventType: string, payload: any) {
     const { merchantId, from, messageText, metadata } = payload;
-
-    if (!merchantId || !from || !messageText) {
-      throw new BadRequestException(`Invalid payload for ${eventType}`);
-    }
+    if (!merchantId || !from || !messageText)
+      throw new BadRequestException(`Invalid payload`);
 
     const channel = eventType.replace('_incoming', '');
+    const session = await this.conn.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await this.webhookModel.create(
+          [
+            {
+              eventType,
+              payload: JSON.stringify(payload),
+              receivedAt: new Date(),
+            },
+          ],
+          { session },
+        );
 
-    // 1. تخزين الحدث الخام
-    await this.webhookModel.create({
-      eventType,
-      payload: JSON.stringify(payload),
-      receivedAt: new Date(),
-    });
+        await this.messageService.createOrAppend(
+          {
+            merchantId,
+            sessionId: from,
+            channel,
+            messages: [
+              { role: 'customer', text: messageText, metadata: metadata || {} },
+            ],
+          },
+          session,
+        );
 
-    // 2. إنشاء أو تحديث الجلسة وتخزين الرسالة
-    await this.messageService.createOrAppend({
-      merchantId,
-      sessionId: from, // الهاتف كمفتاح الجلسة
-      channel,
-      messages: [
-        {
-          role: 'customer',
-          text: messageText,
-          metadata: metadata || {},
-        },
-      ],
-    });
-
-    // 3. إعادة sessionId لاستخدامه في n8n (بدلًا من conversationId)
-    return { sessionId: from };
+        await this.outbox.enqueueEvent(
+          {
+            aggregateType: 'conversation',
+            aggregateId: from,
+            eventType: 'chat.incoming',
+            payload: {
+              merchantId,
+              sessionId: from,
+              channel,
+              text: messageText,
+              metadata: metadata || {},
+            },
+            exchange: 'chat.incoming',
+            routingKey: channel,
+          },
+          session,
+        );
+      });
+      return { sessionId: from, status: 'accepted' };
+    } finally {
+      await session.endSession();
+    }
   }
+
   async handleBotReply(
     merchantId: string,
     dto: BotReplyDto,
-  ): Promise<{ sessionId: string }> {
+  ): Promise<{ sessionId: string; status: 'accepted' }> {
     const { sessionId, text, metadata } = dto;
-    if (!sessionId || !text) {
+    if (!sessionId || !text)
       throw new BadRequestException('sessionId و text مطلوبة');
+
+    const session = await this.conn.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await this.messageService.createOrAppend(
+          {
+            merchantId,
+            sessionId,
+            channel: 'webchat',
+            messages: [{ role: 'bot', text, metadata: metadata || {} }],
+          },
+          session,
+        );
+
+        await this.outbox.enqueueEvent(
+          {
+            aggregateType: 'conversation',
+            aggregateId: sessionId,
+            eventType: 'chat.reply',
+            payload: {
+              merchantId,
+              sessionId,
+              channel: 'webchat',
+              text,
+              metadata,
+            },
+            exchange: 'chat.reply',
+            routingKey: 'web', // مسار الرد لقناة الويب
+          },
+          session,
+        );
+      });
+      return { sessionId, status: 'accepted' };
+    } finally {
+      await session.endSession();
     }
-
-    // نحفظ رسالة البوت
-    await this.messageService.createOrAppend({
-      merchantId,
-      sessionId,
-      channel: 'webchat', // أو القناة المناسبة
-      messages: [
-        {
-          role: 'bot',
-          text,
-          metadata: metadata || {},
-        },
-      ],
-    });
-
-    return { sessionId };
   }
 }
