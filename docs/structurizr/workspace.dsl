@@ -22,23 +22,23 @@ workspace "Kaleem — Unified C4" "Context + Containers + Components + Deploymen
 
       // Frontends
       container platform_admin_portal "Platform Admin Portal" "React/MUI" "لوحة الأدمن العام: إدارة المنصة/كل التجار، رؤية شاملة للمحادثات، تدريب عالمي."
-      container merchant_portal        "Merchant Portal"        "React/MUI" "لوحة التاجر: إعدادات متجره، تقارير، صندوق وارد متجره، تدريب محدود."
-      container web_chat               "Web Chat Widget"        "JS Widget" "ودجت الدردشة المضمّن بمواقع التجار."
-      container storefront             "Micro Storefront"       "React/Next.js" "متجر مصغّر مرتبط بقنوات الدردشة (تصفح/عربة/دفع/متابعة طلبات)."
+      container merchant_portal       "Merchant Portal"       "React/MUI" "لوحة التاجر: إعدادات متجره، تقارير، صندوق وارد متجره، تدريب محدود."
+      container web_chat              "Web Chat Widget"       "JS Widget" "ودجت الدردشة المضمّن بمواقع التجار."
+      container storefront            "Micro Storefront"      "React/Next.js" "متجر مصغّر مرتبط بقنوات الدردشة (تصفح/عربة/دفع/متابعة طلبات)."
 
       // Backends & Infra
-      container api     "Backend API"        "NestJS"  "Auth، Conversations/Inbox، Training/Feedback، Knowledge، Integrations، Webhooks"
-      container workers "Background Workers" "NestJS"  "AMQP Consumers/Jobs"
-      container n8n     "Orchestrator"       "n8n"     "سير عمل AI/Tools"
-      container embed   "Embedding Service"  "FastAPI" "توليد Embeddings"
-      container extractor "Extractor Service" "FastAPI/Playwright" "استخلاص صفحات/ملفات للفهرسة"
-      container mongodb "MongoDB"            "Mongo"   "بيانات التطبيق/المحادثات/التقييمات"
-      container redis   "Redis"              "Redis"   "Cache/Rate limits/Sessions"
-      container qdrant  "Qdrant"             "Qdrant"  "بحث متجهي (منتجات/معرفة)"
-      container rabbit  "RabbitMQ"           "AMQP"    "وسيط رسائل"
-      container minio   "MinIO"              "S3-compatible" "ملفات (اختياري)"
+      container api      "Backend API"         "NestJS"  "Auth، Conversations/Inbox، Training/Feedback، Knowledge، Integrations، Webhooks"
+      container workers  "Background Workers"  "NestJS"  "AMQP Consumers/Jobs"
+      container n8n      "Orchestrator"        "n8n"     "سير عمل AI/Tools"
+      container embed    "Embedding Service"   "FastAPI" "توليد Embeddings"
+      container extractor "Extractor Service"  "FastAPI/Playwright" "استخلاص صفحات/ملفات للفهرسة"
+      container mongodb  "MongoDB"             "Mongo"   "بيانات التطبيق/المحادثات/التقييمات"
+      container redis    "Redis"               "Redis"   "Cache/Rate limits/Sessions"
+      container qdrant   "Qdrant"              "Qdrant"  "بحث متجهي (منتجات/معرفة)"
+      container rabbit   "RabbitMQ"            "AMQP"    "وسيط رسائل"
+      container minio    "MinIO"               "S3-compatible" "ملفات (اختياري)"
 
-      // علاقات الواجهات مع الـ API
+      // علاقات الواجهات مع الـ API (داخل كتلة kaleem)
       platform_admin_portal -> api "REST/JSON"
       merchant_portal       -> api "REST/JSON"
       web_chat              -> api "جلسات/رسائل" "REST/WebSocket"
@@ -146,24 +146,24 @@ workspace "Kaleem — Unified C4" "Context + Containers + Components + Deploymen
         "KnowledgeService"        -> "KnowledgeRepo"
         "ConversationsController" -> "PolicyRepo" "قراءة flags (paused/owners)"
 
-        "EventBus"        -> "JobRepo" "سجل المهام (اختياري)"
-        "ConversationService" -> "CacheService" "استفادة من الكاش"
+        "EventBus"           -> "JobRepo" "سجل المهام (اختياري)"
+        "ConversationService"-> "CacheService" "استفادة من الكاش"
         "AuditLogger"        -> "CacheService" "مقاييس/عدادات"
 
         // ربط مكوّنات API بحاويات خارجية
-        "AIOrchestratorClient" -> n8n     "REST"
-        "VectorService"        -> qdrant  "HTTP"
-        "CacheService"         -> redis   "TCP"
-        "ConversationRepo"     -> mongodb "Driver"
-        "MessageRepo"          -> mongodb "Driver"
-        "UnansweredRepo"       -> mongodb "Driver"
-        "InstructionRepo"      -> mongodb "Driver"
-        "ProductRepo"          -> mongodb "Driver"
-        "KnowledgeRepo"        -> mongodb "Driver"
-        "EventBus"             -> rabbit  "AMQP"
+        "AIOrchestratorClient" -> n8n      "REST"
+        "VectorService"        -> qdrant   "HTTP"
+        "CacheService"         -> redis    "TCP"
+        "ConversationRepo"     -> mongodb  "Driver"
+        "MessageRepo"          -> mongodb  "Driver"
+        "UnansweredRepo"       -> mongodb  "Driver"
+        "InstructionRepo"      -> mongodb  "Driver"
+        "ProductRepo"          -> mongodb  "Driver"
+        "KnowledgeRepo"        -> mongodb  "Driver"
+        "EventBus"             -> rabbit   "AMQP"
         "ExtractorClient"      -> extractor "HTTP"
-        "EmbeddingClient"      -> embed   "HTTP"
-        "PaymentsService"      -> payment "REST"
+        "EmbeddingClient"      -> embed    "HTTP"
+        "PaymentsService"      -> payment  "REST"
 
         // قنوات (inbound)
         "ChannelWebhookController" -> whatsapp "Inbound Webhook"
@@ -196,30 +196,30 @@ workspace "Kaleem — Unified C4" "Context + Containers + Components + Deploymen
       }
     }
 
-    // علاقات القنوات والتكاملات والمدفوعات (خارج كتلة kleem)
-    merchant_site -> kleem.web_chat "استضافة ودجت الويب شات"
-    whatsapp -> kleem.api "Inbound Webhook (messages/status)" "HTTPS"
-    kleem.api      -> whatsapp "Send message / replies"       "HTTPS"
-    telegram -> kleem.api "Inbound Webhook (updates)" "HTTPS"
-    kleem.api      -> telegram "Send message"          "HTTPS"
-    kleem.api -> salla   "Sync منتجات/طلبات" "REST"
-    kleem.api -> zid     "Sync منتجات/طلبات" "REST"
-    kleem.api -> shopify "Sync منتجات/طلبات" "REST"
-    kleem.api -> payment "إنشاء مدفوعات/تحقق" "REST"
-    kleem.n8n -> llm "Prompting/Completion" "HTTPS"
+    // علاقات القنوات والتكاملات والمدفوعات (خارج كتلة kaleem)
+    merchant_site -> kaleem.web_chat "استضافة ودجت الويب شات"
+    whatsapp      -> kaleem.api "Inbound Webhook (messages/status)" "HTTPS"
+    kaleem.api    -> whatsapp "Send message / replies" "HTTPS"
+    telegram      -> kaleem.api "Inbound Webhook (updates)" "HTTPS"
+    kaleem.api    -> telegram "Send message" "HTTPS"
+    kaleem.api    -> salla   "Sync منتجات/طلبات" "REST"
+    kaleem.api    -> zid     "Sync منتجات/طلبات" "REST"
+    kaleem.api    -> shopify "Sync منتجات/طلبات" "REST"
+    kaleem.api    -> payment "إنشاء مدفوعات/تحقق" "REST"
+    kaleem.n8n    -> llm "Prompting/Completion" "HTTPS"
   }
 
   views {
 
     // === View: Context ===
-    systemContext kleem {
+    systemContext kaleem {
       include *
       autoLayout lr
       title "Kleem — Context"
     }
 
     // === View: Containers ===
-    container kleem {
+    container kaleem {
       include *
       include whatsapp telegram salla zid shopify payment llm merchant_site
       autoLayout lr
@@ -262,16 +262,16 @@ workspace "Kaleem — Unified C4" "Context + Containers + Components + Deploymen
       infrastructureNode host "Docker Host" "Linux VM" {
         infrastructureNode backnet "Bridge Network" "Docker network: backnet"
 
-        containerInstance api_i       of kleem.api       { properties { "port" "3000" } }
-        containerInstance workers_i   of kleem.workers   { }
-        containerInstance n8n_i       of kleem.n8n       { properties { "port" "5678" } }
-        containerInstance mongodb_i   of kleem.mongodb   { properties { "port" "27017" } }
-        containerInstance redis_i     of kleem.redis     { properties { "port" "6379" } }
-        containerInstance qdrant_i    of kleem.qdrant    { properties { "port" "6333" } }
-        containerInstance embed_i     of kleem.embed     { properties { "port" "8000" } }
-        containerInstance extractor_i of kleem.extractor { properties { "port" "8001" } }
-        containerInstance minio_i     of kleem.minio     { properties { "ports" "9000,9001" } }
-        containerInstance rabbit_i    of kleem.rabbit    { properties { "ports" "5672,15672,15692" } }
+        containerInstance api_i       of kaleem.api       { properties { "port" "3000" } }
+        containerInstance workers_i   of kaleem.workers   { }
+        containerInstance n8n_i       of kaleem.n8n       { properties { "port" "5678" } }
+        containerInstance mongodb_i   of kaleem.mongodb   { properties { "port" "27017" } }
+        containerInstance redis_i     of kaleem.redis     { properties { "port" "6379" } }
+        containerInstance qdrant_i    of kaleem.qdrant    { properties { "port" "6333" } }
+        containerInstance embed_i     of kaleem.embed     { properties { "port" "8000" } }
+        containerInstance extractor_i of kaleem.extractor { properties { "port" "8001" } }
+        containerInstance minio_i     of kaleem.minio     { properties { "ports" "9000,9001" } }
+        containerInstance rabbit_i    of kaleem.rabbit    { properties { "ports" "5672,15672,15692" } }
 
         // علاقات الشبكة الأساسية
         api_i       -> mongodb_i   "Driver"
