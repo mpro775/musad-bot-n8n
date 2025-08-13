@@ -1,4 +1,4 @@
-workspace "Kleem — Unified C4" "Context + Containers + Components + Deployment" {
+workspace "Kaleem — Unified C4" "Context + Containers + Components + Deployment" {
   !identifiers hierarchical
 
   model {
@@ -18,7 +18,7 @@ workspace "Kleem — Unified C4" "Context + Containers + Components + Deployment
     softwareSystem merchant_site "Merchant Website"       "موقع التاجر يستضيف ودجت الويب شات"
 
     // === نظام كليم وحاوياته (Containers) ===
-    softwareSystem kleem "Kleem" "منصة محادثة ذكية للتجار + متجر مصغّر مدمج." {
+    softwareSystem kaleem "Kaleem" "منصة محادثة ذكية للتجار + متجر مصغّر مدمج." {
 
       // Frontends
       container platform_admin_portal "Platform Admin Portal" "React/MUI" "لوحة الأدمن العام: إدارة المنصة/كل التجار، رؤية شاملة للمحادثات، تدريب عالمي."
@@ -39,29 +39,29 @@ workspace "Kleem — Unified C4" "Context + Containers + Components + Deployment
       container minio   "MinIO"              "S3-compatible" "ملفات (اختياري)"
 
       // علاقات الواجهات مع الـ API
-      platform_admin_portal -> api "REST/JSON"
-      merchant_portal       -> api "REST/JSON"
-      web_chat              -> api "جلسات/رسائل" "REST/WebSocket"
-      storefront            -> api "Browsing/Cart" "REST/JSON"
+      kaleem.platform_admin_portal -> kaleem.api "REST/JSON"
+      kaleem.merchant_portal       -> kaleem.api "REST/JSON"
+      kaleem.web_chat              -> kaleem.api "جلسات/رسائل" "REST/WebSocket"
+      kaleem.storefront            -> kaleem.api "Browsing/Cart" "REST/JSON"
 
       // قرار الذكاء: إرسال إلى n8n عند الحاجة
-      api -> n8n "Invoke AI workflow إذا كانت المحادثة غير موقوفة وتحتاج ردًا ذكيًا" "REST"
+      kaleem.api -> kaleem.n8n "Invoke AI workflow إذا كانت المحادثة غير موقوفة وتحتاج ردًا ذكيًا" "REST"
 
       // استخراج/فهرسة
-      api       -> extractor "Trigger extraction" "HTTP"
-      extractor -> rabbit    "ينشر مهام فهرسة/تنظيف" "AMQP"
-      workers   -> qdrant    "Upsert vectors (indexing)" "HTTP"
+      kaleem.api       -> kaleem.extractor "Trigger extraction" "HTTP"
+      kaleem.extractor -> kaleem.rabbit    "ينشر مهام فهرسة/تنظيف" "AMQP"
+      kaleem.workers   -> kaleem.qdrant    "Upsert vectors (indexing)" "HTTP"
 
       // قواعد البيانات والكاش والرسائل
-      api     -> mongodb "CRUD" "Driver"
-      api     -> redis   "Cache" "TCP"
-      api     -> rabbit  "ينشر أحداث/مهام" "AMQP"
-      workers -> rabbit  "يستهلك مهام" "AMQP"
-      api     -> qdrant  "بحث" "HTTP"
-      api     -> embed   "طلب Embedding" "HTTP"
+      kaleem.api     -> kaleem.mongodb "CRUD" "Driver"
+      kaleem.api     -> kaleem.redis   "Cache" "TCP"
+      kaleem.api     -> kaleem.rabbit  "ينشر أحداث/مهام" "AMQP"
+      kaleem.workers -> kaleem.rabbit  "يستهلك مهام" "AMQP"
+      kaleem.api     -> kaleem.qdrant  "بحث" "HTTP"
+      kaleem.api     -> kaleem.embed   "طلب Embedding" "HTTP"
 
       // أدوات من n8n إلى API
-      n8n -> api "Tool-calls (searchProducts/knowledge)" "REST"
+      kaleem.n8n -> kaleem.api "Tool-calls (searchProducts/knowledge)" "REST"
 
       // === مكوّنات الـ API (Components) ===
       container api {
@@ -197,16 +197,16 @@ workspace "Kleem — Unified C4" "Context + Containers + Components + Deployment
     }
 
     // علاقات القنوات والتكاملات والمدفوعات (خارج كتلة kleem)
-    merchant_site -> web_chat "استضافة ودجت الويب شات"
-    whatsapp -> api "Inbound Webhook (messages/status)" "HTTPS"
-    api      -> whatsapp "Send message / replies"       "HTTPS"
-    telegram -> api "Inbound Webhook (updates)" "HTTPS"
-    api      -> telegram "Send message"          "HTTPS"
-    api -> salla   "Sync منتجات/طلبات" "REST"
-    api -> zid     "Sync منتجات/طلبات" "REST"
-    api -> shopify "Sync منتجات/طلبات" "REST"
-    api -> payment "إنشاء مدفوعات/تحقق" "REST"
-    n8n -> llm "Prompting/Completion" "HTTPS"
+    merchant_site -> kleem.web_chat "استضافة ودجت الويب شات"
+    whatsapp -> kleem.api "Inbound Webhook (messages/status)" "HTTPS"
+    kleem.api      -> whatsapp "Send message / replies"       "HTTPS"
+    telegram -> kleem.api "Inbound Webhook (updates)" "HTTPS"
+    kleem.api      -> telegram "Send message"          "HTTPS"
+    kleem.api -> salla   "Sync منتجات/طلبات" "REST"
+    kleem.api -> zid     "Sync منتجات/طلبات" "REST"
+    kleem.api -> shopify "Sync منتجات/طلبات" "REST"
+    kleem.api -> payment "إنشاء مدفوعات/تحقق" "REST"
+    kleem.n8n -> llm "Prompting/Completion" "HTTPS"
   }
 
   views {
