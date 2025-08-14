@@ -232,13 +232,16 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin123
       - GF_USERS_DEFAULT_THEME=light
+      # مهم لو خلف بروكسي أو غيرت البورت/الدومين
+      - GF_SERVER_DOMAIN=31.97.155.167
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/
     volumes:
       - grafana_data:/var/lib/grafana
       - ./observability/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
       - ./observability/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - '3001:3000'
+      - '3005:3000' # ← اختر بورت غير مستخدم على الهوست (مثال: 3005)
     networks: [backnet]
     restart: unless-stopped
     depends_on:
