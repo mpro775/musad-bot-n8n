@@ -322,7 +322,7 @@ services:
     command: ['node', 'dist/workers/ai-reply.worker.js']
     env_file: [.env]
     environment:
-      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672
+      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
     depends_on:
       rabbitmq: { condition: service_healthy }
       qdrant: { condition: service_started }
@@ -336,7 +336,7 @@ services:
     command: ['node', 'dist/workers/webhook-dispatcher.worker.js']
     env_file: [.env]
     environment:
-      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672
+      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
     depends_on:
       rabbitmq: { condition: service_healthy }
     networks: [backnet]
@@ -347,7 +347,7 @@ services:
     container_name: kaleem-indexing
     command: ['python', '-m', 'workers.indexing']
     environment:
-      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672
+      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
     depends_on:
       rabbitmq: { condition: service_healthy }
       qdrant: { condition: service_started }
