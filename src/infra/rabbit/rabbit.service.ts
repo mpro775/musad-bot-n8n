@@ -16,7 +16,7 @@ export class RabbitService implements OnModuleInit, OnModuleDestroy {
   private url: string;
 
   constructor(private cfg: ConfigService) {
-    this.url = this.cfg.get<string>('RABBIT_URL') || 'amqp://guest:guest@rabbitmq:5672';
+    this.url = this.cfg.get<string>('RABBIT_URL') || 'amqp://kaleem:supersecret@rabbitmq:5672/kleem';
   }
 
   async onModuleInit() {
