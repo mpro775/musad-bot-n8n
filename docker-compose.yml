@@ -289,21 +289,22 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management
     volumes:
-      - ./rabbit-defs.json:/etc/rabbitmq/definitions.json:ro
+      - ./rabbit-definitions.json:/etc/rabbitmq/definitions.json:ro   # ← الاسم الصحيح
       - rabbitmq_data:/var/lib/rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: kaleem
       RABBITMQ_DEFAULT_PASS: supersecret
+      RABBITMQ_DEFAULT_VHOST: kleem                                   # ← مهم
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: >
-        -rabbitmq_prometheus listener [{port,15692}] 
+        -rabbitmq_prometheus listener [{port,15692}]
         -rabbitmq_management load_definitions "/etc/rabbitmq/definitions.json"
     command: >
       bash -lc "rabbitmq-plugins enable --offline rabbitmq_prometheus &&
                 rabbitmq-server"
     ports:
       - '5672:5672'
-      - '15672:15672' # UI
-      - '15692:15692' # /metrics
+      - '15672:15672'   # UI
+      - '15692:15692'   # /metrics
     healthcheck:
       test: ['CMD', 'rabbitmq-diagnostics', '-q', 'status']
       interval: 10s
@@ -311,6 +312,7 @@ services:
       retries: 5
     networks: [backnet]
     restart: unless-stopped
+
 
     # اختياري: عمّال مستقلين (نفس صورة api لو عندك nest start:worker)
   ai-reply-worker:

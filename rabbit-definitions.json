@@ -1,38 +1,75 @@
 {
   "rabbit_version": "3.13",
-  "users": [],
-  "vhosts": [{ "name": "/" }],
-  "permissions": [],
+  "users": [
+    {
+      "name": "kaleem",
+      "password_hash": "",
+      "password": "supersecret",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": "administrator"
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "kleem"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "kaleem",
+      "vhost": "kleem",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
   "parameters": [],
   "policies": [
     {
-      "vhost": "/",
+      "vhost": "kleem",
       "name": "dlq-ttl",
       "pattern": ".*\\.dlq$",
       "apply-to": "queues",
-      "definition": { "message-ttl": 604800000 },
+      "definition": {
+        "message-ttl": 604800000
+      },
       "priority": 0
     }
   ],
   "exchanges": [
-    { "name": "chat.incoming", "vhost": "/", "type": "topic", "durable": true },
-    { "name": "chat.reply", "vhost": "/", "type": "topic", "durable": true },
     {
-      "name": "knowledge.index",
-      "vhost": "/",
+      "name": "chat.incoming",
+      "vhost": "kleem",
       "type": "topic",
       "durable": true
     },
-    { "name": "commerce.sync", "vhost": "/", "type": "topic", "durable": true },
+    {
+      "name": "chat.reply",
+      "vhost": "kleem",
+      "type": "topic",
+      "durable": true
+    },
+    {
+      "name": "knowledge.index",
+      "vhost": "kleem",
+      "type": "topic",
+      "durable": true
+    },
+    {
+      "name": "commerce.sync",
+      "vhost": "kleem",
+      "type": "topic",
+      "durable": true
+    },
     {
       "name": "webhook.dispatch",
-      "vhost": "/",
+      "vhost": "kleem",
       "type": "topic",
       "durable": true
     },
     {
       "name": "analytics.events",
-      "vhost": "/",
+      "vhost": "kleem",
       "type": "topic",
       "durable": true
     }
@@ -40,93 +77,114 @@
   "queues": [
     {
       "name": "ai.reply-worker.q",
-      "vhost": "/",
+      "vhost": "kleem",
       "durable": true,
       "arguments": {
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "ai.reply-worker.q.dlq"
       }
     },
-    { "name": "ai.reply-worker.q.dlq", "vhost": "/", "durable": true },
-
+    {
+      "name": "ai.reply-worker.q.dlq",
+      "vhost": "kleem",
+      "durable": true
+    },
     {
       "name": "whatsapp.out.q",
-      "vhost": "/",
+      "vhost": "kleem",
       "durable": true,
       "arguments": {
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "whatsapp.out.q.dlq"
       }
     },
-    { "name": "whatsapp.out.q.dlq", "vhost": "/", "durable": true },
-
+    {
+      "name": "whatsapp.out.q.dlq",
+      "vhost": "kleem",
+      "durable": true
+    },
     {
       "name": "telegram.out.q",
-      "vhost": "/",
+      "vhost": "kleem",
       "durable": true,
       "arguments": {
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "telegram.out.q.dlq"
       }
     },
-    { "name": "telegram.out.q.dlq", "vhost": "/", "durable": true },
-
+    {
+      "name": "telegram.out.q.dlq",
+      "vhost": "kleem",
+      "durable": true
+    },
     {
       "name": "web.out.q",
-      "vhost": "/",
+      "vhost": "kleem",
       "durable": true,
       "arguments": {
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "web.out.q.dlq"
       }
     },
-    { "name": "web.out.q.dlq", "vhost": "/", "durable": true },
-
+    {
+      "name": "web.out.q.dlq",
+      "vhost": "kleem",
+      "durable": true
+    },
     {
       "name": "indexing.q",
-      "vhost": "/",
+      "vhost": "kleem",
       "durable": true,
       "arguments": {
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "indexing.q.dlq"
       }
     },
-    { "name": "indexing.q.dlq", "vhost": "/", "durable": true },
-
+    {
+      "name": "indexing.q.dlq",
+      "vhost": "kleem",
+      "durable": true
+    },
     {
       "name": "commerce.sync.q",
-      "vhost": "/",
+      "vhost": "kleem",
       "durable": true,
       "arguments": {
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "commerce.sync.q.dlq"
       }
     },
-    { "name": "commerce.sync.q.dlq", "vhost": "/", "durable": true },
-
+    {
+      "name": "commerce.sync.q.dlq",
+      "vhost": "kleem",
+      "durable": true
+    },
     {
       "name": "webhook.dispatch.q",
-      "vhost": "/",
+      "vhost": "kleem",
       "durable": true,
       "arguments": {
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "webhook.dispatch.q.dlq"
       }
     },
-    { "name": "webhook.dispatch.q.dlq", "vhost": "/", "durable": true }
+    {
+      "name": "webhook.dispatch.q.dlq",
+      "vhost": "kleem",
+      "durable": true
+    }
   ],
   "bindings": [
     {
-      "vhost": "/",
+      "vhost": "kleem",
       "source": "chat.incoming",
       "destination": "ai.reply-worker.q",
       "destination_type": "queue",
       "routing_key": "#",
       "arguments": {}
     },
-
     {
-      "vhost": "/",
+      "vhost": "kleem",
       "source": "chat.reply",
       "destination": "whatsapp.out.q",
       "destination_type": "queue",
@@ -134,7 +192,7 @@
       "arguments": {}
     },
     {
-      "vhost": "/",
+      "vhost": "kleem",
       "source": "chat.reply",
       "destination": "telegram.out.q",
       "destination_type": "queue",
@@ -142,16 +200,15 @@
       "arguments": {}
     },
     {
-      "vhost": "/",
+      "vhost": "kleem",
       "source": "chat.reply",
       "destination": "web.out.q",
       "destination_type": "queue",
       "routing_key": "web",
       "arguments": {}
     },
-
     {
-      "vhost": "/",
+      "vhost": "kleem",
       "source": "knowledge.index",
       "destination": "indexing.q",
       "destination_type": "queue",
@@ -159,7 +216,7 @@
       "arguments": {}
     },
     {
-      "vhost": "/",
+      "vhost": "kleem",
       "source": "commerce.sync",
       "destination": "commerce.sync.q",
       "destination_type": "queue",
@@ -167,7 +224,7 @@
       "arguments": {}
     },
     {
-      "vhost": "/",
+      "vhost": "kleem",
       "source": "webhook.dispatch",
       "destination": "webhook.dispatch.q",
       "destination_type": "queue",
