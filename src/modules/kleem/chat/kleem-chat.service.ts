@@ -88,7 +88,7 @@ export class KleemChatService {
 
     // 5) أرسل إلى n8n مبسّطًا
     try {
-      await this.n8n.post('/webhook-test/webhooks/kleem/incoming', {
+      await this.n8n.post('/webhook/webhooks/kleem/incoming', {
         bot: 'kleem',
         sessionId,
         channel: 'webchat',
