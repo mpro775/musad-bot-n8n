@@ -17,15 +17,22 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UseGuards } from '@nestjs/common';
+import { Public } from 'src/common/decorators/public.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 @Controller('admin/kleem/bot-prompts')
 export class BotPromptController {
-  constructor(private readonly svc: BotPromptService) {}
+  constructor(private readonly svc: BotPromptService) { }
 
   @Post()
   create(@Body() dto: CreateBotPromptDto) {
     return this.svc.create(dto);
+  }
+
+  @Get('ping')
+  @Public()
+  ping() {
+    return { ok: true, who: 'bot-prompts' };
   }
 
   @Get()
