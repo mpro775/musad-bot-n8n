@@ -178,7 +178,8 @@ services:
     env_file:
       - .env
     environment:
-      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem    restart: unless-stopped
+      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem 
+    restart: unless-stopped
     healthcheck:
       test: ['CMD-SHELL', 'curl -f http://localhost:3000/health || exit 1']
       interval: 15s
