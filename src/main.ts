@@ -28,7 +28,6 @@ async function bootstrap() {
     (globalThis as any).crypto = { randomUUID };
   }
   app.useWebSocketAdapter(new IoAdapter(app));
-  console.log('REDIS_URL:', process.env.REDIS_URL);
 
   app.use(helmet());
   app.enableCors({
