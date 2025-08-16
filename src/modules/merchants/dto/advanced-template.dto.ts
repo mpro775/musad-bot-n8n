@@ -13,6 +13,7 @@ export class AdvancedTemplateDto {
   @MaxLength(5000)
   template?: string;
 
+  
   @Prop({ default: Date.now })
   updatedAt: Date;
 

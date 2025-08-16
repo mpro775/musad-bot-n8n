@@ -59,8 +59,8 @@ async function bootstrap() {
   );
 
   const config = new DocumentBuilder()
-    .setTitle('MusaidBot API')
-    .setDescription('API documentation for MusaidBot')
+    .setTitle('Kaleem API')
+    .setDescription('API documentation for Kaleem')
     .setVersion('1.0')
     .addBearerAuth(
       {
@@ -74,13 +74,13 @@ async function bootstrap() {
       'access-token',
     )
     .setContact(
-      'Smart Academy',
-      'https://smartacademy.sa',
-      'support@smartacademy.sa',
+      'Kaleem Team',
+      'https://kaleem-ai.com',
+      'support@kaleem-ai.com',
     )
     .setLicense('MIT', 'https://opensource.org/licenses/MIT')
-    .addServer('http://localhost:5000', 'Local environment')
-    .addServer('https://api.musaidbot.com', 'Production')
+    .addServer('http://localhost:3000', 'Local environment')
+    .addServer('https://api.kaleem-ai.com', 'Production')
     .build();
   const document = SwaggerModule.createDocument(app, config, {
     deepScanRoutes: true, // يضمن اكتشاف جميع المسارات
@@ -91,8 +91,8 @@ async function bootstrap() {
       docExpansion: 'list', // يفتح التصنيفات تلقائياً
       displayRequestDuration: true,
     },
-    customSiteTitle: 'MusaidBot API Docs',
-    customfavIcon: 'https://smartacademy.sa/favicon.ico',
+    customSiteTitle: 'Kaleem API Docs',
+    customfavIcon: 'https://kaleem-ai.com/favicon.ico',
     customCssUrl:
       'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
   });
@@ -100,7 +100,7 @@ async function bootstrap() {
   // مسار مخصص لتخفيف الضغط على WhatsApp
   app.use('/api/whatsapp/reply', rateLimit({ windowMs: 1000, max: 20 }));
 
-  const port = process.env.PORT || 5000;
+  const port = process.env.PORT || 3000;
   await app.listen(port);
   console.log(`🚀 Backend running on http://localhost:${port}/api`);
 }

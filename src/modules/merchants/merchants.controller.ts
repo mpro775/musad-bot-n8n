@@ -91,12 +91,19 @@ export class MerchantsController {
         webhookInfo,
       }));
   }
-  @Get(':id/checklist')
+
+  @Get('actions/checklist')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'جلب قائمة العناصر في قائمة التحقق' })
+  @ApiOkResponse({ description: 'قائمة العناصر في قائمة التحقق' })
+  @ApiForbiddenResponse({ description: 'غير مخوّل' })
+  @ApiUnauthorizedResponse({ description: 'التوثيق مطلوب' })
   async getChecklist(
     @Param('id') merchantId: string,
   ): Promise<ChecklistGroup[]> {
     return this.checklist.getChecklist(merchantId);
   }
+
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'جلب بيانات تاجر واحد حسب المعرّف' })
@@ -203,26 +210,46 @@ export class MerchantsController {
       ...result,
     }));
   }
+
   @Post(':id/whatsapp/start-session')
+  @ApiOperation({ summary: 'بدء جلسة واتساب للتاجر' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @ApiOkResponse({ description: 'تم بدء الجلسة بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   async startSession(@Param('id') id: string) {
     return this.svc.connectWhatsapp(id);
   }
 
   // جلب حالة الاتصال
   @Get(':id/whatsapp/status')
+  @ApiOperation({ summary: 'جلب حالة الاتصال' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @ApiOkResponse({ description: 'تم بدء الجلسة بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   async getStatus(@Param('id') id: string) {
     return this.svc.getWhatsappStatus(id);
   }
 
   // إرسال رسالة (اختياري للاختبار/التجربة)
   @Post(':id/whatsapp/send-message')
+  @ApiOperation({ summary: 'إرسال رسالة واتساب للتاجر' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @ApiBody({ schema: { example: { to: '123456789', text: 'Hello' } } })
+  @ApiOkResponse({ description: 'تم إرسال الرسالة بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   async sendMsg(
     @Param('id') id: string,
     @Body() body: { to: string; text: string },
   ) {
     return this.svc.sendWhatsappMessage(id, body.to, body.text);
   }
+
   @Post(':id/checklist/:itemKey/skip')
+  @ApiOperation({ summary: 'تخطي عنصر في قائمة التحقق' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @ApiParam({ name: 'itemKey', description: 'معرّف العنصر' })
+  @ApiOkResponse({ description: 'تم تخطي العنصر بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   async skipChecklistItem(
     @Param('id') merchantId: string,
     @Param('itemKey') itemKey: string,
@@ -247,25 +274,51 @@ export class MerchantsController {
       skippedChecklistItems: merchant.skippedChecklistItems,
     };
   }
+
   @Patch(':id/onboarding/basic')
+  @ApiOperation({ summary: 'حفظ معلومات onboarding الأساسية' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @ApiBody({ type: OnboardingBasicDto })
+  @ApiOkResponse({ description: 'تم حفظ معلومات onboarding بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   saveBasic(@Param('id') id: string, @Body() dto: OnboardingBasicDto) {
     return this.svc.saveBasicInfo(id, dto);
   }
+
   @Post(':id/workflow/ensure')
+  @ApiOperation({ summary: 'إنشاء أو تحديث workflow للتاجر' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @ApiOkResponse({ description: 'تم إنشاء أو تحديث workflow بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   async ensureWorkflow(@Param('id') id: string) {
     const wfId = await this.svc.ensureWorkflow(id);
     return { workflowId: wfId };
   }
+
   @Public()
   @Get(':id/ai/store-context')
+  @ApiOperation({ summary: 'جلب سياق المتجر' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @ApiOkResponse({ description: 'تم جلب سياق المتجر بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   async aiStoreContext(@Param('id') id: string) {
     return this.svc.getStoreContext(id);
   }
 
+  @ApiOperation({ summary: 'تعيين مصدر المنتج' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @ApiBody({ type: UpdateProductSourceDto })
+  @ApiOkResponse({ description: 'تم تعيين مصدر المنتج بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   @Patch(':id/product-source')
   setSource(@Param('id') id: string, @Body() dto: UpdateProductSourceDto) {
     return this.svc.setProductSource(id, dto.source);
   }
+
+  @ApiOperation({ summary: 'تحديث إعدادات الاتصال' })
+  @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
+  @ApiOkResponse({ description: 'تم تحديث إعدادات الاتصال بنجاح' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   @Patch(':merchantId/leads-settings')
   @Public()
   updateLeadsSettings(

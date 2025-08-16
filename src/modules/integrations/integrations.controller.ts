@@ -5,6 +5,12 @@ import {
   UseGuards,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -35,6 +41,8 @@ const toIso = (v: unknown): string | null => {
   return typeof maybe === 'string' ? maybe : null;
 };
 
+@ApiTags('التكاملات')
+@ApiBearerAuth()
 @Controller('integrations')
 @UseGuards(JwtAuthGuard)
 export class IntegrationsController {
@@ -45,6 +53,9 @@ export class IntegrationsController {
   ) {}
 
   @Get('status')
+  @ApiOperation({ summary: 'الحصول على حالة التكاملات', description: 'استرجاع حالة التكاملات المتاحة (سلة، زد) للتاجر' })
+  @ApiResponse({ status: 200, description: 'تم استرجاع حالة التكاملات بنجاح' })
+  @ApiResponse({ status: 404, description: 'لم يتم العثور على التاجر' })
   async status(@Req() req): Promise<StatusResp> {
     const user = req.user as { userId: string; merchantId?: string };
     const byId = user?.merchantId && Types.ObjectId.isValid(user.merchantId);

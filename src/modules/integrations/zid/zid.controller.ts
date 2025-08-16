@@ -12,6 +12,15 @@ import {
   HttpCode,
   Logger,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiQuery,
+  ApiParam,
+  ApiBearerAuth,
+  ApiBody,
+} from '@nestjs/swagger';
 import { Response, Request } from 'express';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { Public } from '../../../common/decorators/public.decorator';
@@ -30,6 +39,8 @@ interface ZidWebhookPayload {
   // لو زد يمرر store_id داخل data:
   // data?: { store_id?: string; id?: string; [k: string]: unknown };
 }
+@ApiTags('تكامل زد')
+@ApiBearerAuth()
 @Controller('integrations/zid')
 export class ZidController {
   private readonly logger = new Logger(ZidController.name);
@@ -41,6 +52,9 @@ export class ZidController {
 
   @UseGuards(JwtAuthGuard)
   @Get('connect')
+  @ApiOperation({ summary: 'اتصال بحساب زد', description: 'توجيه المستخدم إلى صفحة تفويض زد' })
+  @ApiResponse({ status: 302, description: 'يتم توجيه المستخدم إلى صفحة تفويض زد' })
+  @ApiResponse({ status: 400, description: 'خطأ في بيانات الطلب' })
   async connect(@Req() req: Request, @Res() res: Response) {
     // استخرج userId من JWT (حسب تنفيذك للـ guard)
     const user: any = (req as any).user;
@@ -60,6 +74,11 @@ export class ZidController {
 
   @Public()
   @Get('callback')
+  @ApiOperation({ summary: 'رد الاتصال من زد', description: 'معالجة رد الاتصال بعد تفويض حساب زد' })
+  @ApiQuery({ name: 'code', description: 'رمز التخويل من زد', required: true })
+  @ApiQuery({ name: 'state', description: 'حالة الطلب المشفرة', required: true })
+  @ApiResponse({ status: 302, description: 'يتم توجيه المستخدم إلى لوحة التحكم مع نتيجة الاتصال' })
+  @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
   async callback(
     @Query('code') code: string,
     @Query('state') state: string,
@@ -90,6 +109,19 @@ export class ZidController {
   @Public()
   @Post('webhook')
   @HttpCode(200)
+  @ApiOperation({ summary: 'ويبهوك زد', description: 'استقبال الأحداث من منصة زد' })
+  @ApiBody({ 
+    description: 'بيانات الحدث من زد',
+    schema: {
+      type: 'object',
+      properties: {
+        event: { type: 'string', description: 'نوع الحدث' },
+        data: { type: 'object', description: 'بيانات الحدث' }
+      }
+    }
+  })
+  @ApiResponse({ status: 200, description: 'تم استلام الحدث بنجاح' })
+  @ApiResponse({ status: 500, description: 'خطأ في معالجة الحدث' })
   webhook(
     @Body() body: ZidWebhookPayload,
     @Headers() headers: Record<string, string>,

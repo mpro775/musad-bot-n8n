@@ -3,6 +3,7 @@
 import { IsEnum, IsOptional, IsString, IsBoolean } from 'class-validator';
 
 export class ProductSetupConfigDto {
+  
   @IsEnum(['traditional', 'ecommerce'])
   storeType: 'traditional' | 'ecommerce';
 

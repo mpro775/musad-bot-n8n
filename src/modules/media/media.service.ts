@@ -121,4 +121,5 @@ export class MediaService {
     }
     return '[لا يمكن قراءة الملف]';
   }
+  
 }

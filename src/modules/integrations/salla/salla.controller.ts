@@ -12,6 +12,14 @@ import {
   HttpCode,
   Logger,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiQuery,
+  ApiBearerAuth,
+  ApiBody,
+} from '@nestjs/swagger';
 import { Response, Request } from 'express';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { Public } from '../../../common/decorators/public.decorator';
@@ -26,6 +34,8 @@ import * as jwt from 'jsonwebtoken';
 import { ConfigService } from '@nestjs/config';
 import { Types } from 'mongoose';
 
+@ApiTags('تكامل سلة')
+@ApiBearerAuth()
 @Controller('integrations/salla')
 export class SallaController {
   private readonly logger = new Logger(SallaController.name);
@@ -38,6 +48,9 @@ export class SallaController {
 
   @UseGuards(JwtAuthGuard)
   @Get('connect')
+  @ApiOperation({ summary: 'اتصال بحساب سلة', description: 'توجيه المستخدم إلى صفحة تفويض سلة' })
+  @ApiResponse({ status: 302, description: 'يتم توجيه المستخدم إلى صفحة تفويض سلة' })
+  @ApiResponse({ status: 400, description: 'خطأ في بيانات الطلب' })
   async connect(@Req() req: Request, @Res() res: Response) {
     const user: any = (req as any).user;
     const merchant = await this.merchantModel
@@ -55,6 +68,11 @@ export class SallaController {
 
   @Public()
   @Get('callback')
+  @ApiOperation({ summary: 'رد الاتصال من سلة', description: 'معالجة رد الاتصال بعد تفويض حساب سلة' })
+  @ApiQuery({ name: 'code', description: 'رمز التخويل من سلة', required: true })
+  @ApiQuery({ name: 'state', description: 'حالة الطلب المشفرة', required: true })
+  @ApiResponse({ status: 302, description: 'يتم توجيه المستخدم إلى لوحة التحكم مع نتيجة الاتصال' })
+  @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
   async callback(
     @Query('code') code: string,
     @Query('state') state: string,
@@ -86,6 +104,19 @@ export class SallaController {
   @Public()
   @Post('webhook')
   @HttpCode(200)
+  @ApiOperation({ summary: 'ويبهوك سلة', description: 'استقبال الأحداث من منصة سلة' })
+  @ApiBody({ 
+    description: 'بيانات الحدث من سلة',
+    schema: {
+      type: 'object',
+      properties: {
+        event: { type: 'string', description: 'نوع الحدث' },
+        data: { type: 'object', description: 'بيانات الحدث' }
+      }
+    }
+  })
+  @ApiResponse({ status: 200, description: 'تم استلام الحدث بنجاح' })
+  @ApiResponse({ status: 500, description: 'خطأ في معالجة الحدث' })
   webhook(
     @Body() body: any,
     @Headers() headers: Record<string, any>,

@@ -1,19 +1,42 @@
 import { IsEnum, IsString, Matches } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 import { WeekDay } from '../schemas/working-hours.schema';
 
+/**
+ * ساعات العمل اليومية للتاجر
+ * @description يحدد ساعات العمل ليوم معين من الأسبوع
+ */
 export class WorkingHourDto {
-  @IsEnum(WeekDay)
+  @ApiProperty({
+    description: 'يوم الأسبوع',
+    enum: WeekDay,
+    example: 'Sunday',
+    required: true
+  })
+  @IsEnum(WeekDay, { message: 'يجب تحديد يوم أسبوع صالح' })
   day: WeekDay;
 
-  @IsString()
+  @ApiProperty({
+    description: 'وقت الفتح (بتنسيق HH:mm)',
+    example: '09:00',
+    pattern: '^\\d{2}:\\d{2}$',
+    required: true
+  })
+  @IsString({ message: 'يجب أن يكون وقت الفتح نصيًا' })
   @Matches(/^\d{2}:\d{2}$/, {
-    message: 'openTime must be in HH:mm format',
+    message: 'يجب أن يكون وقت الفتح بتنسيق HH:mm',
   })
   openTime: string;
 
-  @IsString()
+  @ApiProperty({
+    description: 'وقت الإغلاق (بتنسيق HH:mm)',
+    example: '17:00',
+    pattern: '^\\d{2}:\\d{2}$',
+    required: true
+  })
+  @IsString({ message: 'يجب أن يكون وقت الإغلاق نصيًا' })
   @Matches(/^\d{2}:\d{2}$/, {
-    message: 'closeTime must be in HH:mm format',
+    message: 'يجب أن يكون وقت الإغلاق بتنسيق HH:mm',
   })
   closeTime: string;
 }

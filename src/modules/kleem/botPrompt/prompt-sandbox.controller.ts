@@ -4,7 +4,19 @@ import {
   Controller,
   Post,
   UseGuards,
+  HttpStatus,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiBody,
+  ApiCreatedResponse,
+  ApiBadRequestResponse,
+  ApiForbiddenResponse,
+  ApiInternalServerErrorResponse,
+} from '@nestjs/swagger';
 import axios from 'axios';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
@@ -25,6 +37,8 @@ function renderPrompt(tpl: string, vars: Record<string, string>) {
 }
 
 @Controller('admin/kleem/prompts')
+@ApiTags('كليم - ساندبوكس البرومبت')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 export class PromptSandboxController {
@@ -43,6 +57,75 @@ export class PromptSandboxController {
   ) {}
 
   @Post('sandbox')
+  @ApiOperation({
+    summary: 'اختبار نموذج البرومبت',
+    description: 'إرسال رسالة إلى نموذج البرومبت والحصول على الرد مع معلومات إضافية'
+  })
+  @ApiBody({ type: SandboxDto })
+  @ApiCreatedResponse({
+    description: 'تم معالجة الطلب بنجاح',
+    schema: {
+      type: 'object',
+      properties: {
+        systemPrompt: { type: 'string', description: 'نص البرومبت النهائي بعد استبدال المتغيرات' },
+        knowledge: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              question: { type: 'string' },
+              answer: { type: 'string' },
+              score: { type: 'number' }
+            }
+          },
+          description: 'المعرفة المسترجعة من الأسئلة الشائعة'
+        },
+        highIntent: { type: 'string', description: 'النية المستخلصة من النص' },
+        ctaAllowed: { type: 'boolean', description: 'هل مسموح بعرض دعوة للعمل' },
+        result: {
+          type: 'object',
+          properties: {
+            raw: { type: 'string', description: 'الرد الخام من النموذج' },
+            final: { type: 'string', description: 'الرد النهائي بعد التعديلات' },
+            latencyMs: { type: 'number', description: 'زمن الاستجابة بالمللي ثانية' }
+          }
+        }
+      }
+    }
+  })
+  @ApiBadRequestResponse({
+    description: 'طلب غير صالح - النص مطلوب',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: { type: 'string', example: 'text is required' },
+        error: { type: 'string', example: 'Bad Request' }
+      }
+    }
+  })
+  @ApiForbiddenResponse({
+    description: 'غير مصرح - يجب أن تكون مسؤولاً',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 403 },
+        message: { type: 'string', example: 'Forbidden resource' },
+        error: { type: 'string', example: 'Forbidden' }
+      }
+    }
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'خطأ داخلي في الخادم',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 500 },
+        message: { type: 'string', example: 'حدث خطأ غير متوقع' },
+        error: { type: 'string', example: 'Internal Server Error' }
+      }
+    }
+  })
   async sandbox(@Body() body: SandboxDto) {
     const text = body.text?.trim();
     if (!text) throw new BadRequestException('text is required');

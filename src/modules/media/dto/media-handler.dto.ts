@@ -1,5 +1,6 @@
 // src/media/dto/media-handler.dto.ts
 import { IsString, IsNotEmpty, IsEnum, IsOptional } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum MediaType {
   TEXT = 'text',
@@ -8,26 +9,63 @@ export enum MediaType {
   PHOTO = 'photo',
   IMAGE = 'image',
   DOCUMENT = 'document',
-  PDF = 'pdf',
+  PDF = 'pdf'
 }
 
+const MediaTypeLabels = {
+  [MediaType.TEXT]: 'نص عادي',
+  [MediaType.VOICE]: 'رسالة صوتية',
+  [MediaType.AUDIO]: 'ملف صوتي',
+  [MediaType.PHOTO]: 'صورة فوتوغرافية',
+  [MediaType.IMAGE]: 'صورة',
+  [MediaType.DOCUMENT]: 'مستند',
+  [MediaType.PDF]: 'ملف PDF'
+} as const;
+
 export class MediaHandlerDto {
-  @IsEnum(MediaType)
+  @ApiProperty({
+    description: 'نوع الوسائط',
+    enum: MediaType,
+    enumName: 'MediaType',
+    example: MediaType.IMAGE,
+    examples: Object.entries(MediaTypeLabels).map(([value, description]) => ({
+      value,
+      description
+    }))
+  })
+  @IsEnum(MediaType, { message: 'نوع الوسائط غير صالح' })
   type: MediaType;
 
-  @IsString()
-  @IsNotEmpty()
+  @ApiProperty({
+    description: 'رابط الملف',
+    example: 'https://example.com/files/example.jpg'
+  })
+  @IsString({ message: 'يجب أن يكون رابط الملف نصيًا' })
+  @IsNotEmpty({ message: 'رابط الملف مطلوب' })
   fileUrl: string;
 
+  @ApiPropertyOptional({
+    description: 'معرف الجلسة (اختياري)',
+    example: 'session_123456789'
+  })
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'يجب أن يكون معرف الجلسة نصيًا' })
   sessionId?: string;
 
+  @ApiPropertyOptional({
+    description: 'قناة الاتصال',
+    example: 'whatsapp',
+    enum: ['whatsapp', 'telegram', 'webchat', 'other']
+  })
   @IsOptional()
-  @IsString()
-  channel?: string; // whatsapp, telegram, webchat, etc.
+  @IsString({ message: 'يجب أن تكون القناة نصية' })
+  channel?: string;
 
+  @ApiPropertyOptional({
+    description: 'نوع MIME للملف (اختياري)',
+    example: 'image/jpeg'
+  })
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'يجب أن يكون نوع MIME نصيًا' })
   mimeType?: string;
 }

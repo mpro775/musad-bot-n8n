@@ -29,7 +29,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 
-@ApiTags('Analytics')
+@ApiTags('التحليلات')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('analytics')
@@ -37,25 +37,25 @@ export class AnalyticsController {
   constructor(private readonly analytics: AnalyticsService) {}
 
   /**
-   * Get analytics overview for the merchant
-   * Returns comprehensive analytics data including sessions, messages, keywords, products, and channels
+   * الحصول على نظرة عامة على التحليلات للتاجر
+   * يُرجع بيانات تحليلات شاملة تتضمن الجلسات، الرسائل، الكلمات المفتاحية، المنتجات، والقنوات
    */
   @Get('overview')
   @ApiOperation({
-    summary: 'Get analytics overview',
+    summary: 'الحصول على نظرة عامة على التحليلات',
     description:
-      'Retrieves comprehensive analytics overview for the authenticated merchant including sessions, messages, top keywords, top products, and channel breakdown',
+      'استرداد نظرة عامة شاملة على التحليلات للتاجر الموثّق بما في ذلك الجلسات، الرسائل، أبرز الكلمات المفتاحية، أبرز المنتجات، وتوزيع القنوات',
   })
   @ApiQuery({
     name: 'period',
-    description: 'Time period for analytics data',
+    description: 'الفترة الزمنية لبيانات التحليلات',
     required: false,
     enum: ['week', 'month', 'quarter'],
     example: 'week',
   })
   @ApiResponse({
     status: 200,
-    description: 'Analytics overview retrieved successfully',
+    description: 'تم استرداد النظرة العامة على التحليلات بنجاح',
     schema: {
       type: 'object',
       properties: {
@@ -109,9 +109,9 @@ export class AnalyticsController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
+    description: 'غير مصرح به - رمز JWT غير صالح أو مفقود',
   })
-  @ApiResponse({ status: 500, description: 'Internal server error' })
+  @ApiResponse({ status: 500, description: 'خطأ داخلي في الخادم' })
   async overview(
     @Req() req: Request & { user: { merchantId: string } },
     @Query('period') period: 'week' | 'month' | 'quarter' = 'week',
@@ -122,32 +122,32 @@ export class AnalyticsController {
   }
 
   /**
-   * Get top keywords used by customers
-   * Returns the most frequently used keywords in customer interactions
+   * الحصول على أبرز الكلمات المفتاحية المستخدمة من قبل العملاء
+   * يُرجع الكلمات المفتاحية الأكثر استخدامًا في تفاعلات العملاء
    */
   @Get('top-keywords')
   @ApiOperation({
-    summary: 'Get top keywords',
+    summary: 'الحصول على أبرز الكلمات المفتاحية',
     description:
-      'Retrieves the most frequently used keywords in customer interactions for the authenticated merchant',
+      'استرداد الكلمات المفتاحية الأكثر استخدامًا في تفاعلات العملاء للتاجر الموثّق',
   })
   @ApiQuery({
     name: 'period',
-    description: 'Time period for keyword analysis',
+    description: 'الفترة الزمنية لتحليل الكلمات المفتاحية',
     required: false,
     enum: ['week', 'month', 'quarter'],
     example: 'week',
   })
   @ApiQuery({
     name: 'limit',
-    description: 'Maximum number of keywords to return',
+    description: 'العدد الأقصى للكلمات المفتاحية المُراد إرجاعها',
     required: false,
     type: Number,
     example: 10,
   })
   @ApiResponse({
     status: 200,
-    description: 'Top keywords retrieved successfully',
+    description: 'تم استرداد أبرز الكلمات المفتاحية بنجاح',
     schema: {
       type: 'array',
       items: {
@@ -161,9 +161,9 @@ export class AnalyticsController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
+    description: 'غير مصرح به - رمز JWT غير صالح أو مفقود',
   })
-  @ApiResponse({ status: 500, description: 'Internal server error' })
+  @ApiResponse({ status: 500, description: 'خطأ داخلي في الخادم' })
   async topKeywords(
     @Req() req: Request & { user: { merchantId: string } },
     @Query('period') period: 'week' | 'month' | 'quarter' = 'week',
@@ -174,32 +174,32 @@ export class AnalyticsController {
     return kws;
   }
   /**
-   * Get messages timeline data
-   * Returns message counts grouped by day or hour for timeline visualization
+   * الحصول على بيانات الخط الزمني للرسائل
+   * يُرجع عدد الرسائل مجمّعة حسب اليوم أو الساعة لعرضها على الخط الزمني
    */
   @Get('messages-timeline')
   @ApiOperation({
-    summary: 'Get messages timeline',
+    summary: 'الحصول على الخط الزمني للرسائل',
     description:
-      'Retrieves message counts grouped by day or hour for timeline visualization',
+      'استرداد عدد الرسائل مجمّعة حسب اليوم أو الساعة لعرضها على الخط الزمني',
   })
   @ApiQuery({
     name: 'period',
-    description: 'Time period for timeline data',
+    description: 'الفترة الزمنية لبيانات الخط الزمني',
     required: false,
     enum: ['week', 'month', 'quarter'],
     example: 'week',
   })
   @ApiQuery({
     name: 'groupBy',
-    description: 'Grouping interval for timeline data',
+    description: 'فاصل التجميع لبيانات الخط الزمني',
     required: false,
     enum: ['day', 'hour'],
     example: 'day',
   })
   @ApiResponse({
     status: 200,
-    description: 'Messages timeline retrieved successfully',
+    description: 'تم استرداد الخط الزمني للرسائل بنجاح',
     schema: {
       type: 'array',
       items: {
@@ -213,9 +213,9 @@ export class AnalyticsController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
+    description: 'غير مصرح به - رمز JWT غير صالح أو مفقود',
   })
-  @ApiResponse({ status: 500, description: 'Internal server error' })
+  @ApiResponse({ status: 500, description: 'خطأ داخلي في الخادم' })
   async messagesTimeline(
     @Req() req: Request & { user: { merchantId: string } },
     @Query('period') period: 'week' | 'month' | 'quarter' = 'week',
@@ -229,18 +229,18 @@ export class AnalyticsController {
   }
 
   /**
-   * Get total products count
-   * Returns the total number of products for the merchant
+   * الحصول على العدد الإجمالي للمنتجات
+   * يُرجع العدد الإجمالي لمنتجات التاجر
    */
   @Get('products-count')
   @ApiOperation({
-    summary: 'Get products count',
+    summary: 'الحصول على عدد المنتجات',
     description:
-      'Returns the total number of products for the authenticated merchant',
+      'يُرجع العدد الإجمالي للمنتجات للتاجر الموثّق',
   })
   @ApiResponse({
     status: 200,
-    description: 'Products count retrieved successfully',
+    description: 'تم استرداد عدد المنتجات بنجاح',
     schema: {
       type: 'object',
       properties: {
@@ -250,31 +250,31 @@ export class AnalyticsController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
+    description: 'غير مصرح به - رمز JWT غير صالح أو مفقود',
   })
-  @ApiResponse({ status: 500, description: 'Internal server error' })
+  @ApiResponse({ status: 500, description: 'خطأ داخلي في الخادم' })
   async productsCount(@Req() req: Request & { user: { merchantId: string } }) {
     return {
       total: await this.analytics.getProductsCount(req.user.merchantId),
     };
   }
   /**
-   * Webhook endpoint for analytics events
-   * Public endpoint to receive analytics data from external sources
+   * نقطة نهاية Webhook لأحداث التحليلات
+   * نقطة نهاية عامة لاستقبال بيانات التحليلات من مصادر خارجية
    */
   @Post('webhook')
   @Public()
   @ApiOperation({
-    summary: 'Analytics webhook',
+    summary: 'Webhook للتحليلات',
     description:
-      'Public webhook endpoint to receive analytics data from external sources and services',
+      'نقطة نهاية webhook عامة لاستقبال بيانات التحليلات من مصادر وخدمات خارجية',
   })
   @ApiBody({
-    description: 'Analytics event data',
+    description: 'بيانات حدث التحليلات',
     type: CreateMissingResponseDto,
     examples: {
       example1: {
-        summary: 'Example webhook payload',
+        summary: 'مثال على حمولة webhook',
         value: {
           event: 'product_view',
           data: {
@@ -289,7 +289,7 @@ export class AnalyticsController {
   })
   @ApiResponse({
     status: 201,
-    description: 'Webhook data processed successfully',
+    description: 'تمت معالجة بيانات Webhook بنجاح',
     schema: {
       type: 'object',
       properties: {
@@ -300,40 +300,40 @@ export class AnalyticsController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Bad request - Invalid payload format',
+    description: 'طلب غير صالح - تنسيق الحمولة غير صالح',
   })
-  @ApiResponse({ status: 500, description: 'Internal server error' })
+  @ApiResponse({ status: 500, description: 'خطأ داخلي في الخادم' })
   async webhook(@Body() body: CreateMissingResponseDto) {
     const doc = await this.analytics.createFromWebhook(body);
     return { success: true, id: doc._id };
   }
   /**
-   * Get top products by views/interactions
-   * Returns the most popular products based on customer interactions
+   * الحصول على أبرز المنتجات حسب المشاهدات/التفاعلات
+   * يُرجع المنتجات الأكثر شيوعًا بناءً على تفاعلات العملاء
    */
   @Get('top-products')
   @ApiOperation({
-    summary: 'Get top products',
+    summary: 'الحصول على أبرز المنتجات',
     description:
-      'Retrieves the most popular products based on customer interactions and views for the authenticated merchant',
+      'استرداد المنتجات الأكثر شيوعًا بناءً على تفاعلات العملاء ومشاهداتهم للتاجر الموثّق',
   })
   @ApiQuery({
     name: 'period',
-    description: 'Time period for product analysis',
+    description: 'الفترة الزمنية لتحليل المنتجات',
     required: false,
     enum: ['week', 'month', 'quarter'],
     example: 'week',
   })
   @ApiQuery({
     name: 'limit',
-    description: 'Maximum number of products to return',
+    description: 'العدد الأقصى للمنتجات المُراد إرجاعها',
     required: false,
     type: Number,
     example: 5,
   })
   @ApiResponse({
     status: 200,
-    description: 'Top products retrieved successfully',
+    description: 'تم استرداد أبرز المنتجات بنجاح',
     schema: {
       type: 'array',
       items: {
@@ -350,9 +350,9 @@ export class AnalyticsController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
+    description: 'غير مصرح به - رمز JWT غير صالح أو مفقود',
   })
-  @ApiResponse({ status: 500, description: 'Internal server error' })
+  @ApiResponse({ status: 500, description: 'خطأ داخلي في الخادم' })
   async topProducts(
     @Req() req: Request & { user: { merchantId: string } },
     @Query('period') period: 'week' | 'month' | 'quarter' = 'week',

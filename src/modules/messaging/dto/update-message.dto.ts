@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
   IsEnum,
@@ -7,29 +7,38 @@ import {
   IsString,
   ValidateNested,
   ArrayMinSize,
+  IsDate,
+  IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-class MessageContentDto {
+export class MessageContentDto {
   @ApiProperty({
-    description: 'دور المرسل',
+    description: 'دور المرسل في المحادثة',
     enum: ['customer', 'bot', 'agent'],
     example: 'bot',
   })
+  @IsString()
+  @IsNotEmpty()
   @IsEnum(['customer', 'bot', 'agent'])
   role: 'customer' | 'bot' | 'agent';
 
   @ApiProperty({
     description: 'نص الرسالة',
-    example: 'تم تحديث الرد بناءً على توفر المنتج.',
+    example: 'مرحباً، شكراً لتواصلكم معنا. كيف يمكنني مساعدتك اليوم؟',
   })
   @IsString()
+  @IsNotEmpty()
   text: string;
 
-  @ApiProperty({
-    description: 'بيانات إضافية (اختياري)',
-    required: false,
+  @ApiPropertyOptional({
+    description: 'بيانات إضافية للرسالة',
     type: Object,
+    example: { 
+      isRead: true, 
+      attachment: 'invoice.pdf',
+      customField: 'قيمة مخصصة'
+    },
   })
   @IsOptional()
   @IsObject()
@@ -37,34 +46,60 @@ class MessageContentDto {
 }
 
 export class UpdateMessageDto {
-  @ApiProperty({
-    description: 'تعديل القناة (اختياري)',
-    example: 'telegram',
+  @ApiPropertyOptional({
+    description: 'تحديث قناة التواصل',
     enum: ['whatsapp', 'telegram', 'webchat'],
-    required: false,
+    example: 'telegram',
   })
   @IsOptional()
+  @IsString()
   @IsEnum(['whatsapp', 'telegram', 'webchat'])
   channel?: string;
 
-  @ApiProperty({
-    description: 'تعديل أو استبدال metadata للجلسة بالكامل (اختياري)',
+  @ApiPropertyOptional({
+    description: 'تحديث البيانات الوصفية للجلسة',
     type: Object,
-    required: false,
+    example: { 
+      status: 'in_progress',
+      priority: 'high',
+      assignedTo: 'agent123',
+      tags: ['متابعة', 'طلب_هام']
+    },
   })
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
 
-  @ApiProperty({
-    description: 'استبدال كامل لمصفوفة الرسائل (اختياري وخطير)',
+  @ApiPropertyOptional({
+    description: 'استبدال كامل لمحتوى الرسائل في الجلسة',
     type: [MessageContentDto],
-    required: false,
+    example: [
+      {
+        role: 'customer',
+        text: 'مرحباً، أريد تحديث طلبي',
+        metadata: { orderId: '12345' }
+      },
+      {
+        role: 'bot',
+        text: 'بالطبع، سأساعدك في تحديث طلبك',
+        metadata: { responseTime: '2s' }
+      }
+    ],
   })
   @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
+  @ArrayMinSize(1, { message: 'يجب أن تحتوي المصفوفة على رسالة واحدة على الأقل' })
   @ValidateNested({ each: true })
   @Type(() => MessageContentDto)
   messages?: MessageContentDto[];
+
+  @ApiPropertyOptional({
+    description: 'تحديث تاريخ انتهاء الجلسة',
+    type: Date,
+    example: '2025-12-31T23:59:59.999Z',
+  })
+  @IsOptional()
+  @IsDate()
+  @Type(() => Date)
+  expiresAt?: Date;
 }

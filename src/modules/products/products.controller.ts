@@ -6,37 +6,40 @@ import {
   Delete,
   Param,
   Body,
-  UseGuards,
   Request,
-  ForbiddenException,
-  HttpStatus,
-  HttpCode,
+  Query,
+  UseGuards,
   UseInterceptors,
   ClassSerializerInterceptor,
+  HttpStatus,
+  HttpCode,
+  ForbiddenException,
   BadRequestException,
-  Query,
+  InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
-import { plainToInstance } from 'class-transformer';
+import { 
+  ApiTags, 
+  ApiBearerAuth, 
+  ApiOperation, 
+  ApiParam, 
+  ApiBody, 
+  ApiOkResponse, 
+  ApiCreatedResponse,
+  ApiResponse,
+  ApiUnauthorizedResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+} from '@nestjs/swagger';
 import { Types } from 'mongoose';
+import { plainToInstance } from 'class-transformer';
 import { ProductsService } from './products.service';
 import { CreateProductDto, ProductSource } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
-import {
-  ApiTags,
-  ApiBearerAuth,
-  ApiOperation,
-  ApiParam,
-  ApiBody,
-  ApiCreatedResponse,
-  ApiOkResponse,
-  ApiUnauthorizedResponse,
-  ApiForbiddenResponse,
-  ApiNotFoundResponse,
-} from '@nestjs/swagger';
-import { Public } from 'src/common/decorators/public.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { ProductSetupConfigDto } from './dto/product-setup-config.dto';
 import { ProductSetupConfigService } from './product-setup-config.service';
 
@@ -275,14 +278,69 @@ export class ProductsController {
 
   @Post(':merchantId/setup-products')
   @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'إعداد تكوين المنتجات للتاجر',
+    description: 'يسمح بإعداد أو تحديث تكوين المنتجات للتاجر',
+  })
+  @ApiParam({
+    name: 'merchantId',
+    required: true,
+    description: 'معرف التاجر',
+    example: '60d21b4667d0d8992e610c85',
+  })
+  @ApiBody({
+    type: ProductSetupConfigDto,
+    description: 'إعدادات تكوين المنتجات',
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: 'تم حفظ إعدادات المنتجات بنجاح',
+    type: ProductSetupConfigDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'بيانات الطلب غير صالحة',
+  })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: 'غير مصرح به',
+  })
+  @ApiResponse({
+    status: HttpStatus.INTERNAL_SERVER_ERROR,
+    description: 'حدث خطأ في الخادم',
+  })
   async setupProducts(
     @Param('merchantId') merchantId: string,
     @Body() config: ProductSetupConfigDto,
-    @Request() req,
+    @Request() req: RequestWithUser,
   ) {
-    // صلاحية: يجب أن يكون هو نفس التاجر
-    if (merchantId !== req.user.merchantId) throw new Error('Unauthorized');
-    return this.productSetupConfigService.saveOrUpdate(merchantId, config);
+    // التحقق من أن المستخدم هو صاحب المتجر
+    if (merchantId !== req.user.merchantId) {
+      throw new ForbiddenException('غير مصرح لك بتعديل إعدادات هذا التاجر');
+    }
+
+    // التحقق من صحة معرف التاجر
+    if (!Types.ObjectId.isValid(merchantId)) {
+      throw new BadRequestException('معرف التاجر غير صالح');
+    }
+
+    try {
+      const result = await this.productSetupConfigService.saveOrUpdate(
+        merchantId,
+        config,
+      );
+      return {
+        success: true,
+        message: 'تم حفظ إعدادات المنتجات بنجاح',
+        data: result,
+      };
+    } catch (error) {
+      throw new InternalServerErrorException({
+        success: false,
+        message: 'فشل في حفظ إعدادات المنتجات',
+        error: error.message,
+      });
+    }
   }
 
   @Get(':merchantId/setup-products')

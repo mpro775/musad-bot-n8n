@@ -35,6 +35,7 @@ import { EvolutionService } from '../integrations/evolution.service';
 import { ConfigService } from '@nestjs/config';
 import { ChatGateway } from '../chat/chat.gateway';
 import { OutboxService } from 'src/common/outbox/outbox.service';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 function detectOrderIntent(msg: string): {
   step: string;
   orderId?: string;
@@ -59,6 +60,8 @@ function detectOrderIntent(msg: string): {
   return { step: 'normal' };
 }
 
+@ApiTags('Webhooks')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('webhooks')
 export class WebhooksController {
@@ -74,6 +77,18 @@ export class WebhooksController {
     @InjectModel(Merchant.name)
     private readonly merchantModel: Model<MerchantDocument>,
   ) {}
+  /**
+   * إرسال رد إلى القناة المناسبة
+   * @param sessionId معرف الجلسة
+   * @param text نص الرد
+   * @param channel القناة (whatsapp, telegram, webchat)
+   * @param merchantId معرف التاجر
+   */
+  @ApiOperation({ summary: 'إرسال رد إلى القناة المناسبة' })
+  @ApiResponse({
+    status: 200,
+    description: 'تم إرسال الرد بنجاح'
+  })
   async sendReplyToChannel({ sessionId, text, channel, merchantId }) {
     const merchant = await this.merchantModel.findById(merchantId).lean();
     if (!merchant) throw new Error('Merchant not found');
@@ -100,6 +115,35 @@ export class WebhooksController {
   }
   @Public()
   @Post('incoming/:merchantId')
+  @Post(':merchantId/incoming')
+  @ApiOperation({ summary: 'معالجة الرسائل الواردة من القنوات' })
+  @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
+  @ApiBody({
+    description: 'بيانات الرسالة الواردة',
+    schema: {
+      example: {
+        message: {
+          chat: { id: '12345' },
+          text: 'مرحباً',
+          from: { id: 'user123' }
+        },
+        fileId: 'file_123',
+        fileUrl: 'https://example.com/file.jpg',
+        mimeType: 'image/jpeg'
+      }
+    }
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'تم استلام الرسالة بنجاح',
+    schema: {
+      example: {
+        success: true,
+        message: 'تم استلام الرسالة',
+        sessionId: 'session_123'
+      }
+    }
+  })
   async handleIncoming(
     @Param('merchantId') merchantId: string,
     @Body() body: any,
@@ -441,6 +485,30 @@ export class WebhooksController {
   }
   @Public()
   @Post('bot-reply/:merchantId')
+  @Post(':merchantId/bot-reply')
+  @ApiOperation({ summary: 'معالجة ردود البوت الآلية' })
+  @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
+  @ApiBody({
+    description: 'بيانات رد البوت',
+    schema: {
+      example: {
+        sessionId: 'session_123',
+        text: 'مرحباً بك في خدمة العملاء',
+        channel: 'whatsapp',
+        metadata: {}
+      }
+    }
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'تم إرسال رد البوت بنجاح',
+    schema: {
+      example: {
+        sessionId: 'session_123',
+        status: 'ok'
+      }
+    }
+  })
   async handleBotReply(
     @Param('merchantId') merchantId: string,
     @Body() body: any,
@@ -471,6 +539,30 @@ export class WebhooksController {
     return { sessionId, status: 'ok' };
   }
   @Post('agent-reply/:merchantId')
+  @Post(':merchantId/agent-reply')
+  @ApiOperation({ summary: 'معالجة ردود الموظفين' })
+  @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
+  @ApiBody({
+    description: 'بيانات رد الموظف',
+    schema: {
+      example: {
+        sessionId: 'session_123',
+        text: 'شكراً لتواصلك معنا',
+        channel: 'whatsapp',
+        agentId: 'agent_123',
+        metadata: {}
+      }
+    }
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'تم إرسال رد الموظف بنجاح',
+    schema: {
+      example: {
+        sessionId: 'session_123'
+      }
+    }
+  })
   async handleAgentReply(
     @Param('merchantId') merchantId: string,
     @Body() body: any,
