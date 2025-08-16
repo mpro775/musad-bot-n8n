@@ -77,7 +77,7 @@ export class N8nWorkflowService {
   ) {
     const keyName = 'X-N8N-API-KEY';
     const apiKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiZWExMTI3Yi0zZDg3LTQ1ODAtODlhNi00ZmZkOTU0ZTg1YWUiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzUwMjAzODk3fQ.eSJGKYsoQ3ZY4FLUF1fmuHgSM3uxTDyQAkPavpzJcnY';
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4N2M4NjU2OS01ZGFmLTQyNjYtOTVhYy04OTQxY2U1YWVhZTgiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzU1MTk0MjE3LCJleHAiOjE3NTc3MzYwMDB9.LEFrlXhDS6E1Urrst5GMy63ebz4ZaeMP7RNylkk_Rlk';
     const baseUrl = 'https://n8n.kaleem-ai.com'.replace(/\/+$/, '');
 
     this.logger.log(`▶️ [n8n.baseURL] = ${baseUrl}`);
