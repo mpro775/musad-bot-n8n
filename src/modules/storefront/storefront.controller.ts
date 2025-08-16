@@ -13,6 +13,9 @@ import { Public } from 'src/common/decorators/public.decorator';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { UpdateStorefrontDto } from './dto/update-storefront.dto';
 import { CreateStorefrontDto } from './dto/create-storefront.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+@ApiTags('Storefront')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('store')
 export class StorefrontController {

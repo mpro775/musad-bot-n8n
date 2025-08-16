@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { IoAdapter } from '@nestjs/platform-socket.io';
@@ -13,6 +13,7 @@ import { AppModule } from './app.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { HttpMetricsInterceptor } from './common/interceptors/http-metrics.interceptor';
+import { buildSwaggerConfig } from './config/swagger.config';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -27,7 +28,6 @@ async function bootstrap() {
     (globalThis as any).crypto = { randomUUID };
   }
   app.useWebSocketAdapter(new IoAdapter(app));
-  console.log('REDIS_URL:', process.env.REDIS_URL);
 
   app.use(helmet());
   app.enableCors({
@@ -58,30 +58,7 @@ async function bootstrap() {
     app.get(HttpMetricsInterceptor),
   );
 
-  const config = new DocumentBuilder()
-    .setTitle('MusaidBot API')
-    .setDescription('API documentation for MusaidBot')
-    .setVersion('1.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        name: 'Authorization',
-        description: 'Enter JWT token',
-        in: 'header',
-      },
-      'access-token',
-    )
-    .setContact(
-      'Smart Academy',
-      'https://smartacademy.sa',
-      'support@smartacademy.sa',
-    )
-    .setLicense('MIT', 'https://opensource.org/licenses/MIT')
-    .addServer('http://localhost:5000', 'Local environment')
-    .addServer('https://api.musaidbot.com', 'Production')
-    .build();
+  const config = buildSwaggerConfig();
   const document = SwaggerModule.createDocument(app, config, {
     deepScanRoutes: true, // يضمن اكتشاف جميع المسارات
   });
