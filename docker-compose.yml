@@ -257,7 +257,8 @@ services:
     restart: unless-stopped
     depends_on:
       - redis
-    # === MongoDB Exporter ===
+
+  # === MongoDB Exporter ===
   mongodb-exporter:
     image: bitnami/mongodb-exporter:0.40.0
     container_name: kaleem-mongodb-exporter
@@ -270,32 +271,33 @@ services:
     depends_on:
       - mongo
 
-    # === RabbitMQ (تفعيل الـ Prometheus plugin وفتح 15692) ===
-    rabbitmq:
-      image: rabbitmq:3.13-management
-      container_name: kaleem-rabbitmq
-      volumes:
-        - rabbitmq_data:/var/lib/rabbitmq
-        - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
-        - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
-      environment:
-        - RABBITMQ_DEFAULT_USER=kaleem
-        - RABBITMQ_DEFAULT_PASS=supersecret
-        - RABBITMQ_DEFAULT_VHOST=kleem
-      command: >
-        bash -lc "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"
+  # === RabbitMQ (تفعيل الـ Prometheus plugin وفتح 15692) ===
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: kaleem-rabbitmq
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    environment:
+      - RABBITMQ_DEFAULT_USER=kaleem
+      - RABBITMQ_DEFAULT_PASS=supersecret
+      - RABBITMQ_DEFAULT_VHOST=kleem
+    command: >
+      bash -lc "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"
     healthcheck:
       test: [ "CMD-SHELL", "rabbitmq-diagnostics -q ping" ]
       interval: 10s
       timeout: 5s
       retries: 12
-      ports:
-        - "5672:5672"
-        - "15672:15672"
-        - "15692:15692"
-      networks: [ backnet ]
-      restart: unless-stopped
-    # اختياري: عمّال مستقلين (نفس صورة api لو عندك nest start:worker)
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "15692:15692"
+    networks: [ backnet ]
+    restart: unless-stopped
+
+  # اختياري: عمّال مستقلين
   ai-reply-worker:
     build: .
     container_name: kaleem-ai-reply
@@ -323,7 +325,7 @@ services:
     restart: unless-stopped
 
   indexing-worker:
-    build: ./extractor-service # أو نفس api لو الكود هناك
+    build: ./extractor-service
     container_name: kaleem-indexing
     command: [ 'python', '-m', 'workers.indexing' ]
     environment:
@@ -352,7 +354,6 @@ services:
       - N8N_RUNNERS_ENABLED=true
       - N8N_CORS_ALLOW_ORIGIN=https://localhost:5173
       - N8N_CORS_ALLOW_CREDENTIALS=true
-
     ports:
       - '5678:5678'
     depends_on:
@@ -367,6 +368,7 @@ services:
       retries: 3
     networks:
       - backnet
+
 
 volumes:
   redis_data:
