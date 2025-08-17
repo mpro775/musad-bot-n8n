@@ -15,6 +15,11 @@ import {
   MissingResponse,
   MissingResponseSchema,
 } from './schemas/missing-response.schema';
+import {
+  KleemMissingResponse,
+  KleemMissingResponseSchema,
+} from './schemas/kleem-missing-response.schema';
+import { AnalyticsAdminController } from './analytics.admin.controller';
 
 @Module({
   imports: [
@@ -23,13 +28,13 @@ import {
       { name: Product.name, schema: ProductSchema },
       { name: Order.name, schema: OrderSchema },
       { name: MissingResponse.name, schema: MissingResponseSchema },
-
+      { name: KleemMissingResponse.name, schema: KleemMissingResponseSchema },
       { name: Merchant.name, schema: MerchantSchema }, // أضف هذا السطر
     ]),
     forwardRef(() => ProductsModule),
   ],
   providers: [AnalyticsService],
-  controllers: [AnalyticsController],
+  controllers: [AnalyticsController, AnalyticsAdminController],
   exports: [AnalyticsService], // ← هذا السطر مفقود عندك
 })
 export class AnalyticsModule {}

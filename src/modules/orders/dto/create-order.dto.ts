@@ -134,6 +134,15 @@ export class CreateOrderDto {
   sessionId: string;
 
   @ApiPropertyOptional({
+    description: 'معرف الطلب',
+    example: 'order-123',
+    required: false
+  })
+  @IsString({ message: 'يجب أن يكون معرف الطلب نصيًا' })
+  @IsOptional()
+  source: string;
+
+  @ApiPropertyOptional({
     description: 'تاريخ إنشاء الطلب (اختياري - سيتم تعيينه تلقائيًا إذا لم يتم توفيره)',
     type: Date,
     example: '2023-01-01T12:00:00.000Z'
@@ -176,6 +185,15 @@ export class CreateOrderDto {
   @IsObject({ message: 'يجب أن تكون البيانات الوصفية كائنًا' })
   @IsOptional()
   metadata?: Record<string, any>;
+
+  @ApiPropertyOptional({
+    description: 'معرف الطلب',
+    example: 'order-123',
+    required: false
+  })
+  @IsString({ message: 'يجب أن يكون معرف الطلب نصيًا' })
+  @IsOptional()
+  externalId?: string;
 
   @ApiPropertyOptional({
     description: 'حالة السداد (افتراضي: false)',

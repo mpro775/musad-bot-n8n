@@ -2,7 +2,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { FilterQuery, Model, Types } from 'mongoose';
 import dayjs from 'dayjs';
 import {
   MessageSession,
@@ -19,6 +19,12 @@ import {
   MissingResponse,
   MissingResponseDocument,
 } from './schemas/missing-response.schema';
+import { CreateKleemMissingResponseDto } from './dto/create-kleem-missing-response.dto';
+import {
+  KleemMissingResponse,
+  KleemMissingResponseDocument,
+} from './schemas/kleem-missing-response.schema';
+import { QueryKleemMissingResponsesDto } from './dto/query-kleem-missing-responses.dto';
 
 export interface KeywordCount {
   keyword: string;
@@ -63,6 +69,8 @@ export class AnalyticsService {
     private readonly orderModel: Model<OrderDocument>,
     @InjectModel(MissingResponse.name)
     private missingResponseModel: Model<MissingResponseDocument>,
+    @InjectModel(KleemMissingResponse.name)
+    private kleemMissingModel: Model<KleemMissingResponseDocument>,
   ) {}
 
   /**
@@ -311,6 +319,18 @@ export class AnalyticsService {
     // تحقق من القيم أو نظفها لو أردت
     return await this.missingResponseModel.create(dto);
   }
+  async createKleemFromWebhook(
+    dto: CreateKleemMissingResponseDto,
+  ): Promise<KleemMissingResponseDocument> {
+    // تنظيف بسيط (اختياري)
+    dto.question = (dto.question || '').trim();
+    if (dto.botReply) dto.botReply = dto.botReply.trim();
+
+    return await this.kleemMissingModel.create({
+      ...dto,
+      resolved: dto.resolved ?? false,
+    });
+  }
   async getTopProducts(
     merchantId: string,
     period: 'week' | 'month' | 'quarter',
@@ -346,5 +366,86 @@ export class AnalyticsService {
         },
       ])
       .then((res) => res);
+  }
+  async listKleemMissing(dto: QueryKleemMissingResponsesDto) {
+    const {
+      page,
+      limit,
+      channel,
+      resolved,
+      q,
+      sessionId,
+      customerId,
+      from,
+      to,
+    } = dto;
+
+    const filter: FilterQuery<KleemMissingResponseDocument> = {};
+    if (channel) filter.channel = channel;
+    if (resolved === 'true') filter.resolved = true;
+    if (resolved === 'false') filter.resolved = false;
+    if (sessionId) filter.sessionId = sessionId;
+    if (customerId) filter.customerId = customerId;
+
+    if (from || to) {
+      filter.createdAt = {};
+      if (from) filter.createdAt.$gte = new Date(from);
+      if (to) filter.createdAt.$lte = new Date(to);
+    }
+
+    if (q) {
+      filter.$or = [
+        { question: { $regex: q, $options: 'i' } },
+        { aiAnalysis: { $regex: q, $options: 'i' } },
+        { manualReply: { $regex: q, $options: 'i' } },
+        { category: { $regex: q, $options: 'i' } },
+      ];
+    }
+
+    const skip = (page - 1) * limit;
+    const [items, total] = await Promise.all([
+      this.kleemMissingModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.kleemMissingModel.countDocuments(filter),
+    ]);
+
+    return { items, total, page, limit };
+  }
+
+  async updateKleemMissing(
+    id: string,
+    update: Partial<
+      Pick<KleemMissingResponse, 'resolved' | 'manualReply' | 'category'>
+    >,
+  ) {
+    return this.kleemMissingModel
+      .findByIdAndUpdate(
+        id,
+        {
+          ...(update.manualReply !== undefined
+            ? { manualReply: update.manualReply }
+            : {}),
+          ...(update.category !== undefined
+            ? { category: update.category }
+            : {}),
+          ...(update.resolved !== undefined
+            ? { resolved: update.resolved }
+            : {}),
+        },
+        { new: true },
+      )
+      .lean();
+  }
+
+  async bulkResolve(ids: string[]) {
+    await this.kleemMissingModel.updateMany(
+      { _id: { $in: ids } },
+      { $set: { resolved: true } },
+    );
+    return { updated: ids.length };
   }
 }

@@ -7,6 +7,7 @@ import {
 } from './schemas/botChats.schema';
 import { BotChatsService } from './botChats.service';
 import { BotChatsController } from './botChats.controller';
+import { BotChatsAdminController } from './botChats.admin.controller';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { BotChatsController } from './botChats.controller';
     ]),
   ],
   providers: [BotChatsService],
-  controllers: [BotChatsController],
+  controllers: [BotChatsController, BotChatsAdminController],
   exports: [BotChatsService],
 })
 export class BotChatsModule {}

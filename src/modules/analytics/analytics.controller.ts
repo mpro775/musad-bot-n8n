@@ -28,6 +28,7 @@ import {
   ApiBearerAuth,
   ApiBody,
 } from '@nestjs/swagger';
+import { CreateKleemMissingResponseDto } from './dto/create-kleem-missing-response.dto';
 
 @ApiTags('التحليلات')
 @ApiBearerAuth()
@@ -235,8 +236,7 @@ export class AnalyticsController {
   @Get('products-count')
   @ApiOperation({
     summary: 'الحصول على عدد المنتجات',
-    description:
-      'يُرجع العدد الإجمالي للمنتجات للتاجر الموثّق',
+    description: 'يُرجع العدد الإجمالي للمنتجات للتاجر الموثّق',
   })
   @ApiResponse({
     status: 200,
@@ -365,5 +365,11 @@ export class AnalyticsController {
       +limit,
     );
     return prods;
+  }
+  @Post('webhook/kleem')
+  @Public()
+  async kleemWebhook(@Body() body: CreateKleemMissingResponseDto) {
+    const doc = await this.analytics.createKleemFromWebhook(body);
+    return { success: true, id: doc._id };
   }
 }

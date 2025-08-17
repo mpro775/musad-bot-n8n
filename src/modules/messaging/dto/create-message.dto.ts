@@ -39,7 +39,8 @@ export class MessageItemDto {
   metadata?: Record<string, any>;
 
   @ApiPropertyOptional({
-    description: 'تاريخ ووقت إرسال الرسالة (سيتم تعيينه تلقائياً إذا لم يتم إرساله)', 
+    description:
+      'تاريخ ووقت إرسال الرسالة (سيتم تعيينه تلقائياً إذا لم يتم إرساله)',
     type: Date,
     example: '2025-08-16T10:30:00.000Z',
   })
@@ -81,8 +82,8 @@ export class CreateMessageDto {
       {
         role: 'customer',
         text: 'مرحباً، أريد معرفة حالة طلبي',
-        metadata: { orderId: '12345' }
-      }
+        metadata: { orderId: '12345' },
+      },
     ],
   })
   @IsArray()

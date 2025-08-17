@@ -34,10 +34,10 @@ export class MessageContentDto {
   @ApiPropertyOptional({
     description: 'بيانات إضافية للرسالة',
     type: Object,
-    example: { 
-      isRead: true, 
+    example: {
+      isRead: true,
       attachment: 'invoice.pdf',
-      customField: 'قيمة مخصصة'
+      customField: 'قيمة مخصصة',
     },
   })
   @IsOptional()
@@ -59,11 +59,11 @@ export class UpdateMessageDto {
   @ApiPropertyOptional({
     description: 'تحديث البيانات الوصفية للجلسة',
     type: Object,
-    example: { 
+    example: {
       status: 'in_progress',
       priority: 'high',
       assignedTo: 'agent123',
-      tags: ['متابعة', 'طلب_هام']
+      tags: ['متابعة', 'طلب_هام'],
     },
   })
   @IsOptional()
@@ -77,18 +77,20 @@ export class UpdateMessageDto {
       {
         role: 'customer',
         text: 'مرحباً، أريد تحديث طلبي',
-        metadata: { orderId: '12345' }
+        metadata: { orderId: '12345' },
       },
       {
         role: 'bot',
         text: 'بالطبع، سأساعدك في تحديث طلبك',
-        metadata: { responseTime: '2s' }
-      }
+        metadata: { responseTime: '2s' },
+      },
     ],
   })
   @IsOptional()
   @IsArray()
-  @ArrayMinSize(1, { message: 'يجب أن تحتوي المصفوفة على رسالة واحدة على الأقل' })
+  @ArrayMinSize(1, {
+    message: 'يجب أن تحتوي المصفوفة على رسالة واحدة على الأقل',
+  })
   @ValidateNested({ each: true })
   @Type(() => MessageContentDto)
   messages?: MessageContentDto[];

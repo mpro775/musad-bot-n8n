@@ -33,6 +33,8 @@ export class Order {
   @Prop({ type: [OrderProduct], required: true })
   products: OrderProduct[];
 
+  
+  
   @Prop({
     default: 'pending',
     enum: ['pending', 'paid', 'canceled', 'shipped', 'delivered', 'refunded'],
