@@ -4,13 +4,13 @@ services:
   redis:
     image: redis:6-alpine
     container_name: kaleem-redis
-    command: ['redis-server']
+    command: [ 'redis-server' ]
     ports:
       - '6379:6379'
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: [ 'CMD', 'redis-cli', 'ping' ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,7 +26,7 @@ services:
     volumes:
       - ./qdrant_data:/qdrant/storage
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:6333']
+      test: [ 'CMD', 'curl', '-f', 'http://localhost:6333' ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -66,7 +66,7 @@ services:
     networks:
       - backnet
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:5678/rest/healthz']
+      test: [ 'CMD', 'curl', '-f', 'http://localhost:5678/rest/healthz' ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -78,7 +78,7 @@ services:
       - '18080:8080'
     volumes:
       - ./docs/structurizr:/usr/local/structurizr
-    networks: [backnet]
+    networks: [ backnet ]
 
   mongo:
     image: mongo:5
@@ -91,11 +91,7 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          'mongo --quiet --eval "db.adminCommand(''ping'')" || exit 1',
-        ]
+      test: [ 'CMD-SHELL', 'mongo --quiet --eval "db.adminCommand(''ping'')" || exit 1' ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -151,7 +147,7 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -175,10 +171,10 @@ services:
     env_file:
       - .env
     environment:
-      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem 
+      - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
     restart: unless-stopped
     healthcheck:
-      test: ['CMD-SHELL', 'curl -f http://localhost:3000/health || exit 1']
+      test: [ 'CMD-SHELL', 'curl -f http://localhost:3000/health || exit 1' ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -194,11 +190,7 @@ services:
     networks:
       - backnet
     healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          'curl -f http://localhost:8001/extract/?url=https://example.com || exit 1',
-        ]
+      test: [ 'CMD-SHELL', 'curl -f http://localhost:8001/extract/?url=https://example.com || exit 1' ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -216,11 +208,10 @@ services:
       - prom_data:/prometheus
     ports:
       - '9090:9090'
-    networks: [backnet]
+    networks: [ backnet ]
     restart: unless-stopped
     depends_on:
       - rabbitmq
-
     # === Grafana ===
   grafana:
     image: grafana/grafana:10.4.5
@@ -239,11 +230,10 @@ services:
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - '3005:3000' # ← اختر بورت غير مستخدم على الهوست (مثال: 3005)
-    networks: [backnet]
+    networks: [ backnet ]
     restart: unless-stopped
     depends_on:
       - prometheus
-
     # === Node Exporter (مقاييس النظام من داخل الكونتينرات صعب؛ نستخدم cAdvisor بدلاً منه) ===
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.47.2
@@ -253,9 +243,8 @@ services:
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
-    networks: [backnet]
+    networks: [ backnet ]
     restart: unless-stopped
-
     # === Redis Exporter ===
   redis-exporter:
     image: oliver006/redis_exporter:v1.61.0
@@ -264,11 +253,10 @@ services:
       - REDIS_ADDR=redis:6379
     ports:
       - '9121:9121'
-    networks: [backnet]
+    networks: [ backnet ]
     restart: unless-stopped
     depends_on:
       - redis
-
     # === MongoDB Exporter ===
   mongodb-exporter:
     image: bitnami/mongodb-exporter:0.40.0
@@ -277,11 +265,10 @@ services:
       - MONGODB_URI=mongodb://admin:strongpassword@mongo:27017/admin
     ports:
       - '9216:9216'
-    networks: [backnet]
+    networks: [ backnet ]
     restart: unless-stopped
     depends_on:
       - mongo
-
 
     # === RabbitMQ (تفعيل الـ Prometheus plugin وفتح 15692) ===
     rabbitmq:
@@ -298,7 +285,7 @@ services:
       command: >
         bash -lc "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"
     healthcheck:
-      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      test: [ "CMD-SHELL", "rabbitmq-diagnostics -q ping" ]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -306,42 +293,39 @@ services:
         - "5672:5672"
         - "15672:15672"
         - "15692:15692"
-      networks: [backnet]
+      networks: [ backnet ]
       restart: unless-stopped
-
-
-
     # اختياري: عمّال مستقلين (نفس صورة api لو عندك nest start:worker)
   ai-reply-worker:
     build: .
     container_name: kaleem-ai-reply
-    command: ['node', 'dist/workers/ai-reply.worker.js']
-    env_file: [.env]
+    command: [ 'node', 'dist/workers/ai-reply.worker.js' ]
+    env_file: [ .env ]
     environment:
       - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
     depends_on:
       rabbitmq: { condition: service_healthy }
       qdrant: { condition: service_started }
       embedding: { condition: service_started }
-    networks: [backnet]
+    networks: [ backnet ]
     restart: unless-stopped
 
   webhook-dispatcher:
     build: .
     container_name: kaleem-webhook-dispatcher
-    command: ['node', 'dist/workers/webhook-dispatcher.worker.js']
-    env_file: [.env]
+    command: [ 'node', 'dist/workers/webhook-dispatcher.worker.js' ]
+    env_file: [ .env ]
     environment:
       - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
     depends_on:
       rabbitmq: { condition: service_healthy }
-    networks: [backnet]
+    networks: [ backnet ]
     restart: unless-stopped
 
   indexing-worker:
     build: ./extractor-service # أو نفس api لو الكود هناك
     container_name: kaleem-indexing
-    command: ['python', '-m', 'workers.indexing']
+    command: [ 'python', '-m', 'workers.indexing' ]
     environment:
       - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
     depends_on:
@@ -349,7 +333,7 @@ services:
       qdrant: { condition: service_started }
       minio: { condition: service_started }
       embedding: { condition: service_started }
-    networks: [backnet]
+    networks: [ backnet ]
     restart: unless-stopped
 
   n8n:
@@ -377,7 +361,7 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:5678/rest/healthz']
+      test: [ 'CMD', 'curl', '-f', 'http://localhost:5678/rest/healthz' ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -395,6 +379,7 @@ volumes:
   grafana_data:
   prom_data:
   hf_cache:
+
 
 networks:
   backnet:
