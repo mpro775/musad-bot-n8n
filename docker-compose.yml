@@ -283,32 +283,30 @@ services:
       - mongo
 
     # === RabbitMQ (تفعيل الـ Prometheus plugin وفتح 15692) ===
-  rabbitmq:
-    image: rabbitmq:3.13-management
-    volumes:
-      - ./rabbit-definitions.json:/etc/rabbitmq/rabbit-definitions.json:ro
-      - rabbitmq_data:/var/lib/rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: kaleem
-      RABBITMQ_DEFAULT_PASS: supersecret
-      RABBITMQ_DEFAULT_VHOST: kleem
-      RABBITMQ_LOAD_DEFINITIONS: /etc/rabbitmq/rabbit-definitions.json
-      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: >
-        -rabbitmq_prometheus listener [{port,15692}]
-    command: >
-      bash -lc "rabbitmq-plugins enable --offline rabbitmq_prometheus &&
-                rabbitmq-server"
-    ports:
-      - '5672:5672'
-      - '15672:15672' # UI
-      - '15692:15692' # /metrics
+    rabbitmq:
+      image: rabbitmq:3.13-management
+      container_name: kaleem-rabbitmq
+      volumes:
+        - rabbitmq_data:/var/lib/rabbitmq
+        - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+        - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      environment:
+        - RABBITMQ_DEFAULT_USER=kaleem
+        - RABBITMQ_DEFAULT_PASS=supersecret
+        - RABBITMQ_DEFAULT_VHOST=kleem
+      command: >
+        bash -lc "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"
     healthcheck:
-      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'status']
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    networks: [backnet]
-    restart: unless-stopped
+      retries: 12
+      ports:
+        - "5672:5672"
+        - "15672:15672"
+        - "15692:15692"
+      networks: [backnet]
+      restart: unless-stopped
 
 
 
