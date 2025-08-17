@@ -282,6 +282,7 @@ services:
     depends_on:
       - mongo
 
+
     # === RabbitMQ (تفعيل الـ Prometheus plugin وفتح 15692) ===
     rabbitmq:
       image: rabbitmq:3.13-management
