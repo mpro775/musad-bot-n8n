@@ -35,6 +35,8 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Client as MinioClient } from 'minio';
 import { unlink } from 'fs/promises';
+import { buildHbsContext, stripGuardSections } from './services/prompt-utils';
+import { PreviewPromptDto } from './dto/preview-prompt.dto';
 
 function toRecord(input: unknown): Record<string, string> {
   const out: Record<string, string> = {};
@@ -130,17 +132,11 @@ export class MerchantsService {
         dialect: createDto.quickConfig?.dialect ?? 'خليجي',
         tone: createDto.quickConfig?.tone ?? 'ودّي',
         customInstructions: createDto.quickConfig?.customInstructions ?? [],
-        sectionOrder: createDto.quickConfig?.sectionOrder ?? [
-          'products',
-          'policies',
-          'custom',
-        ],
-        includeStoreUrl: createDto.quickConfig?.includeStoreUrl ?? true,
-        includeAddress: createDto.quickConfig?.includeAddress ?? true,
-        includePolicies: createDto.quickConfig?.includePolicies ?? true,
-        includeWorkingHours: createDto.quickConfig?.includeWorkingHours ?? true,
         includeClosingPhrase:
           createDto.quickConfig?.includeClosingPhrase ?? true,
+        customerServicePhone: createDto.quickConfig?.customerServicePhone ?? '',
+        customerServiceWhatsapp:
+          createDto.quickConfig?.customerServiceWhatsapp ?? '',
         closingText:
           createDto.quickConfig?.closingText ?? 'هل أقدر أساعدك بشي ثاني؟ 😊',
       },
@@ -351,7 +347,29 @@ export class MerchantsService {
       throw new InternalServerErrorException('STORAGE_INIT_FAILED');
     }
   }
+  async previewPromptV2(id: string, dto: PreviewPromptDto): Promise<string> {
+    const m = await this.findOne(id);
+    const merged = m.toObject ? m.toObject() : m;
 
+    // دمج quickConfig مؤقتًا (إن وُجد) للمعاينة فقط
+    if (dto.quickConfig && Object.keys(dto.quickConfig).length) {
+      merged.quickConfig = { ...merged.quickConfig, ...dto.quickConfig };
+    }
+
+    const ctx = buildHbsContext(merged, dto.testVars ?? {});
+    const audience = dto.audience ?? 'merchant';
+
+    if (audience === 'agent') {
+      // Final بالحارس (لا نعرضه في لوحة التاجر عادةً)
+      const withGuard = await this.promptBuilder.compileTemplate(merged);
+      return Handlebars.compile(withGuard)(ctx);
+    }
+
+    // merchant: Final بدون الحارس
+    const withGuard = await this.promptBuilder.compileTemplate(merged);
+    const noGuard = stripGuardSections(withGuard);
+    return Handlebars.compile(noGuard)(ctx);
+  }
   async uploadLogoToMinio(
     merchantId: string,
     file: Express.Multer.File,
@@ -688,15 +706,28 @@ export class MerchantsService {
     id: string,
     testVars: Record<string, string>,
     useAdvanced: boolean,
+    quickOverride?: Partial<QuickConfig>, // ← جديد اختياري
   ): Promise<string> {
     const m = await this.findOne(id);
+
+    // إن أرسلت quickOverride ندمجه مؤقتًا للمعاينة
+    const mergedMerchant = m.toObject ? m.toObject() : m;
+    if (quickOverride && Object.keys(quickOverride).length) {
+      mergedMerchant.quickConfig = {
+        ...mergedMerchant.quickConfig,
+        ...quickOverride,
+      };
+    }
+
     const rawTpl =
-      useAdvanced && m.currentAdvancedConfig.template
-        ? m.currentAdvancedConfig.template
-        : this.promptBuilder.buildFromQuickConfig(m);
+      useAdvanced && mergedMerchant.currentAdvancedConfig?.template
+        ? mergedMerchant.currentAdvancedConfig.template
+        : this.promptBuilder.buildFromQuickConfig(
+            mergedMerchant as MerchantDocument,
+          );
+
     return this.previewSvc.preview(rawTpl, testVars);
   }
-
   /** تحديث القنوات */
   async updateChannels(
     id: string,
@@ -968,5 +999,25 @@ export class MerchantsService {
       text,
     );
     return { ok: true };
+  }
+  async getAdvancedTemplateForEditor(
+    id: string,
+    testVars: Record<string, string> = {},
+  ) {
+    const m = await this.findOne(id);
+
+    const current = m.currentAdvancedConfig?.template?.trim() ?? '';
+    if (current) {
+      return { template: current, note: m.currentAdvancedConfig?.note ?? '' };
+    }
+
+    // لا يوجد قالب متقدّم → نبني اقتراح من Final بدون الحارس
+    const finalWithGuard = await this.promptBuilder.compileTemplate(m);
+    const noGuard = stripGuardSections(finalWithGuard);
+
+    // نمرّره على Handlebars لتعبئة المتغيرات (إن وجدت)
+    const filled = Handlebars.compile(noGuard)(buildHbsContext(m, testVars));
+
+    return { template: filled, note: 'Generated from final (no guard)' };
   }
 }

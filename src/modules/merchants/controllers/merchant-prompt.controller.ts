@@ -22,6 +22,7 @@ import { PreviewPromptDto } from '../dto/preview-prompt.dto';
 import { MerchantDocument } from '../schemas/merchant.schema';
 import { StorefrontService } from '../../storefront/storefront.service';
 import { PromptBuilderService } from '../services/prompt-builder.service'; // إذا ستستخدمها هنا
+import { buildHbsContext } from '../services/prompt-utils';
 
 @ApiTags('Merchants • Prompt')
 @Controller('merchants/:id/prompt')
@@ -97,29 +98,27 @@ export class MerchantPromptController {
   }
 
   @Post('preview')
-  @ApiOperation({ summary: 'معاينة البرومبت مع متغيرات اختبارية' })
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
-  @ApiResponse({ status: 200, schema: { example: { preview: '...' } } })
   async preview(@Param('id') id: string, @Body() dto: PreviewPromptDto) {
-    // جلب التاجر الأصلي
+    // 1) جلب التاجر
     const m = await this.merchantSvc.findOne(id);
 
-    // دمج quickConfig الأصلي مع ما أرسله العميل (جزئيًّا)
+    // 2) دمج الـ quickConfig مؤقتًا (بدون حفظ)
     const mergedConfig = { ...m.quickConfig, ...(dto.quickConfig || {}) };
+    const tempMerchant = {
+      ...(m.toObject ? m.toObject() : (m as any)),
+      quickConfig: mergedConfig,
+    } as MerchantDocument;
 
-    // اصنع نسخة مؤقتة من التاجر مع الإعدادات المدموجة
-    const tempMerchant = { ...m, quickConfig: mergedConfig };
-
-    // اختر القالب: متقدم أم سريع
+    // 3) اختيار القالب (متقدّم أم سريع)
     const rawTpl =
       dto.useAdvanced && m.currentAdvancedConfig.template
         ? m.currentAdvancedConfig.template
-        : this.promptBuilder.buildFromQuickConfig(
-            tempMerchant as MerchantDocument,
-          );
+        : this.promptBuilder.buildFromQuickConfig(tempMerchant);
 
-    // نفّذ المعاينة
-    const preview = this.previewSvc.preview(rawTpl, dto.testVars);
+    // 4) بناء السياق الكامل وتمريره للمعاينة
+    const ctx = buildHbsContext(tempMerchant, dto.testVars || {});
+    const preview = this.previewSvc.preview(rawTpl, ctx);
 
     return { preview };
   }

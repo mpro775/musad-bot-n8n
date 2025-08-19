@@ -118,6 +118,13 @@ export class MerchantsController {
     return this.svc.findOne(id);
   }
 
+  @Get('prompt/advanced-template')
+  async getAdvancedTemplate(@Param('id') id: string) {
+    return this.svc.getAdvancedTemplateForEditor(id, {
+      productName: 'منتج تجريبي',
+    });
+  }
+
   @Post(':id/logo')
   @ApiOperation({ summary: 'رفع شعار التاجر كملف (MinIO + حذف مؤقت)' })
   @ApiParam({ name: 'id', description: 'معرّف التاجر' })
