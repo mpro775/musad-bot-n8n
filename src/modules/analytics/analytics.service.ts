@@ -1,6 +1,10 @@
 // src/analytics/analytics.service.ts
 
-import { Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
 import dayjs from 'dayjs';
@@ -25,6 +29,8 @@ import {
   KleemMissingResponseDocument,
 } from './schemas/kleem-missing-response.schema';
 import { QueryKleemMissingResponsesDto } from './dto/query-kleem-missing-responses.dto';
+import { FaqService } from '../faq/faq.service';
+import { AddToKnowledgeDto } from './dto/add-to-knowledge.dto';
 
 export interface KeywordCount {
   keyword: string;
@@ -54,6 +60,10 @@ export interface Overview {
     byStatus: Record<string, number>;
     totalSales: number;
   };
+  csat?: number; // 0..1
+  firstResponseTimeSec?: number | null;
+  missingOpen?: number;
+  storeExtras?: { paidOrders: number; aov: number | null };
 }
 
 @Injectable()
@@ -71,6 +81,7 @@ export class AnalyticsService {
     private missingResponseModel: Model<MissingResponseDocument>,
     @InjectModel(KleemMissingResponse.name)
     private kleemMissingModel: Model<KleemMissingResponseDocument>,
+    private faqService: FaqService,
   ) {}
 
   /**
@@ -96,6 +107,147 @@ export class AnalyticsService {
         .toDate();
     }
     return { start, end };
+  }
+  private async getCsat(
+    merchantId: Types.ObjectId,
+    start: Date,
+    end: Date,
+  ): Promise<number | null> {
+    const r: Array<{ csat: number | null }> = await this.sessionModel.aggregate(
+      [
+        { $match: { merchantId, createdAt: { $gte: start, $lte: end } } },
+        { $unwind: '$messages' },
+        {
+          $match: {
+            'messages.role': 'bot',
+            'messages.rating': { $in: [0, 1] },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            up: { $sum: { $cond: [{ $eq: ['$messages.rating', 1] }, 1, 0] } },
+            dn: { $sum: { $cond: [{ $eq: ['$messages.rating', 0] }, 1, 0] } },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            csat: {
+              $cond: [
+                { $eq: [{ $add: ['$up', '$dn'] }, 0] },
+                null,
+                { $divide: ['$up', { $add: ['$up', '$dn'] }] },
+              ],
+            },
+          },
+        },
+      ],
+    );
+    const value = r && Array.isArray(r) && r.length > 0 ? r[0].csat : null;
+    return typeof value === 'number' || value === null ? value : null;
+  }
+
+  private async getFirstResponseTimeSec(
+    merchantId: Types.ObjectId,
+    start: Date,
+    end: Date,
+  ): Promise<number | null> {
+    const r: Array<{ avgSec: number | null }> =
+      await this.sessionModel.aggregate([
+        { $match: { merchantId, createdAt: { $gte: start, $lte: end } } },
+        {
+          $project: {
+            firstUser: {
+              $min: {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: '$messages',
+                      as: 'm',
+                      cond: { $eq: ['$$m.role', 'user'] },
+                    },
+                  },
+                  as: 'm',
+                  in: '$$m.timestamp',
+                },
+              },
+            },
+            firstBot: {
+              $min: {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: '$messages',
+                      as: 'm',
+                      cond: { $eq: ['$$m.role', 'bot'] },
+                    },
+                  },
+                  as: 'm',
+                  in: '$$m.timestamp',
+                },
+              },
+            },
+          },
+        },
+        // احسب الفرق فقط إذا عندنا أول رسالة مستخدم وبوت
+        {
+          $project: {
+            diffSec: {
+              $cond: [
+                {
+                  $and: [
+                    '$firstUser',
+                    '$firstBot',
+                    { $gt: ['$firstBot', '$firstUser'] },
+                  ],
+                },
+                { $divide: [{ $subtract: ['$firstBot', '$firstUser'] }, 1000] },
+                null,
+              ],
+            },
+          },
+        },
+        { $match: { diffSec: { $ne: null } } },
+        { $group: { _id: null, avgSec: { $avg: '$diffSec' } } },
+        { $project: { _id: 0, avgSec: { $round: ['$avgSec', 1] } } },
+      ]);
+    const value =
+      r && Array.isArray(r) && r.length > 0 ? (r[0]?.avgSec ?? null) : null;
+    return typeof value === 'number' || value === null ? value : null;
+  }
+
+  private async getMissingOpenCount(merchantId: Types.ObjectId) {
+    return this.missingResponseModel.countDocuments({
+      merchant: merchantId,
+      resolved: false,
+    });
+  }
+
+  private async getStoreExtras(
+    merchantId: Types.ObjectId,
+    start: Date,
+    end: Date,
+  ) {
+    // عدّ الطلبات المدفوعة واحسب AOV
+    const paid = await this.orderModel.countDocuments({
+      merchantId,
+      createdAt: { $gte: start, $lte: end },
+      status: 'paid',
+    });
+    const salesAgg = await this.orderModel.aggregate([
+      {
+        $match: {
+          merchantId,
+          createdAt: { $gte: start, $lte: end },
+          status: { $ne: 'canceled' },
+        },
+      },
+      { $group: { _id: null, total: { $sum: '$total' } } },
+    ]);
+    const revenue = salesAgg[0]?.total ?? 0;
+    const aov = paid > 0 ? Number((revenue / paid).toFixed(2)) : null;
+    return { paidOrders: paid, aov };
   }
 
   /**
@@ -245,24 +397,34 @@ export class AnalyticsService {
       count: channelsUsage.find((c) => c.channel === channel)?.count || 0,
     }));
 
+    // (اختياري) احسب تغيّر الرسائل هنا إذا احتجته لاحقًا
+
+    // المؤشرات الجديدة
+    const [csat, frt, missingOpen, storeExtras] = await Promise.all([
+      this.getCsat(mId, start, end),
+      this.getFirstResponseTimeSec(mId, start, end),
+      this.getMissingOpenCount(mId),
+      this.getStoreExtras(mId, start, end),
+    ]);
+
+    // ثم أعِد النتيجة مع الحقول الجديدة:
     return {
-      sessions: {
-        count: currSessions,
-        changePercent,
-      },
-      messages: totalMessages,
+      sessions: { count: currSessions, changePercent },
+      messages: totalMessages, // (إن بغيت: messages: { count: totalMessages, changePercent: messagesChangePercent })
       topKeywords,
       topProducts,
-      channels: {
-        total: enabledChannels.length,
-        breakdown,
-      },
+      channels: { total: enabledChannels.length, breakdown },
       orders: {
         count: currOrders,
         changePercent: ordersChangePercent,
         byStatus: ordersByStatus,
         totalSales,
       },
+      // إضافات
+      csat: csat ?? undefined, // مثال: 0.87
+      firstResponseTimeSec: frt ?? undefined, // مثال: 6.4
+      missingOpen, // مثال: 14
+      storeExtras, // { paidOrders: 32, aov: 127.5 }
     };
   }
   async getMessagesTimeline(
@@ -316,8 +478,166 @@ export class AnalyticsService {
     return this.productModel.countDocuments({ merchantId: mId });
   }
   async createFromWebhook(dto: CreateMissingResponseDto) {
-    // تحقق من القيم أو نظفها لو أردت
-    return await this.missingResponseModel.create(dto);
+    // تحويل merchant ل ObjectId إن كان لديك Merchant فعلي
+    const merchant = new Types.ObjectId(dto.merchant);
+    return this.missingResponseModel.create({
+      ...dto,
+      merchant,
+      resolved: dto.resolved ?? false,
+    });
+  }
+
+  async listMissingResponses(params: {
+    merchantId: string;
+    page?: number;
+    limit?: number;
+    resolved?: 'all' | 'true' | 'false';
+    channel?: 'telegram' | 'whatsapp' | 'webchat' | 'all';
+    type?: 'missing_response' | 'unavailable_product' | 'all';
+    search?: string;
+    from?: string; // ISO
+    to?: string; // ISO
+  }) {
+    const {
+      merchantId,
+      page = 1,
+      limit = 20,
+      resolved = 'all',
+      channel = 'all',
+      type = 'all',
+      search,
+      from,
+      to,
+    } = params;
+
+    const q: any = { merchant: new Types.ObjectId(merchantId) };
+
+    if (resolved !== 'all') q.resolved = resolved === 'true';
+    if (channel !== 'all') q.channel = channel;
+    if (type !== 'all') q.type = type;
+
+    if (from || to) {
+      q.createdAt = {};
+      if (from) q.createdAt.$gte = new Date(from);
+      if (to) q.createdAt.$lte = new Date(to);
+    }
+
+    if (search && search.trim()) {
+      q.$or = [
+        { question: { $regex: search, $options: 'i' } },
+        { botReply: { $regex: search, $options: 'i' } },
+        { aiAnalysis: { $regex: search, $options: 'i' } },
+        { sessionId: { $regex: search, $options: 'i' } },
+        { customerId: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const skip = (page - 1) * limit;
+    const [items, total] = await Promise.all([
+      this.missingResponseModel
+        .find(q)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.missingResponseModel.countDocuments(q),
+    ]);
+
+    return { items, total, page, limit };
+  }
+
+  async markResolved(id: string, userId?: string) {
+    return this.missingResponseModel.findByIdAndUpdate(
+      id,
+      { resolved: true, resolvedAt: new Date(), resolvedBy: userId ?? null },
+      { new: true },
+    );
+  }
+
+  async bulkResolveMarch(ids: string[], userId?: string) {
+    const now = new Date();
+    await this.missingResponseModel.updateMany(
+      { _id: { $in: ids.map((i) => new Types.ObjectId(i)) } },
+      { $set: { resolved: true, resolvedAt: now, resolvedBy: userId ?? null } },
+    );
+    return { updated: ids.length };
+  }
+
+  async stats(merchantId: string, days = 7) {
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+
+    const pipeline = [
+      {
+        $match: {
+          merchant: new Types.ObjectId(merchantId),
+          createdAt: { $gte: from },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            day: { $dateToString: { date: '$createdAt', format: '%Y-%m-%d' } },
+            channel: '$channel',
+            resolved: '$resolved',
+          },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $group: {
+          _id: '$_id.day',
+          channels: {
+            $push: {
+              channel: '$_id.channel',
+              resolved: '$_id.resolved',
+              count: '$count',
+            },
+          },
+          total: { $sum: '$count' },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ];
+
+    return this.missingResponseModel.aggregate(pipeline as any);
+  }
+  async addToKnowledge(params: {
+    merchantId: string; // من التوكن
+    missingId: string;
+    payload: AddToKnowledgeDto;
+    userId?: string;
+  }) {
+    const { merchantId, missingId, payload, userId } = params;
+
+    const doc = await this.missingResponseModel.findById(missingId);
+    if (!doc) throw new NotFoundException('Missing response not found');
+
+    // تأكد أن الرسالة تخص نفس التاجر
+    if (doc.merchant.toString() !== merchantId) {
+      throw new ForbiddenException('Not your resource');
+    }
+
+    // أنشئ FAQ واحد عبر الخدمة (تتولى هي embeddings + Qdrant)
+    const created = await this.faqService.createMany(merchantId, [
+      {
+        question: payload.question,
+        answer: payload.answer,
+      },
+    ]);
+
+    // علِّم الرسالة كمُعالج
+    doc.resolved = true;
+    doc.resolvedAt = new Date();
+    doc.resolvedBy = userId ?? undefined;
+    await doc.save();
+
+    return {
+      success: true,
+      faqId: created[0]?._id,
+      missingResponseId: doc._id,
+      resolved: true,
+    };
   }
   async createKleemFromWebhook(
     dto: CreateKleemMissingResponseDto,

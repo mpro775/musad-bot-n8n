@@ -51,6 +51,9 @@ import { RabbitModule } from './infra/rabbit/rabbit.module';
 import { OutboxModule } from './common/outbox/outbox.module';
 import { OutboxDispatcher } from './common/outbox/outbox.dispatcher';
 import { MetricsModule } from './metrics/metrics.module';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { InstructionsModule } from './modules/instructions/instructions.module';
+import { AiModule } from './modules/ai/ai.module';
 
 @Module({
   imports: [
@@ -60,6 +63,7 @@ import { MetricsModule } from './metrics/metrics.module';
         level: process.env.NODE_ENV !== 'production' ? 'debug' : 'info',
       },
     }),
+    ThrottlerModule.forRoot([{ ttl: 60, limit: 20 }]),
     MetricsModule,
     // فعّل Passport و JWT هنا
     PassportModule.register({ defaultStrategy: 'jwt' }),
@@ -138,6 +142,8 @@ import { MetricsModule } from './metrics/metrics.module';
     IntegrationsModule,
     ScraperModule,
     KleemModule,
+    InstructionsModule,
+    AiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

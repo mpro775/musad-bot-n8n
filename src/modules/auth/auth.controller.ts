@@ -1,4 +1,14 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  Query,
+  Get,
+  Req,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -15,6 +25,11 @@ import {
 import { Public } from 'src/common/decorators/public.decorator';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { Throttle } from '@nestjs/throttler';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @ApiTags('المصادقة')
 @Controller('auth')
@@ -22,6 +37,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
   @Public()
   @Post('register')
+  @Throttle({ default: { ttl: 60, limit: 5 } }) // 5 requests per minute
   @ApiOperation({
     summary: 'تسجيل مستخدم جديد (الحقول: اسم، إيميل، كلمة المرور)',
   })
@@ -35,6 +51,7 @@ export class AuthController {
 
   @Public()
   @Post('login')
+  @Throttle({ default: { ttl: 60, limit: 5 } }) // 5 requests per minute
   @ApiOperation({ summary: 'تسجيل الدخول وإرجاع توكن JWT' })
   @ApiBody({ type: LoginDto })
   @ApiOkResponse({ description: 'تم تسجيل الدخول بنجاح' })
@@ -44,6 +61,7 @@ export class AuthController {
   }
   @Public()
   @Post('resend-verification')
+  @Throttle({ default: { ttl: 60, limit: 3 } }) // 3 requests per minute
   @ApiOperation({ summary: 'إعادة إرسال كود تفعيل البريد الإلكتروني' })
   @ApiOkResponse({ description: 'تم إرسال كود التفعيل بنجاح' })
   @ApiBadRequestResponse({
@@ -56,6 +74,7 @@ export class AuthController {
   // مسار التحقق من الكود
   @Public()
   @Post('verify-email')
+  @Throttle({ default: { ttl: 60, limit: 5 } }) // 5 requests per minute
   @ApiOperation({ summary: 'تفعيل البريد برمز أو رابط' })
   @ApiBody({ type: VerifyEmailDto })
   @ApiOkResponse({ description: 'تم تفعيل البريد بنجاح' })
@@ -63,5 +82,41 @@ export class AuthController {
   async verifyEmail(@Body() dto: VerifyEmailDto): Promise<{ message: string }> {
     await this.authService.verifyEmail(dto);
     return { message: 'تم تفعيل البريد بنجاح' };
+  }
+  @Post('forgot-password')
+  @Throttle({ default: { ttl: 60, limit: 3 } }) // 3 طلبات/دقيقة/IP
+  async requestReset(@Body() dto: RequestPasswordResetDto) {
+    await this.authService.requestPasswordReset(dto);
+    return { status: 'ok' }; // دائمًا ok
+  }
+
+  // (اختياري) لتجربة صحة الرابط قبل عرض صفحة إعادة التعيين
+  @Get('reset-password/validate')
+  @Throttle({ default: { ttl: 60, limit: 30 } })
+  async validateToken(
+    @Query('email') email: string,
+    @Query('token') token: string,
+  ) {
+    const ok = await this.authService.validatePasswordResetToken(email, token);
+    return { valid: !!ok };
+  }
+
+  @Post('reset-password')
+  @Throttle({ default: { ttl: 60, limit: 10 } })
+  async reset(@Body() dto: ResetPasswordDto) {
+    await this.authService.resetPassword(dto);
+    return { status: 'ok' }; // لا نكشف أي تفاصيل
+  }
+  @Post('ensure-merchant')
+  @UseGuards(JwtAuthGuard)
+  async ensureMerchant(@Req() req: any) {
+    return this.authService.ensureMerchant(req.user?.userId);
+  }
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { ttl: 60, limit: 10 } })
+  async change(@Req() req: any, @Body() dto: ChangePasswordDto) {
+    await this.authService.changePassword(req.user?.userId, dto);
+    return { status: 'ok' };
   }
 }

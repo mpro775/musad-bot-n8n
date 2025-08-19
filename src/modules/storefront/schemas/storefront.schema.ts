@@ -42,8 +42,15 @@ export class Storefront {
     order?: number;
   }[];
 
-  @Prop({ required: false, unique: true, sparse: true })
-  slug?: string;
+  @Prop({
+    type: String,
+    unique: true,
+    index: true,
+    lowercase: true,
+    trim: true,
+    required: true,
+  })
+  slug: string;
 
   @Prop({ required: false })
   storefrontUrl?: string;
@@ -58,3 +65,20 @@ export class Storefront {
 }
 
 export const StorefrontSchema = SchemaFactory.createForClass(Storefront);
+function normalizeSlug(input: string): string {
+  let s = (input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-');
+  s = s.replace(/[^a-z0-9-]/g, '');
+  s = s.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+  if (s.length > 50) s = s.slice(0, 50).replace(/-+$/g, '');
+  return s;
+}
+
+StorefrontSchema.pre('validate', function (next) {
+  if ((this as any).slug) {
+    (this as any).slug = normalizeSlug((this as any).slug);
+  }
+  next();
+});

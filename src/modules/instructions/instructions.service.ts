@@ -17,13 +17,14 @@ export class InstructionsService {
     relatedReplies?: string[];
     type?: 'auto' | 'manual';
   }) {
+    const { merchantId, ...rest } = instruction;
     return this.instructionModel.create({
-      ...instruction,
+      ...rest,
+      merchantId: merchantId ? new Types.ObjectId(merchantId) : undefined,
       type: instruction.type || 'auto',
       active: true,
     });
   }
-
   async findAll({
     merchantId,
     active,

@@ -316,6 +316,13 @@ export class N8nWorkflowService {
     });
     return wfId;
   }
+  async delete(workflowId: string): Promise<void> {
+    try {
+      await this.api.delete(`/workflows/${workflowId}`);
+    } catch (err) {
+      this.wrapError(err, 'DELETE');
+    }
+  }
 
   /** طھظپط¹ظٹظ„/طھط¹ط·ظٹظ„ workflow */
   async setActive(workflowId: string, active: boolean): Promise<void> {

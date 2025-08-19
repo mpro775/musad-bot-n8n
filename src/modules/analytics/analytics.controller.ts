@@ -5,6 +5,8 @@ import {
   Body,
   Controller,
   Get,
+  Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -29,6 +31,8 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { CreateKleemMissingResponseDto } from './dto/create-kleem-missing-response.dto';
+import { RequestWithUser } from 'src/common/interfaces/request-with-user.interface';
+import { AddToKnowledgeDto } from './dto/add-to-knowledge.dto';
 
 @ApiTags('التحليلات')
 @ApiBearerAuth()
@@ -264,48 +268,74 @@ export class AnalyticsController {
    */
   @Post('webhook')
   @Public()
-  @ApiOperation({
-    summary: 'Webhook للتحليلات',
-    description:
-      'نقطة نهاية webhook عامة لاستقبال بيانات التحليلات من مصادر وخدمات خارجية',
-  })
-  @ApiBody({
-    description: 'بيانات حدث التحليلات',
-    type: CreateMissingResponseDto,
-    examples: {
-      example1: {
-        summary: 'مثال على حمولة webhook',
-        value: {
-          event: 'product_view',
-          data: {
-            productId: 'prod_123',
-            userId: 'user_456',
-            timestamp: '2024-01-15T10:30:00Z',
-          },
-          source: 'webhook',
-        },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'تمت معالجة بيانات Webhook بنجاح',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean', example: true },
-        id: { type: 'string', example: '507f1f77bcf86cd799439011' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'طلب غير صالح - تنسيق الحمولة غير صالح',
-  })
-  @ApiResponse({ status: 500, description: 'خطأ داخلي في الخادم' })
+  @ApiOperation({ summary: 'Webhook للتحليلات' })
+  @ApiBody({ type: CreateMissingResponseDto })
   async webhook(@Body() body: CreateMissingResponseDto) {
     const doc = await this.analytics.createFromWebhook(body);
-    return { success: true, id: doc._id };
+    return { success: true, id: (doc as any)._id };
+  }
+
+  @Get('missing-responses')
+  @ApiOperation({ summary: 'جلب الرسائل المنسية / غير المجاب عنها' })
+  async list(@Req() req: RequestWithUser, @Query() query: any) {
+    const merchantId = req.user.merchantId; // من التوكن
+    return this.analytics.listMissingResponses({
+      merchantId,
+      page: Number(query.page ?? 1),
+      limit: Number(query.limit ?? 20),
+      resolved: query.resolved ?? 'all',
+      channel: query.channel ?? 'all',
+      type: query.type ?? 'all',
+      search: query.search ?? '',
+      from: query.from,
+      to: query.to,
+    });
+  }
+
+  @Patch('missing-responses/:id/resolve')
+  @ApiOperation({ summary: 'تحديد رسالة كمُعالجة' })
+  async resolveOne(@Req() req: RequestWithUser, @Param('id') id: string) {
+    const userId = req.user?.userId ?? 'system';
+    const doc = await this.analytics.markResolved(id, userId);
+    return { success: true, item: doc };
+  }
+
+  @Patch('missing-responses/resolve')
+  @ApiOperation({ summary: 'تحديد عدة رسائل كمُعالجة' })
+  async resolveBulk(
+    @Req() req: RequestWithUser,
+    @Body() body: { ids: string[] },
+  ) {
+    const r = await this.analytics.bulkResolve(body.ids);
+    return { success: true, ...r };
+  }
+  @Post('missing-responses/:id/add-to-knowledge')
+  @ApiOperation({
+    summary: 'تحويل الرسالة المنسيّة إلى معرفة (FAQ) + وضعها مُعالجة',
+  })
+  @ApiBody({ type: AddToKnowledgeDto })
+  async addToKnowledge(
+    @Req() req: RequestWithUser,
+    @Param('id') id: string,
+    @Body() body: AddToKnowledgeDto,
+  ) {
+    const merchantId = req.user.merchantId;
+    const userId = req.user?.userId ?? 'system';
+    return this.analytics.addToKnowledge({
+      merchantId,
+      missingId: id,
+      payload: body,
+      userId,
+    });
+  }
+  @Get('missing-responses/stats')
+  @ApiOperation({ summary: 'إحصاءات الرسائل المنسية' })
+  async stats(
+    @Req() req: Request & { user: { merchantId: string } },
+    @Query('days') days?: string,
+  ) {
+    const merchantId = req.user.merchantId;
+    return this.analytics.stats(merchantId, Number(days ?? 7));
   }
   /**
    * الحصول على أبرز المنتجات حسب المشاهدات/التفاعلات

@@ -61,6 +61,9 @@ export class User {
 
   @Prop({ type: Types.ObjectId, ref: 'Merchant' })
   merchantId?: Types.ObjectId;
+
+  @Prop()
+  passwordChangedAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
