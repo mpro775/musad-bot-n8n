@@ -20,6 +20,7 @@ import {
   KleemMissingResponseSchema,
 } from './schemas/kleem-missing-response.schema';
 import { AnalyticsAdminController } from './analytics.admin.controller';
+import { FaqModule } from '../faq/faq.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { AnalyticsAdminController } from './analytics.admin.controller';
       { name: Merchant.name, schema: MerchantSchema }, // أضف هذا السطر
     ]),
     forwardRef(() => ProductsModule),
+    FaqModule,
   ],
   providers: [AnalyticsService],
   controllers: [AnalyticsController, AnalyticsAdminController],

@@ -1,17 +1,17 @@
 // src/modules/storefront/dto/create-storefront.dto.ts
 
-import { 
+import {
   IsNotEmpty,
   IsOptional,
   IsString,
   IsArray,
   ValidateNested,
-  IsEnum,
   IsBoolean,
   IsUrl,
   IsNumber,
   Matches,
-  IsIn
+  IsIn,
+  MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -48,7 +48,9 @@ export class BannerDto {
   })
   @IsOptional()
   @IsString({ message: 'يجب أن يكون اللون نصيًا' })
-  @Matches(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, { message: 'يجب أن يكون اللون بتنسيق HEX صالح' })
+  @Matches(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, {
+    message: 'يجب أن يكون اللون بتنسيق HEX صالح',
+  })
   color?: string;
 
   @ApiPropertyOptional({
@@ -89,7 +91,9 @@ export class CreateStorefrontDto {
   })
   @IsOptional()
   @IsString({ message: 'يجب أن يكون اللون الأساسي نصيًا' })
-  @Matches(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, { message: 'يجب أن يكون اللون بتنسيق HEX صالح' })
+  @Matches(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, {
+    message: 'يجب أن يكون اللون بتنسيق HEX صالح',
+  })
   primaryColor?: string;
 
   @ApiPropertyOptional({
@@ -98,7 +102,9 @@ export class CreateStorefrontDto {
   })
   @IsOptional()
   @IsString({ message: 'يجب أن يكون اللون الثانوي نصيًا' })
-  @Matches(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, { message: 'يجب أن يكون اللون بتنسيق HEX صالح' })
+  @Matches(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, {
+    message: 'يجب أن يكون اللون بتنسيق HEX صالح',
+  })
   secondaryColor?: string;
 
   @ApiPropertyOptional({
@@ -108,18 +114,20 @@ export class CreateStorefrontDto {
   })
   @IsOptional()
   @IsString({ message: 'يجب أن يكون شكل الأزرار نصيًا' })
-  @IsIn(['rounded', 'square'], { message: 'يجب أن يكون شكل الأزرار إما rounded أو square' })
+  @IsIn(['rounded', 'square'], {
+    message: 'يجب أن يكون شكل الأزرار إما rounded أو square',
+  })
   buttonStyle?: string;
 
   @ApiPropertyOptional({
-    description: 'رابط مخصص للمتجر (Slug)',
+    description: 'Slug فريد لواجهة المتجر',
     example: 'my-store',
-    pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$',
   })
   @IsOptional()
-  @IsString({ message: 'يجب أن يكون الرابط المخصص نصيًا' })
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, { 
-    message: 'يجب أن يحتوي الرابط المخصص على أحرف لاتينية صغيرة وأرقام وشرطات فقط' 
+  @IsString()
+  @MaxLength(50)
+  @Matches(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, {
+    message: 'slug غير صالح (a-z, 0-9 و- فقط، 3–50)',
   })
   slug?: string;
 
@@ -129,7 +137,7 @@ export class CreateStorefrontDto {
   })
   @IsOptional()
   @IsString({ message: 'يجب أن يكون النطاق نصيًا' })
-  @Matches(/^(?!-)[A-Za-z0-9-]+([\-\.]{1}[a-z0-9]+)*\.[A-Za-z]{2,6}$/, {
+  @Matches(/^(?!-)[A-Za-z0-9-]+([-.][a-z0-9]+)*\.[A-Za-z]{2,6}$/, {
     message: 'يجب أن يكون النطاق صالحًا',
   })
   domain?: string;

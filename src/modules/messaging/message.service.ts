@@ -12,7 +12,7 @@ import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
 import { removeStopwords, ara, eng } from 'stopword';
 import { ChatGateway } from '../chat/chat.gateway';
-import { GeminiService } from './gemini.service';
+import { GeminiService } from '../ai/gemini.service';
 
 @Injectable()
 export class MessageService {
@@ -140,10 +140,12 @@ export class MessageService {
     const res = await this.messageModel.deleteOne({ _id: id }).exec();
     return { deleted: res.deletedCount > 0 };
   }
-  async getFrequentBadBotReplies(limit = 10) {
+  async getFrequentBadBotReplies(merchantId: string, limit = 10) {
+    const mid = new Types.ObjectId(merchantId);
     const agg = await this.messageModel.aggregate([
+      { $match: { merchantId: mid } }, // <-- مهم: تقييد بالتاجر
       { $unwind: '$messages' },
-      { $match: { 'messages.rating': 0, 'messages.role': 'bot' } },
+      { $match: { 'messages.role': 'bot', 'messages.rating': 0 } },
       {
         $group: {
           _id: '$messages.text',
@@ -154,10 +156,11 @@ export class MessageService {
       { $sort: { count: -1 } },
       { $limit: limit },
     ]);
+
     return agg.map((item) => ({
       text: item._id,
       count: item.count,
-      feedbacks: item.feedbacks.filter(Boolean),
+      feedbacks: (item.feedbacks || []).filter(Boolean),
     }));
   }
   async findAll(filters: {

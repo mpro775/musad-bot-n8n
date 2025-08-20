@@ -93,13 +93,6 @@ export class OrdersService {
         phone: zidOrder.customer?.phone ?? '',
         address: zidOrder.customer?.address ?? '',
       },
-      items:
-        zidOrder.products?.map((p: any) => ({
-          productId: p.id || p.productId || '',
-          name: p.name,
-          price: p.price,
-          quantity: p.quantity,
-        })) ?? [],
       products:
         zidOrder.products?.map((p: any) => ({
           name: p.name,

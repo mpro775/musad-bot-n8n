@@ -7,6 +7,8 @@ import {
   Param,
   Patch,
   UseGuards,
+  Query,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -16,12 +18,16 @@ import {
   ApiParam,
   ApiBody,
   ApiExtraModels,
-  getSchemaPath,
 } from '@nestjs/swagger';
 import { StorefrontService } from './storefront.service';
-import { CreateStorefrontDto, UpdateStorefrontDto, BannerDto } from './dto/create-storefront.dto';
+import {
+  CreateStorefrontDto,
+  UpdateStorefrontDto,
+  BannerDto,
+} from './dto/create-storefront.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
+import { UpdateStorefrontByMerchantDto } from './dto/update-storefront-by-merchant.dto';
 
 /**
  * واجهة تحكم المتجر
@@ -35,6 +41,14 @@ import { Public } from '../../common/decorators/public.decorator';
 export class StorefrontController {
   constructor(private svc: StorefrontService) {}
 
+  @Public()
+  @Get('slug/check')
+  @ApiOperation({ summary: 'التحقق من توفر slug' })
+  @ApiResponse({ status: 200, description: 'نتيجة التحقق' })
+  async checkSlug(@Query('slug') slug: string) {
+    if (!slug) throw new BadRequestException('slug مطلوب');
+    return this.svc.checkSlugAvailable(slug);
+  }
   @Get(':slugOrId')
   @Public()
   @ApiOperation({
@@ -137,32 +151,13 @@ export class StorefrontController {
   }
 
   // تحديث حسب معرف التاجر مباشرة (لتسهيل التكامل مع الـ Frontend)
-  @Patch('merchant/by-merchant/:merchantId')
-  @ApiOperation({
-    summary: 'تحديث واجهة المتجر باستخدام معرف التاجر',
-    description: 'يحدِّث إعدادات واجهة المتجر باستخدام معرف التاجر مباشرة',
-  })
-  @ApiParam({
-    name: 'merchantId',
-    required: true,
-    description: 'معرف التاجر',
-    example: '60d21b4667d0d8992e610c85',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'تم تحديث واجهة المتجر بنجاح',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'لم يتم العثور على واجهة المتجر لهذا التاجر',
-  })
-  @ApiBody({
-    type: UpdateStorefrontDto,
-    description: 'بيانات التحديث لواجهة المتجر',
-  })
+  @Patch('by-merchant/:merchantId')
+  @ApiOperation({ summary: 'تحديث واجهة المتجر باستخدام معرف التاجر' })
+  @ApiParam({ name: 'merchantId', required: true, description: 'معرف التاجر' })
+  @ApiBody({ type: UpdateStorefrontByMerchantDto })
   async updateByMerchant(
     @Param('merchantId') merchantId: string,
-    @Body() dto: UpdateStorefrontDto,
+    @Body() dto: UpdateStorefrontByMerchantDto,
   ) {
     return this.svc.updateByMerchant(merchantId, dto);
   }

@@ -17,6 +17,8 @@ import {
   HttpCode,
   Req,
   NotFoundException,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
@@ -45,6 +47,8 @@ import {
 } from './merchant-checklist.service';
 import { OnboardingBasicDto } from './dto/onboarding-basic.dto';
 import { UpdateProductSourceDto } from './dto/update-product-source.dto';
+import { unlink } from 'fs/promises';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('التجار')
 @ApiBearerAuth()
@@ -92,7 +96,7 @@ export class MerchantsController {
       }));
   }
 
-  @Get('actions/checklist')
+  @Get(':id/checklist')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'جلب قائمة العناصر في قائمة التحقق' })
   @ApiOkResponse({ description: 'قائمة العناصر في قائمة التحقق' })
@@ -114,6 +118,46 @@ export class MerchantsController {
     return this.svc.findOne(id);
   }
 
+  @Get('prompt/advanced-template')
+  async getAdvancedTemplate(@Param('id') id: string) {
+    return this.svc.getAdvancedTemplateForEditor(id, {
+      productName: 'منتج تجريبي',
+    });
+  }
+
+  @Post(':id/logo')
+  @ApiOperation({ summary: 'رفع شعار التاجر كملف (MinIO + حذف مؤقت)' })
+  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
+  @UseInterceptors(FileInterceptor('file')) // ← يعتمد على MulterModule.register({ dest: './uploads' })
+  async uploadLogo(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('لم يتم إرفاق ملف');
+
+    const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+    const maxBytes = 2 * 1024 * 1024; // 2MB
+
+    if (!allowed.includes(file.mimetype)) {
+      try {
+        await unlink(file.path);
+      } catch {
+        console.log('Error deleting file', file.path);
+      }
+      throw new BadRequestException('صيغة الصورة غير مدعومة (PNG/JPG/WEBP)');
+    }
+    if (file.size > maxBytes) {
+      try {
+        await unlink(file.path);
+      } catch {
+        console.log('Error deleting file', file.path);
+      }
+      throw new BadRequestException('الحجم الأقصى 2MB');
+    }
+
+    const url = await this.svc.uploadLogoToMinio(id, file);
+    return { url };
+  }
   @Put(':id')
   @ApiOperation({ summary: 'تحديث بيانات التاجر بالكامل' })
   @ApiParam({ name: 'id', description: 'معرّف التاجر' })

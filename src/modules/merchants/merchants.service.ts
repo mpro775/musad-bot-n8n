@@ -30,6 +30,14 @@ import { EvolutionService } from '../integrations/evolution.service';
 import { randomUUID } from 'crypto';
 import { StorefrontService } from '../storefront/storefront.service';
 import { OnboardingBasicDto } from './dto/onboarding-basic.dto';
+import { BusinessMetrics } from 'src/metrics/business.metrics';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import { Client as MinioClient } from 'minio';
+import { unlink } from 'fs/promises';
+import { buildHbsContext, stripGuardSections } from './services/prompt-utils';
+import { PreviewPromptDto } from './dto/preview-prompt.dto';
+
 function toRecord(input: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   if (input instanceof Map) {
@@ -47,6 +55,7 @@ function toRecord(input: unknown): Record<string, string> {
   }
   return out;
 }
+
 const normUrl = (u?: string) =>
   u && u.trim()
     ? /^https?:\/\//i.test(u)
@@ -57,6 +66,7 @@ const normUrl = (u?: string) =>
 @Injectable()
 export class MerchantsService {
   private readonly logger = new Logger(MerchantsService.name);
+  public minio: MinioClient;
 
   constructor(
     @InjectModel(Merchant.name)
@@ -70,20 +80,29 @@ export class MerchantsService {
 
     private readonly previewSvc: PromptPreviewService,
     private readonly n8n: N8nWorkflowService,
-  ) {}
+    private readonly businessMetrics: BusinessMetrics,
+  ) {
+    this.minio = new MinioClient({
+      endPoint: process.env.MINIO_ENDPOINT!,
+      port: parseInt(process.env.MINIO_PORT ?? '9000', 10),
+      useSSL: process.env.MINIO_USE_SSL === 'true',
+      accessKey: process.env.MINIO_ACCESS_KEY!,
+      secretKey: process.env.MINIO_SECRET_KEY!,
+    });
+  }
 
   async create(createDto: CreateMerchantDto): Promise<MerchantDocument> {
-    // 1) حوّل SubscriptionPlanDto إلى SubscriptionPlan
+    // 1) تحويل SubscriptionPlanDto إلى SubscriptionPlan
     const subscription = {
       tier: createDto.subscription.tier,
       startDate: new Date(createDto.subscription.startDate),
       endDate: createDto.subscription.endDate
         ? new Date(createDto.subscription.endDate)
         : undefined,
-      features: createDto.subscription.features, // مصفوفة الميزات
+      features: createDto.subscription.features,
     };
 
-    // 2) جهّز المستند مع تزويد جميع الحقول الافتراضية
+    // 2) تجهيز المستند مع القيم الافتراضية
     const doc: any = {
       userId: createDto.userId,
       name: createDto.name,
@@ -100,7 +119,7 @@ export class MerchantsService {
       // ساعات العمل
       workingHours: createDto.workingHours ?? [],
 
-      // القنوات تُنشأ فارغة ثم تُملأ لاحقاً
+      // القنوات تُنشأ فارغة ثم تُملأ لاحقًا
       channels: {},
 
       // السياسات
@@ -108,22 +127,16 @@ export class MerchantsService {
       exchangePolicy: createDto.exchangePolicy ?? '',
       shippingPolicy: createDto.shippingPolicy ?? '',
 
-      // إعدادات البرومبت السريعة مع الحقول الجديدة
+      // إعدادات البرومبت السريعة
       quickConfig: {
         dialect: createDto.quickConfig?.dialect ?? 'خليجي',
         tone: createDto.quickConfig?.tone ?? 'ودّي',
         customInstructions: createDto.quickConfig?.customInstructions ?? [],
-        sectionOrder: createDto.quickConfig?.sectionOrder ?? [
-          'products',
-          'policies',
-          'custom',
-        ],
-        includeStoreUrl: createDto.quickConfig?.includeStoreUrl ?? true,
-        includeAddress: createDto.quickConfig?.includeAddress ?? true,
-        includePolicies: createDto.quickConfig?.includePolicies ?? true,
-        includeWorkingHours: createDto.quickConfig?.includeWorkingHours ?? true,
         includeClosingPhrase:
           createDto.quickConfig?.includeClosingPhrase ?? true,
+        customerServicePhone: createDto.quickConfig?.customerServicePhone ?? '',
+        customerServiceWhatsapp:
+          createDto.quickConfig?.customerServiceWhatsapp ?? '',
         closingText:
           createDto.quickConfig?.closingText ?? 'هل أقدر أساعدك بشي ثاني؟ 😊',
       },
@@ -145,16 +158,27 @@ export class MerchantsService {
       ),
     };
 
-    // 3) أنشئ الميرشانت واحفظه
+    // 3) إنشاء المستند مبدئيًا (DB فقط)
     const merchant = new this.merchantModel(doc);
     await merchant.save();
 
+    this.businessMetrics.incMerchantCreated();
+    this.businessMetrics.incN8nWorkflowCreated();
+    // متغيّرات التعويض (rollback flags)
+    let wfId: string | null = null;
+    let storefrontCreated = false;
+    let tgWebhookSet = false;
+    let tgToken: string | undefined;
+
     try {
-      // 4) أنشئ الـ workflow
-      const wfId = await this.n8n.createForMerchant(merchant.id);
+      // 4) إنشاء الـ workflow في n8n
+      wfId = await this.n8n.createForMerchant(merchant.id);
       merchant.workflowId = wfId;
 
-      // 5) دمج القنوات إذا وجدت في DTO
+      // (اختياري) زيادة عدّاد المِترِكس لو فعّلت مزوّد counter
+      // this.n8nWorkflowCreatedCounter?.inc();
+
+      // 5) دمج القنوات لو موجودة في DTO
       if (createDto.channels) {
         merchant.channels = {
           whatsapp: mapToChannelConfig(createDto.channels.whatsapp),
@@ -163,11 +187,12 @@ export class MerchantsService {
         };
       }
 
-      // 6) أعد بناء وحفظ finalPromptTemplate
+      // 6) بناء وحفظ finalPromptTemplate
       merchant.finalPromptTemplate =
         await this.promptBuilder.compileTemplate(merchant);
       await merchant.save();
 
+      // 7) إنشاء الـ Storefront الافتراضي
       await this.storefrontService.create({
         merchant: merchant.id,
         primaryColor: '#FF8500',
@@ -177,7 +202,9 @@ export class MerchantsService {
         featuredProductIds: [],
         slug: merchant.id.toString(),
       });
-      // 7) تسجيل ويبهوك تيليجرام إن وُجد توكن
+      storefrontCreated = true;
+
+      // 8) تسجيل Webhook تيليجرام إن وُجد توكن
       const tgCfg = merchant.channels.telegram;
       if (tgCfg?.token) {
         const { hookUrl } = await this.registerTelegramWebhook(
@@ -189,15 +216,60 @@ export class MerchantsService {
           enabled: true,
           webhookUrl: hookUrl,
         };
+        tgWebhookSet = true;
+        tgToken = tgCfg.token;
         await merchant.save();
       }
 
+      // (اختياري) عدّاد “Merchant Created”
+      // this.merchantCreatedCounter?.inc();
+
       return merchant;
-    } catch (err) {
-      // 8) في حال فشل أي خطوة فرعية، احذف الميرشانت
-      await this.merchantModel.findByIdAndDelete(merchant.id).exec();
+    } catch (err: any) {
+      // تعويض الموارد الخارجية ثم حذف التاجر
+      try {
+        // أ) إبطال Webhook تيليجرام إذا كان قد تم ضبطه
+        if (tgWebhookSet && tgToken) {
+          try {
+            await firstValueFrom(
+              this.http.get(
+                `https://api.telegram.org/bot${tgToken}/setWebhook?url=`,
+              ),
+            );
+          } catch {
+            // تجاهُل أي خطأ في الإبطال
+          }
+        }
+
+        // ب) تعطيل ثم حذف الـ workflow إن أُنشئ
+        if (wfId) {
+          try {
+            await this.n8n.setActive(wfId, false);
+          } catch {
+            // تجاهُل أي خطأ في الإبطال
+          }
+          try {
+            await this.n8n.delete(wfId);
+          } catch {
+            // تجاهُل أي خطأ في الحذف
+          }
+        }
+
+        // ج) حذف الـ Storefront إن أُنشئ
+        if (storefrontCreated) {
+          try {
+            await this.storefrontService.deleteByMerchant(merchant.id);
+          } catch {
+            // تجاهُل أي خطأ في الحذف
+          }
+        }
+      } finally {
+        // د) حذف مستند التاجر من قاعدة البيانات (دائمًا)
+        await this.merchantModel.findByIdAndDelete(merchant.id).exec();
+      }
+
       throw new InternalServerErrorException(
-        `Initialization failed: ${err.message}`,
+        `Initialization failed: ${err?.message || 'unknown'}`,
       );
     }
   }
@@ -259,6 +331,106 @@ export class MerchantsService {
 
     return updated;
   }
+
+  private async ensureBucket(bucket: string) {
+    try {
+      const exists = await this.minio.bucketExists(bucket);
+      if (!exists) {
+        await this.minio.makeBucket(
+          bucket,
+          process.env.MINIO_REGION || 'us-east-1',
+        );
+        this.logger.log(`Created MinIO bucket: ${bucket}`);
+      }
+    } catch (e) {
+      this.logger.error(`MinIO bucket check/creation failed for ${bucket}`, e);
+      throw new InternalServerErrorException('STORAGE_INIT_FAILED');
+    }
+  }
+  async previewPromptV2(id: string, dto: PreviewPromptDto): Promise<string> {
+    const m = await this.findOne(id);
+    const merged = m.toObject ? m.toObject() : m;
+
+    // دمج quickConfig مؤقتًا (إن وُجد) للمعاينة فقط
+    if (dto.quickConfig && Object.keys(dto.quickConfig).length) {
+      merged.quickConfig = { ...merged.quickConfig, ...dto.quickConfig };
+    }
+
+    const ctx = buildHbsContext(merged, dto.testVars ?? {});
+    const audience = dto.audience ?? 'merchant';
+
+    if (audience === 'agent') {
+      // Final بالحارس (لا نعرضه في لوحة التاجر عادةً)
+      const withGuard = await this.promptBuilder.compileTemplate(merged);
+      return Handlebars.compile(withGuard)(ctx);
+    }
+
+    // merchant: Final بدون الحارس
+    const withGuard = await this.promptBuilder.compileTemplate(merged);
+    const noGuard = stripGuardSections(withGuard);
+    return Handlebars.compile(noGuard)(ctx);
+  }
+  async uploadLogoToMinio(
+    merchantId: string,
+    file: Express.Multer.File,
+  ): Promise<string> {
+    const merchant = await this.merchantModel.findById(merchantId).exec();
+    if (!merchant) throw new NotFoundException('التاجر غير موجود');
+
+    const bucket = process.env.MINIO_BUCKET!;
+    await this.ensureBucket(bucket);
+
+    const ext = this.extFromMime(file.mimetype);
+    const key = `merchants/${merchantId}/logo-${Date.now()}.${ext}`;
+    this.logger.log(`Uploading merchant logo to MinIO: ${bucket}/${key}`);
+
+    try {
+      // نرفع من المسار المؤقت الذي وضعه Multer (dest: ./uploads)
+      await this.minio.fPutObject(bucket, key, file.path, {
+        'Content-Type': file.mimetype,
+      });
+
+      const cdnBase = (process.env.ASSETS_CDN_BASE_URL || '').replace(
+        /\/+$/,
+        '',
+      );
+      const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(
+        /\/+$/,
+        '',
+      );
+      let url: string;
+
+      if (cdnBase) {
+        url = `${cdnBase}/${bucket}/${key}`;
+      } else if (minioPublic) {
+        url = `${minioPublic}/${bucket}/${key}`;
+      } else {
+        // آخر حل: رابط موقّت (يفضل عدم استخدامه للشعار في الإنتاج)
+        url = await this.minio.presignedUrl(
+          'GET',
+          bucket,
+          key,
+          7 * 24 * 60 * 60,
+        );
+      }
+
+      merchant.logoUrl = url;
+      await merchant.save();
+
+      this.logger.log(`Logo uploaded and merchant updated. URL=${url}`);
+      return url;
+    } catch (e: any) {
+      this.logger.error('MinIO upload failed', e);
+      // لو كانت مشكلة اتصال/إعدادات
+      throw new InternalServerErrorException('STORAGE_UPLOAD_FAILED');
+    } finally {
+      try {
+        await unlink(file.path);
+      } catch {
+        // تجاهل
+      }
+    }
+  }
   /** جلب كل التجار */
   async findAll(): Promise<MerchantDocument[]> {
     return this.merchantModel.find().exec();
@@ -307,7 +479,42 @@ export class MerchantsService {
       await this.promptBuilder.compileTemplate(merchant);
     return merchant;
   }
+  private extFromMime(m: string): string {
+    if (m === 'image/png') return 'png';
+    if (m === 'image/jpeg') return 'jpg';
+    if (m === 'image/webp') return 'webp';
+    return 'bin';
+  }
+  async uploadLogo(id: string, file: Express.Multer.File): Promise<string> {
+    const merchant = await this.merchantModel.findById(id).exec();
+    if (!merchant) throw new NotFoundException('التاجر غير موجود');
 
+    // حفظ محليًا داخل public/uploads/merchants/:id
+    const uploadDir = path.join(
+      process.cwd(),
+      'public',
+      'uploads',
+      'merchants',
+      id,
+    );
+    await fs.mkdir(uploadDir, { recursive: true });
+
+    const ext = this.extFromMime(file.mimetype);
+    const filename = `logo-${Date.now()}.${ext}`;
+    const full = path.join(uploadDir, filename);
+    await fs.writeFile(full, file.buffer);
+
+    // حدّد الـ Base URL (بيئة) — إن عندك CDN استخدمه
+    const base = process.env.CDN_BASE_URL || process.env.APP_BASE_URL || '';
+
+    const publicPath = `/uploads/merchants/${id}/${filename}`;
+    const url = base ? `${base}${publicPath}` : publicPath;
+
+    merchant.logoUrl = url;
+    await merchant.save();
+
+    return url;
+  }
   /** حذف تاجر */
   async remove(id: string): Promise<{ message: string }> {
     const deleted = await this.merchantModel.findByIdAndDelete(id).exec();
@@ -499,15 +706,28 @@ export class MerchantsService {
     id: string,
     testVars: Record<string, string>,
     useAdvanced: boolean,
+    quickOverride?: Partial<QuickConfig>, // ← جديد اختياري
   ): Promise<string> {
     const m = await this.findOne(id);
+
+    // إن أرسلت quickOverride ندمجه مؤقتًا للمعاينة
+    const mergedMerchant = m.toObject ? m.toObject() : m;
+    if (quickOverride && Object.keys(quickOverride).length) {
+      mergedMerchant.quickConfig = {
+        ...mergedMerchant.quickConfig,
+        ...quickOverride,
+      };
+    }
+
     const rawTpl =
-      useAdvanced && m.currentAdvancedConfig.template
-        ? m.currentAdvancedConfig.template
-        : this.promptBuilder.buildFromQuickConfig(m);
+      useAdvanced && mergedMerchant.currentAdvancedConfig?.template
+        ? mergedMerchant.currentAdvancedConfig.template
+        : this.promptBuilder.buildFromQuickConfig(
+            mergedMerchant as MerchantDocument,
+          );
+
     return this.previewSvc.preview(rawTpl, testVars);
   }
-
   /** تحديث القنوات */
   async updateChannels(
     id: string,
@@ -779,5 +999,25 @@ export class MerchantsService {
       text,
     );
     return { ok: true };
+  }
+  async getAdvancedTemplateForEditor(
+    id: string,
+    testVars: Record<string, string> = {},
+  ) {
+    const m = await this.findOne(id);
+
+    const current = m.currentAdvancedConfig?.template?.trim() ?? '';
+    if (current) {
+      return { template: current, note: m.currentAdvancedConfig?.note ?? '' };
+    }
+
+    // لا يوجد قالب متقدّم → نبني اقتراح من Final بدون الحارس
+    const finalWithGuard = await this.promptBuilder.compileTemplate(m);
+    const noGuard = stripGuardSections(finalWithGuard);
+
+    // نمرّره على Handlebars لتعبئة المتغيرات (إن وجدت)
+    const filled = Handlebars.compile(noGuard)(buildHbsContext(m, testVars));
+
+    return { template: filled, note: 'Generated from final (no guard)' };
   }
 }

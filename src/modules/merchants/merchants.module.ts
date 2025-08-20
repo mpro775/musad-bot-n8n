@@ -22,6 +22,7 @@ import {
 } from '../categories/schemas/category.schema';
 import { StorefrontModule } from '../storefront/storefront.module';
 import { InstructionsModule } from '../instructions/instructions.module';
+import { MetricsModule } from 'src/metrics/metrics.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { InstructionsModule } from '../instructions/instructions.module';
     HttpModule,
     forwardRef(() => N8nWorkflowModule),
     IntegrationsModule,
+    MetricsModule,
   ],
   providers: [
     MerchantsService,
