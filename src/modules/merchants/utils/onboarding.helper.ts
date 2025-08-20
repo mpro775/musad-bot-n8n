@@ -8,7 +8,8 @@ export function hasCompletedRequiredSetup(merchant: Merchant): boolean {
     !!merchant.addresses[0]?.country &&
     !!merchant.subscription?.tier &&
     !!merchant.subscription?.startDate &&
-    (!!merchant.channels?.whatsapp?.enabled ||
+    (
+      !!merchant.channels?.whatsappQr?.enabled ||
       !!merchant.channels?.telegram?.enabled ||
       !!merchant.channels?.webchat?.enabled)
   );

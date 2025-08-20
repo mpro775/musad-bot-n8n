@@ -6,28 +6,27 @@ export class ChannelConfig {
   @Prop({ default: false })
   enabled: boolean;
 
-  @Prop()
-  phone?: string; // للواتساب
+  // عام
+  @Prop() webhookUrl?: string;
+  @Prop({ type: Object, default: {} }) widgetSettings?: Record<string, any>;
 
-  @Prop()
-  sessionId?: string;
-  @Prop()
-  instanceId?: string;
-  @Prop()
-  qr?: string; // base64 QR
+  // Telegram
+  @Prop() token?: string; // Bot token
+  @Prop() chatId?: string; // default chatId (اختياري)
 
-  @Prop()
-  status?: string;
-  @Prop()
-  token?: string; // للتليجرام
+  // WhatsApp (QR / Evolution)
+  @Prop() sessionId?: string;
+  @Prop() instanceId?: string;
+  @Prop() qr?: string;
+  @Prop() status?: string;
+  @Prop() phone?: string; // رقم التاجر (اختياري - لـ عرض UI)
 
-  @Prop()
-  chatId?: string; // للتليجرام
-  @Prop()
-  webhookUrl?: string;
-
-  @Prop({ type: Object, default: {} })
-  widgetSettings?: Record<string, any>; // للويبشات
+  // WhatsApp Cloud API (Meta)
+  @Prop() accessToken?: string;
+  @Prop() appSecret?: string;
+  @Prop() verifyToken?: string;
+  @Prop() phoneNumberId?: string;
+  @Prop() wabaId?: string;
 }
 
 export type ChannelConfigDocument = ChannelConfig & Document;

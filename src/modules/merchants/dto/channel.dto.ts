@@ -95,10 +95,20 @@ export class ChannelsDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => ChannelDetailsDto)
-  whatsapp?: ChannelDetailsDto;
+  whatsappApi?: ChannelDetailsDto;
 
   @ApiPropertyOptional({
-    description: 'إعدادات قناة التليجرام',
+    description: 'إعدادات قناة الواتساب',
+    type: () => ChannelDetailsDto,
+    required: false
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ChannelDetailsDto)
+  whatsappQr?: ChannelDetailsDto;
+
+  @ApiPropertyOptional({
+    description: 'إعدادات قناة الواتساب',
     type: () => ChannelDetailsDto,
     required: false
   })

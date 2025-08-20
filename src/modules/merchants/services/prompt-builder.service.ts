@@ -55,11 +55,21 @@ export class PromptBuilderService {
       for (const inst of limited) lines.push(`- ${inst}`);
     }
 
-    // قنوات خدمة العملاء (يُظهِرها فقط عند طلب اتصال مباشر)
-    if (customerServicePhone)
-      lines.push(`للإتصال الهاتفي عند الطلب: ${customerServicePhone}`);
-    if (customerServiceWhatsapp)
-      lines.push(`للوتساب عند الطلب: ${customerServiceWhatsapp}`);
+    // ===== قنوات خدمة العملاء (تظهر فقط عند توفرها) =====
+  const normWa = (v?: string) => {
+    const s = (v || '').trim();
+    if (!s) return '';
+    if (/^https?:\/\/(wa\.me|(?:www\.)?whatsapp\.com)\//i.test(s)) return s;
+    const digits = s.replace(/\D/g, '');
+    return digits ? `https://wa.me/${digits}` : '';
+  };
+
+  const waLink = normWa(customerServiceWhatsapp);
+  if (customerServicePhone || waLink) {
+    lines.push('قنوات خدمة العملاء (استخدمها عندما يطلب العميل التواصل):');
+    if (customerServicePhone) lines.push(`- الهاتف: ${customerServicePhone}`);
+    if (waLink) lines.push(`- واتساب: ${waLink}`);
+  }
 
     if (includeClosingPhrase) lines.push(`ختام: ${closingText}`);
 

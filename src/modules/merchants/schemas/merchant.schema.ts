@@ -119,8 +119,12 @@ export class Merchant {
   // — Channels —
   @Prop({
     type: {
-      whatsapp: ChannelConfigSchema,
-      whatsappQr: ChannelConfigSchema, // لدعم QR إذا أردت الفصل
+      // WhatsApp الرسمي:
+      whatsappApi: ChannelConfigSchema,
+      // WhatsApp QR عبر Evolution:
+      whatsappQr: ChannelConfigSchema,
+
+      // تلغرام/ويبشات وبقية القنوات:
       telegram: ChannelConfigSchema,
       webchat: ChannelConfigSchema,
       instagram: ChannelConfigSchema,
@@ -129,7 +133,7 @@ export class Merchant {
     default: {},
   })
   channels: {
-    whatsapp?: ChannelConfig;
+    whatsappApi?: ChannelConfig;
     whatsappQr?: ChannelConfig;
     telegram?: ChannelConfig;
     webchat?: ChannelConfig;

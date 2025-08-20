@@ -381,7 +381,7 @@ export class AnalyticsService {
     }
     const enabledChannels: string[] = [];
     if (merchant.channels?.telegram?.enabled) enabledChannels.push('telegram');
-    if (merchant.channels?.whatsapp?.enabled) enabledChannels.push('whatsapp');
+    if (merchant.channels?.whatsappQr?.enabled) enabledChannels.push('whatsapp');
     if (merchant.channels?.webchat?.enabled) enabledChannels.push('webchat');
 
     // 6) تجميع usage لكل قناة من الـ Sessions

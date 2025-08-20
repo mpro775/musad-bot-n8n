@@ -126,13 +126,12 @@ export class AuthService {
     const isMatch = await bcrypt.compare(password, userDoc.password);
     if (!isMatch) throw new BadRequestException('Invalid credentials');
 
-    const merchant = await this.merchantModel.findOne({ userId: userDoc._id });
-
     const payload = {
       userId: userDoc._id,
       role: userDoc.role,
-      merchantId: merchant?._id || null,
+      merchantId: userDoc.merchantId ?? null, // 👈 خذه من user مباشرة
     };
+
     return {
       accessToken: this.jwtService.sign(payload),
       user: {
@@ -140,12 +139,13 @@ export class AuthService {
         name: userDoc.name,
         email: userDoc.email,
         role: userDoc.role,
-        merchantId: merchant?._id || null,
+        merchantId: userDoc.merchantId ?? null,
         firstLogin: userDoc.firstLogin,
-        emailVerified: userDoc.emailVerified, // 👈 جديد
+        emailVerified: userDoc.emailVerified,
       },
     };
   }
+
   async verifyEmail(dto: VerifyEmailDto): Promise<void> {
     const { email, code } = dto;
     const user = await this.userModel.findOne({ email }).exec();

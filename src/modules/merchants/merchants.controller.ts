@@ -19,6 +19,8 @@ import {
   NotFoundException,
   UseInterceptors,
   UploadedFile,
+  Query,
+  ParseEnumPipe,
 } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
@@ -37,6 +39,7 @@ import {
   ApiUnauthorizedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { Public } from 'src/common/decorators/public.decorator';
 import { OnboardingResponseDto } from './dto/onboarding-response.dto';
@@ -49,6 +52,7 @@ import { OnboardingBasicDto } from './dto/onboarding-basic.dto';
 import { UpdateProductSourceDto } from './dto/update-product-source.dto';
 import { unlink } from 'fs/promises';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ChannelKey, UpdateChannelDto } from './dto/channels.dto';
 
 @ApiTags('التجار')
 @ApiBearerAuth()
@@ -217,23 +221,41 @@ export class MerchantsController {
   /**
    * تحديث قناة محددة (واتساب/تلجرام/ويبشات)
    */
-  @Patch(':id/channels/:channelType')
-  @ApiOperation({ summary: 'تحديث إعدادات قناة منفردة' })
-  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
-  @ApiParam({
-    name: 'channelType',
-    description: 'نوع القناة: whatsapp | telegram | webchat',
-    enum: ['whatsapp', 'telegram', 'webchat'],
-  })
-  @ApiBody({ type: ChannelDetailsDto })
-  @ApiOkResponse({ description: 'تم تحديث القناة' })
-  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
-  updateChannel(
+  @Patch(':id/channels/:key')
+  @ApiOperation({ summary: 'تعديل قناة (Patch قناة معينة)' })
+  @ApiParam({ name: 'id' })
+  @ApiParam({ name: 'key', enum: ChannelKey })
+  @ApiBody({ type: UpdateChannelDto })
+  async patchChannel(
     @Param('id') id: string,
-    @Param('channelType') channelType: 'whatsapp' | 'telegram' | 'webchat',
-    @Body() channelDetails: ChannelDetailsDto,
+    @Param('key', new ParseEnumPipe(ChannelKey)) key: ChannelKey,
+    @Body() dto: UpdateChannelDto,
   ) {
-    return this.svc.updateChannels(id, channelType, channelDetails);
+    return this.svc.patchChannel(id, key, dto);
+  }
+
+  /**
+   * mode:
+   * - disable: تعطيل فقط (يبقي الإعدادات)
+   * - disconnect: فصل مع تنظيف خارجي (deleteWebhook/ deleteInstance)
+   * - wipe: تعطيل + حذف الحقول الحسّاسة داخليًا (توكن/سشن/سر..) + فصل خارجي
+   */
+  @Delete(':id/channels/:key')
+  @ApiOperation({ summary: 'حذف/فصل قناة' })
+  @ApiParam({ name: 'id' })
+  @ApiParam({ name: 'key', enum: ChannelKey })
+  @ApiQuery({
+    name: 'mode',
+    required: false,
+    enum: ['disable', 'disconnect', 'wipe'],
+    description: 'الوضع الافتراضي disconnect',
+  })
+  async deleteChannel(
+    @Param('id') id: string,
+    @Param('key', new ParseEnumPipe(ChannelKey)) key: ChannelKey,
+    @Query('mode') mode: 'disable' | 'disconnect' | 'wipe' = 'disconnect',
+  ) {
+    return this.svc.deleteChannel(id, key, mode);
   }
 
   @Post(':id/telegram-webhook')

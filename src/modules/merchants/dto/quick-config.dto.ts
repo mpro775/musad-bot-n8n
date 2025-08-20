@@ -39,9 +39,8 @@ export class QuickConfigDto {
   @IsString()
   customerServicePhone?: string;
 
-  // اختياري إن أردت دعم الواتساب
   @ApiPropertyOptional({
-    description: 'رابط واتساب خدمة العملاء',
+    description: 'واتساب خدمة العملاء (رابط wa.me أو رقم)',
     example: 'https://wa.me/9665xxxxxxx',
   })
   @IsOptional()

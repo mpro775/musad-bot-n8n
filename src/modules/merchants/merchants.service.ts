@@ -37,6 +37,7 @@ import { Client as MinioClient } from 'minio';
 import { unlink } from 'fs/promises';
 import { buildHbsContext, stripGuardSections } from './services/prompt-utils';
 import { PreviewPromptDto } from './dto/preview-prompt.dto';
+import { ChannelKey, UpdateChannelDto } from './dto/channels.dto';
 
 function toRecord(input: unknown): Record<string, string> {
   const out: Record<string, string> = {};
@@ -181,7 +182,8 @@ export class MerchantsService {
       // 5) دمج القنوات لو موجودة في DTO
       if (createDto.channels) {
         merchant.channels = {
-          whatsapp: mapToChannelConfig(createDto.channels.whatsapp),
+          whatsappApi: mapToChannelConfig(createDto.channels.whatsappApi),
+          whatsappQr: mapToChannelConfig(createDto.channels.whatsappQr),
           telegram: mapToChannelConfig(createDto.channels.telegram),
           webchat: mapToChannelConfig(createDto.channels.webchat),
         };
@@ -649,8 +651,8 @@ export class MerchantsService {
     if (tg) socials.telegram = `https://t.me/${String(tg).replace(/^@/, '')}`;
 
     // 3) whatsapp (من القناة أو الهاتف)
-    const waNum = m?.channels?.whatsapp?.phone
-      ? String(m.channels.whatsapp.phone)
+    const waNum = m?.channels?.whatsappApi?.phone
+      ? String(m.channels.whatsappApi.phone)
       : m?.phone
         ? String(m.phone)
         : '';
@@ -835,6 +837,134 @@ export class MerchantsService {
     await m.save();
     return m;
   }
+
+  async patchChannel(id: string, key: ChannelKey, partial: UpdateChannelDto) {
+    const m = await this.merchantModel.findById(id);
+    if (!m) throw new NotFoundException('Merchant not found');
+
+    const path = `channels.${key}`;
+    const current = (m.channels as any)?.[key] ?? {};
+
+    // دمج بسيط
+    const merged = { ...current, ...partial };
+
+    // إجراءات تبعية (Side Effects)
+    if (key === ChannelKey.telegram && partial.token) {
+      // سجّل/حدّث Webhook بتوكن السيكرت
+      const hookUrl = `${this.config.get('PUBLIC_WEBHOOK_BASE')}/incoming/${id}`;
+      const secret = this.config.get('TELEGRAM_WEBHOOK_SECRET')!;
+      await firstValueFrom(
+        this.http.get(
+          `https://api.telegram.org/bot${partial.token}/setWebhook`,
+          {
+            params: { url: hookUrl, secret_token: secret },
+          },
+        ),
+      );
+      merged.webhookUrl = hookUrl;
+      merged.enabled = true;
+    }
+
+    if (
+      key === ChannelKey.whatsappQr &&
+      partial.enabled &&
+      current.sessionId &&
+      partial.webhookUrl
+    ) {
+      // إعادة تعيين ويبهوك Evolution لو تغيّر
+      await this.evoService.setWebhook(
+        current.sessionId,
+        partial.webhookUrl,
+        ['MESSAGES_UPSERT'],
+        true,
+        true,
+      );
+    }
+
+    // حفظ
+    const updated = await this.merchantModel
+      .findByIdAndUpdate(id, { $set: { [path]: merged } }, { new: true })
+      .lean();
+
+    // (اختياري) دفع حدث لقناة تحليلات/أوتبوكس
+    // await this.outbox.enqueueEvent({ ... 'channel.updated' ... });
+
+    return updated;
+  }
+
+  async deleteChannel(
+    id: string,
+    key: ChannelKey,
+    mode: 'disable' | 'disconnect' | 'wipe' = 'disconnect',
+  ) {
+    const m = await this.merchantModel.findById(id);
+    if (!m) throw new NotFoundException('Merchant not found');
+
+    const conf = (m.channels as any)?.[key] || {};
+    const path = `channels.${key}`;
+
+    // 1) فصل خارجي عند الحاجة
+    if (mode === 'disconnect' || mode === 'wipe') {
+      if (key === ChannelKey.whatsappQr && conf?.sessionId) {
+        // Evolution
+        try {
+          await this.evoService.deleteInstance(conf.sessionId);
+        } catch {}
+      }
+
+      if (key === ChannelKey.telegram && conf?.token) {
+        // Telegram deleteWebhook
+        try {
+          await firstValueFrom(
+            this.http.get(
+              `https://api.telegram.org/bot${conf.token}/deleteWebhook`,
+              {
+                params: { drop_pending_updates: 'true' },
+              },
+            ),
+          );
+        } catch {}
+      }
+
+      // WhatsApp API: لا يوجد deleteWebhook على مستوى رقم الهاتف — فقط عطّل وامسح الأسرار (في wipe)
+    }
+
+    // 2) تحديث الـ DB
+    const unsetList = [
+      'token',
+      'sessionId',
+      'instanceId',
+      'qr',
+      'status',
+      'webhookUrl',
+      'phone',
+      'accessToken',
+      'appSecret',
+      'verifyToken',
+      'phoneNumberId',
+      'wabaId',
+      'widgetSettings',
+    ];
+    const $unset: Record<string, ''> = {};
+    if (mode === 'wipe') {
+      for (const f of unsetList) $unset[`${path}.${f}`] = '';
+    }
+
+    const update: any = {
+      $set: { [`${path}.enabled`]: false, [`${path}.status`]: 'disconnected' },
+    };
+    if (mode === 'wipe') update.$unset = $unset;
+
+    const updated = await this.merchantModel
+      .findByIdAndUpdate(id, update, { new: true })
+      .lean();
+
+    // (اختياري) outbox
+    // await this.outbox.enqueueEvent({ ... 'channel.deleted' ... });
+
+    return updated;
+  }
+
   /** تسجيل Webhook لتليجرام */
   // merchants.service.ts
   public async registerTelegramWebhook(merchantId: string, botToken: string) {
@@ -889,13 +1019,17 @@ export class MerchantsService {
         endDate: merchant.subscription.endDate,
       },
       channels: {
-        whatsapp: {
-          enabled: merchant.channels.whatsapp?.enabled || false,
-          connected: !!merchant.channels.whatsapp?.token,
+        whatsappApi: {
+          enabled: merchant.channels.whatsappApi?.enabled || false,
+          connected: !!merchant.channels.whatsappApi?.token,
         },
         telegram: {
           enabled: merchant.channels.telegram?.enabled || false,
           connected: !!merchant.channels.telegram?.token,
+        },
+        whatsappQr: {
+          enabled: merchant.channels.whatsappQr?.enabled || false,
+          connected: !!merchant.channels.whatsappQr?.token,
         },
         webchat: {
           enabled: merchant.channels.webchat?.enabled || false,
@@ -915,7 +1049,7 @@ export class MerchantsService {
     if (!merchant) throw new NotFoundException('Merchant not found');
 
     const instanceName = `whatsapp_${merchantId}`;
-    const token = merchant.channels.whatsapp?.token ?? randomUUID();
+    const token = merchant.channels.whatsappApi?.token ?? randomUUID();
 
     await this.evoService.deleteInstance(instanceName);
 
@@ -934,8 +1068,8 @@ export class MerchantsService {
       true,
     );
 
-    merchant.channels.whatsapp = {
-      ...merchant.channels.whatsapp,
+    merchant.channels.whatsappQr = {
+      ...merchant.channels.whatsappQr,
       enabled: true,
       sessionId: instanceName,
       instanceId,
@@ -951,29 +1085,29 @@ export class MerchantsService {
 
   async updateWhatsappWebhook(merchantId: string, newWebhookUrl: string) {
     const merchant = await this.merchantModel.findById(merchantId);
-    if (!merchant || !merchant.channels.whatsapp?.sessionId)
+    if (!merchant || !merchant.channels.whatsappQr?.sessionId)
       throw new NotFoundException('No whatsapp session');
 
     await this.evoService.setWebhook(
-      merchant.channels.whatsapp.sessionId,
+      merchant.channels.whatsappQr.sessionId,
       newWebhookUrl,
       ['MESSAGES_UPSERT'],
       true,
       true,
     );
 
-    merchant.channels.whatsapp.webhookUrl = newWebhookUrl;
+    merchant.channels.whatsappQr.webhookUrl = newWebhookUrl;
     await merchant.save();
     return { ok: true };
   }
   // جلب حالة الجلسة
   async getWhatsappStatus(merchantId: string) {
     const merchant = await this.merchantModel.findById(merchantId);
-    if (!merchant || !merchant.channels.whatsapp?.sessionId)
+    if (!merchant || !merchant.channels.whatsappQr?.sessionId)
       throw new NotFoundException('No whatsapp session');
 
     const instanceInfo = await this.evoService.getStatus(
-      merchant.channels.whatsapp.sessionId,
+      merchant.channels.whatsappQr.sessionId,
     );
 
     if (!instanceInfo) return { status: 'unknown' };
@@ -991,10 +1125,10 @@ export class MerchantsService {
   // إرسال رسالة (اختياري)
   async sendWhatsappMessage(merchantId: string, to: string, text: string) {
     const merchant = await this.merchantModel.findById(merchantId);
-    if (!merchant || !merchant.channels.whatsapp?.sessionId)
+    if (!merchant || !merchant.channels.whatsappQr?.sessionId)
       throw new NotFoundException('No whatsapp session');
     await this.evoService.sendMessage(
-      merchant.channels.whatsapp.sessionId,
+      merchant.channels.whatsappQr.sessionId,
       to,
       text,
     );

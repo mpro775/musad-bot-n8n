@@ -105,9 +105,9 @@ export class MerchantChecklistService {
       {
         key: 'channel_whatsapp',
         title: 'واتساب',
-        isComplete: !!m.channels?.whatsapp?.enabled,
+        isComplete: !!m.channels?.whatsappQr?.enabled,
         isSkipped: skipped.includes('channel_whatsapp'),
-        message: m.channels?.whatsapp?.enabled
+        message: m.channels?.whatsappQr?.enabled
           ? undefined
           : 'فعّل واتساب وأضف رقم الجوال وربط الـ webhook',
         actionPath: '/settings/merchant/channels/whatsapp',

@@ -100,26 +100,38 @@ export class MerchantPromptController {
   @Post('preview')
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async preview(@Param('id') id: string, @Body() dto: PreviewPromptDto) {
-    // 1) جلب التاجر
     const m = await this.merchantSvc.findOne(id);
 
-    // 2) دمج الـ quickConfig مؤقتًا (بدون حفظ)
-    const mergedConfig = { ...m.quickConfig, ...(dto.quickConfig || {}) };
-    const tempMerchant = {
-      ...(m.toObject ? m.toObject() : (m as any)),
-      quickConfig: mergedConfig,
-    } as MerchantDocument;
+    // 1) خذ نسخة Plain من المستند
+    const base = m.toObject ? m.toObject() : (m as any);
 
-    // 3) اختيار القالب (متقدّم أم سريع)
+    // 2) ادمج quickConfig القادم من الفرونت (بدون حفظ)
+    const mergedConfig = {
+      ...(base.quickConfig || {}),
+      ...(dto.quickConfig || {}),
+    };
+
+    // 3) ابنِ نسخة تاجر مؤقتة تُمرَّر للمبنّي
+    const tempMerchant = {
+      ...base,
+      quickConfig: mergedConfig,
+    } as unknown as MerchantDocument;
+
+    // 4) اختر القالب (متقدم أو سريع)
     const rawTpl =
-      dto.useAdvanced && m.currentAdvancedConfig.template
-        ? m.currentAdvancedConfig.template
+      dto.useAdvanced && base.currentAdvancedConfig?.template
+        ? base.currentAdvancedConfig.template
         : this.promptBuilder.buildFromQuickConfig(tempMerchant);
 
-    // 4) بناء السياق الكامل وتمريره للمعاينة
-    const ctx = buildHbsContext(tempMerchant, dto.testVars || {});
-    const preview = this.previewSvc.preview(rawTpl, ctx);
+    // 5) (مهم) مرّر سياق كامل لِـ Handlebars لكي يرى merchantName/quickConfig
+    const ctx = {
+      merchantName: base.name,
+      categories: base.categories ?? [],
+      quickConfig: mergedConfig,
+      ...(dto.testVars || {}),
+    };
 
+    const preview = this.previewSvc.preview(rawTpl, ctx);
     return { preview };
   }
 

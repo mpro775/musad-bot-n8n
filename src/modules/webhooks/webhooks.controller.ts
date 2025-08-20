@@ -35,6 +35,8 @@ import { EvolutionService } from '../integrations/evolution.service';
 import { ConfigService } from '@nestjs/config';
 import { ChatGateway } from '../chat/chat.gateway';
 import { OutboxService } from 'src/common/outbox/outbox.service';
+import { createHmac, timingSafeEqual } from 'crypto';
+
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 function detectOrderIntent(msg: string): {
   step: string;
@@ -59,7 +61,12 @@ function detectOrderIntent(msg: string): {
   }
   return { step: 'normal' };
 }
-
+function verifyMetaSig(appSecret: string, raw: Buffer, sig?: string) {
+  if (!sig || !sig.startsWith('sha256=')) return false;
+  const theirs = Buffer.from(sig.split('=')[1], 'hex');
+  const ours = createHmac('sha256', appSecret).update(raw).digest();
+  return theirs.length === ours.length && timingSafeEqual(theirs, ours);
+}
 @ApiTags('Webhooks')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -102,7 +109,7 @@ export class WebhooksController {
         // parse_mode: 'HTML' // إن احتجتم تنسيق
       });
     } else if (channel === 'whatsapp') {
-      const session = merchant.channels?.whatsapp?.sessionId;
+      const session = merchant.channels?.whatsappQr?.sessionId;
       if (!session) throw new Error('WhatsApp not configured');
       await this.evoService.sendMessage(session, sessionId, text);
     } else if (channel === 'webchat') {
