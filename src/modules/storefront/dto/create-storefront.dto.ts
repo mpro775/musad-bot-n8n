@@ -12,6 +12,7 @@ import {
   Matches,
   IsIn,
   MaxLength,
+  ArrayMaxSize,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -142,12 +143,10 @@ export class CreateStorefrontDto {
   })
   domain?: string;
 
-  @ApiPropertyOptional({
-    description: 'قائمة البنرات في الواجهة',
-    type: [BannerDto],
-  })
+  @ApiPropertyOptional({ description: 'قائمة البنرات في الواجهة', type: [BannerDto] })
   @IsOptional()
   @IsArray({ message: 'يجب أن تكون البنرات مصفوفة' })
+  @ArrayMaxSize(5, { message: 'الحد الأقصى لعدد البنرات هو 5.' }) // 👈 السقف 5
   @ValidateNested({ each: true })
   @Type(() => BannerDto)
   banners?: BannerDto[];

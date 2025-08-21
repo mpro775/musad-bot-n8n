@@ -25,10 +25,10 @@ export class KleemChatService {
     private readonly events: EventEmitter2,
   ) {
     this.n8n = axios.create({
-      baseURL: process.env.N8N_BASE_URL || 'https://n8n.kaleem-ai.com',
-      timeout: 15_000,
+      baseURL: (process.env.N8N_BASE_URL || process.env.N8N_API_URL || 'http://n8n:5678').replace(/\/+$/,''),
+      timeout: 15000,
       headers: { 'Content-Type': 'application/json' },
-    });
+    });    
   }
 
   private async buildSystemPrompt(userText: string): Promise<string> {

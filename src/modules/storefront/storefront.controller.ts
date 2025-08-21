@@ -9,6 +9,8 @@ import {
   UseGuards,
   Query,
   BadRequestException,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,6 +20,7 @@ import {
   ApiParam,
   ApiBody,
   ApiExtraModels,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { StorefrontService } from './storefront.service';
 import {
@@ -28,7 +31,7 @@ import {
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { UpdateStorefrontByMerchantDto } from './dto/update-storefront-by-merchant.dto';
-
+import { FilesInterceptor } from '@nestjs/platform-express';  
 /**
  * واجهة تحكم المتجر
  * تتعامل مع عمليات إدارة واجهة المتجر وإعداداتها
@@ -160,5 +163,29 @@ export class StorefrontController {
     @Body() dto: UpdateStorefrontByMerchantDto,
   ) {
     return this.svc.updateByMerchant(merchantId, dto);
+  }
+  @Post('by-merchant/:merchantId/banners/upload')
+  @ApiOperation({ summary: 'رفع صور البنرات (≤5 بنرات إجماليًا، ≤5MP للصورة)' })
+  @ApiParam({ name: 'merchantId', required: true, description: 'معرف التاجر' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FilesInterceptor('files', 5)) // أقصى عدد بالطلب 5
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          description: 'صور البنرات (PNG/JPG/WEBP)',
+        },
+      },
+      required: ['files'],
+    },
+  })
+  async uploadBanners(
+    @Param('merchantId') merchantId: string,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return this.svc.uploadBannerImagesToMinio(merchantId, files);
   }
 }

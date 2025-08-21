@@ -1,6 +1,7 @@
 // src/storefront/storefront.service.ts
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -19,30 +20,178 @@ import { UpdateStorefrontDto } from './dto/update-storefront.dto';
 import { Storefront, StorefrontDocument } from './schemas/storefront.schema';
 import { CreateStorefrontDto } from './dto/create-storefront.dto';
 import { FilterQuery } from 'mongoose';
+import { VectorService } from '../vector/vector.service';
+import * as Minio from 'minio';
+import { unlink } from 'node:fs/promises';
+import sharp from 'sharp';
+
 export interface StorefrontResult {
-  merchant: Merchant;
-  products: Product[];
-  categories: Category[];
+  merchant: any;
+  products: any[];
+  categories: any[];
 }
 @Injectable()
 export class StorefrontService {
+  private readonly MAX_BANNERS = 5;
+
+  // ====== تحجيم مع الحفاظ على النسبة إلى ≤ 5 ميجا بكسل ======
+  private async processToMaxMegapixels(
+    inputPath: string,
+    maxMP = 5,
+  ): Promise<{ buffer: Buffer; mime: string; ext: string }> {
+    const MAX_PIXELS = Math.floor(maxMP * 1_000_000);
+
+    const img = sharp(inputPath, { failOn: 'none' });
+    const meta = await img.metadata();
+    const w = meta.width ?? 0;
+    const h = meta.height ?? 0;
+    if (w <= 0 || h <= 0) throw new BadRequestException('لا يمكن قراءة أبعاد الصورة');
+
+    let pipeline = img;
+    const total = w * h;
+
+    // إن كانت أكبر من 5MP نقلّص بالأبعاد الفعلية مع الحفاظ على النسبة
+    if (total > MAX_PIXELS) {
+      const scale = Math.sqrt(MAX_PIXELS / total); // نسبة التصغير
+      const newW = Math.max(1, Math.floor(w * scale));
+      const newH = Math.max(1, Math.floor(h * scale));
+      pipeline = pipeline.resize(newW, newH, { fit: 'inside', withoutEnlargement: true });
+    }
+
+    // نُخرج WEBP بجودة مناسبة (يدعم الشفافية والنِسَب العريضة للبانرات)
+    const buffer = await pipeline.webp({ quality: 80 }).toBuffer();
+    return { buffer, mime: 'image/webp', ext: 'webp' };
+  }
+
+  // ====== رفع صور البنرات (≤5 إجماليًا) ======
+  async uploadBannerImagesToMinio(
+    merchantId: string,
+    files: Express.Multer.File[],
+  ): Promise<{
+    urls: string[];
+    accepted: number;
+    remaining: number;
+    max: number;
+  }> {
+    const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+    const bucket = process.env.MINIO_BUCKET!;
+    await this.ensureBucket(bucket);
+
+    // احضر storefront لحساب المتبقي
+    const sf = await this.findByMerchant(merchantId);
+    const currentCount = sf?.banners?.length ?? 0;
+
+    if (currentCount >= this.MAX_BANNERS) {
+      // لا يوجد أي خانة متاحة
+      // تنظيف الملفات المؤقتة
+      await Promise.all(files.map(f => unlink(f.path).catch(() => {})));
+      throw new BadRequestException(`لا يمكن إضافة المزيد من البنرات: الحد الأقصى ${this.MAX_BANNERS}.`);
+    }
+
+    const availableSlots = Math.max(0, this.MAX_BANNERS - currentCount);
+    const toProcess = files.slice(0, availableSlots);
+
+    const urls: string[] = [];
+    let i = 0;
+
+    for (const file of toProcess) {
+      if (!allowed.includes(file.mimetype)) {
+        await unlink(file.path).catch(() => {});
+        throw new BadRequestException('صيغة الصورة غير مدعومة (PNG/JPG/WEBP).');
+      }
+
+      try {
+        const out = await this.processToMaxMegapixels(file.path, 5); // ≤5MP
+        const key = `merchants/${merchantId}/storefront/banners/banner-${Date.now()}-${i++}.${out.ext}`;
+
+        // نرفع البافر مباشرة (لا نحتاج fPutObject على المسار)
+        await this.minio.fPutObject(bucket, key, file.path, {
+          'Content-Type': file.mimetype,
+        });
+
+        const url = await this.publicUrlFor(bucket, key);
+        urls.push(url);
+      } finally {
+        await unlink(file.path).catch(() => {});
+      }
+    }
+
+    return {
+      urls,
+      accepted: toProcess.length,
+      remaining: Math.max(0, this.MAX_BANNERS - (currentCount + toProcess.length)),
+      max: this.MAX_BANNERS,
+    };
+  }
+
+  // ====== Helpers للتخزين (موجودة لديك – نعيدها للوضوح) ======
+  private async ensureBucket(bucket: string) {
+    const exists = await this.minio.bucketExists(bucket).catch(() => false);
+    if (!exists) await this.minio.makeBucket(bucket, '');
+  }
+
+  private async publicUrlFor(bucket: string, key: string): Promise<string> {
+    const cdnBase = (process.env.ASSETS_CDN_BASE_URL || '').replace(/\/+$/, '');
+    const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(/\/+$/, '');
+    if (cdnBase) return `${cdnBase}/${bucket}/${key}`;
+    if (minioPublic) return `${minioPublic}/${bucket}/${key}`;
+    return this.minio.presignedUrl('GET', bucket, key, 7 * 24 * 60 * 60);
+  }
+
   constructor(
     @InjectModel(Merchant.name) private merchantModel: Model<MerchantDocument>,
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
     @InjectModel(Category.name) private categoryModel: Model<CategoryDocument>,
     @InjectModel(Storefront.name)
     private storefrontModel: Model<StorefrontDocument>,
+    private vectorService: VectorService,
+    @Inject('MINIO_CLIENT') private readonly minio: Minio.Client,
   ) {}
   async create(dto: CreateStorefrontDto): Promise<Storefront> {
     return this.storefrontModel.create(dto);
   }
 
   async update(id: string, dto: UpdateStorefrontDto): Promise<Storefront> {
-    const storefront = await this.storefrontModel.findByIdAndUpdate(id, dto, {
-      new: true,
-    });
-    if (!storefront) throw new NotFoundException('Storefront not found');
-    return storefront;
+    const before = await this.storefrontModel.findById(id);
+    if (!before) throw new NotFoundException('Storefront not found');
+
+    const updated = await this.storefrontModel.findByIdAndUpdate(id, dto, { new: true });
+    if (!updated) throw new NotFoundException('Storefront not found');
+
+    const slugChanged   = dto.slug   && dto.slug   !== before.slug;
+    const domainChanged = dto.domain !== undefined && dto.domain !== before.domain;
+
+    if (slugChanged || domainChanged) {
+      await this.productModel.updateMany(
+        { merchantId: updated.merchant },
+        {
+          ...(slugChanged   ? { storefrontSlug: updated.slug } : {}),
+          ...(domainChanged ? { storefrontDomain: updated.domain ?? null } : {}),
+        } as any,
+      );
+      // إعادة فهرسة URL في المتجهات (سريع: نجلب ids فقط ثم نقرأ كل منتج لحساب publicUrl)
+      const ids = await this.productModel
+        .find({ merchantId: updated.merchant })
+        .select('_id')
+        .lean();
+
+      for (const { _id } of ids) {
+        const p = await this.productModel.findById(_id).lean();
+        if (!p) continue;
+        await this.vectorService.upsertProducts([{
+          id: String(p._id),
+          merchantId: String(p.merchantId),
+          name: p.name,
+          description: p.description,
+          category: p.category ? String(p.category) : undefined,
+          specsBlock: p.specsBlock,
+          keywords: p.keywords,
+          url: (p as any).publicUrl, // virtual محسوب من الحقول بعد التحديث
+        }]);
+      }
+    }
+
+    return updated;
   }
 
   async getStorefront(slugOrId: string): Promise<StorefrontResult> {

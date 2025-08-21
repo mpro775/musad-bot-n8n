@@ -38,7 +38,7 @@ export class MailService {
       );
     }
 
-    this.mailFrom = `"MusaidBot" <${from}>`;
+    this.mailFrom = `"Kaleem" <${from}>`;
 
     this.transporter = createTransport({
       host,
@@ -239,7 +239,7 @@ export class MailService {
 <body>
   <div class="container">
     <div class="header">
-      <h1 class="logo">MusaidBot</h1>
+      <h1 class="logo">Kaleem</h1>
     </div>
     
     <div class="content">

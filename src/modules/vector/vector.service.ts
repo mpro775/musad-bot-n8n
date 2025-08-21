@@ -19,6 +19,7 @@ import { HttpService } from '@nestjs/axios';
 import { v5 as uuidv5 } from 'uuid';
 import { ProductsService } from '../products/products.service';
 import { geminiRerankTopN } from './geminiRerank';
+import { ConfigService } from '@nestjs/config';
 const PRODUCT_NAMESPACE = 'd94a5f5a-2bfc-4c2d-9f10-1234567890ab';
 const FAQ_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 const NAMESPACE = '6ba7b811-9dad-11d1-80b4-00c04fd430c8';
@@ -31,6 +32,7 @@ export class VectorService implements OnModuleInit {
   public readonly faqCollection = 'faqs';
   private readonly documentCollection = 'documents';
   private readonly botFaqCollection = 'bot_faqs'; // 👈 كولكشن منفصل لقاعدة معرفة كليم
+  private readonly embeddingBase: string;
 
   private readonly webCollection = 'web_knowledge'; // 👈 مجموعات جديدة
   private readonly logger = new Logger(VectorService.name);
@@ -39,8 +41,14 @@ export class VectorService implements OnModuleInit {
     private readonly http: HttpService,
     @Inject(forwardRef(() => ProductsService)) // ← أضف هذه السطر
     private readonly productsService: ProductsService,
+    private config: ConfigService
     // 👈 وأيضًا هذا لو استخدمته
-  ) {}
+  ) {
+      this.embeddingBase = (this.config.get<string>('EMBEDDING_BASE_URL') || '').replace(/\/+$/, '');
+      if (!this.embeddingBase) {
+        throw new Error('EMBEDDING_BASE_URL is required');
+      }
+    }
   public async onModuleInit(): Promise<void> {
     this.qdrant = new QdrantClient({ url: process.env.QDRANT_URL });
     console.log('[VectorService] Qdrant URL is', process.env.QDRANT_URL);
@@ -84,7 +92,7 @@ export class VectorService implements OnModuleInit {
 
   // vector.service.ts
   public async embed(text: string): Promise<number[]> {
-    const embeddingUrl = 'http://31.97.155.167:8000'; // تأكد من إزالة المسافة الأولى قبل http
+    const embeddingUrl = this.embeddingBase; // تأكد من إزالة المسافة الأولى قبل http
     try {
       console.log('🔤 Embedding text length:', text.length);
       console.log('🌐 Sending to Embedding URL:', `${embeddingUrl}/embed`);
@@ -201,16 +209,22 @@ export class VectorService implements OnModuleInit {
   public async upsertProducts(products: EmbeddableProduct[]) {
     const points = await Promise.all(
       products.map(async (p) => ({
-        id: uuidv5(p.id, PRODUCT_NAMESPACE), // ← UUID ثابت لكل منتج
-        vector: await this.embed(this.buildTextForEmbedding(p)), // ← تحويل المنتج إلى متجه
+        id: uuidv5(p.id, PRODUCT_NAMESPACE), // UUID ثابت
+        vector: await this.embed(this.buildTextForEmbedding(p)),
         payload: {
           mongoId: p.id,
           merchantId: p.merchantId,
           name: p.name,
-          description: p.description,
-          category: p.category,
+          description: p.description ?? '',
+          category: p.category ?? '',
           specsBlock: p.specsBlock ?? [],
           keywords: p.keywords ?? [],
+          // 👇 إضافات مهمة للبوت/الاسترجاع
+          url: p.url ?? null,
+          // خزّن رقمياً (ليس string) لتسهيل الفلاتر لاحقاً
+          price: Number.isFinite(p.price as number)
+            ? (p.price as number)
+            : null,
         },
       })),
     );
@@ -223,62 +237,87 @@ export class VectorService implements OnModuleInit {
     merchantId: string,
     topK = 5,
   ): Promise<
-    {
+    { id: string; name?: string; price?: number; url?: string; score: number }[]
+  > {
+    // 1) Embed للاستعلام
+    const vector = await this.embed(text);
+
+    // 2) بحث في Qdrant
+    const rawResults = await this.qdrant.search(this.collection, {
+      vector,
+      limit: topK * 4, // نوسع ثم نعيد ترتيبهم
+      with_payload: { include: ['mongoId', 'name', 'price', 'url'] },
+      filter: { must: [{ key: 'merchantId', match: { value: merchantId } }] },
+    });
+
+    if (!rawResults.length) return [];
+
+    // 3) نصوص المرشحين لإعادة الترتيب (اختياري)
+    const candidates = rawResults.map((item) => {
+      const p = item.payload as any;
+      // نص بسيط يكفي لإعادة الترتيب
+      return `اسم المنتج: ${p.name ?? ''}${p.price ? ` - السعر: ${p.price}` : ''}`;
+    });
+
+    // 4) إعادة ترتيب عبر Gemini (إن متاح). الدالة قد تعيد:
+    //    - مصفوفة فهارس [2,0,1,...] أو
+    //    - مصفوفة كائنات { index, score }
+    let rerankedIdx: number[] | null = null;
+    try {
+      const geminiResult = await geminiRerankTopN({
+        query: text,
+        candidates,
+        topN: topK,
+      });
+
+      if (Array.isArray(geminiResult) && geminiResult.length) {
+        if (typeof geminiResult[0] === 'number') {
+          rerankedIdx = geminiResult as number[];
+        } else if (
+          typeof geminiResult[0] === 'object' &&
+          'index' in (geminiResult[0] as any)
+        ) {
+          rerankedIdx = (
+            geminiResult as unknown as Array<{ index: number; score?: number }>
+          )
+            .map((r) => r.index)
+            .slice(0, topK);
+        }
+      }
+    } catch {
+      // لو فشل إعادة الترتيب، نكمل بالترتيب الأصلي القادم من Qdrant
+    }
+
+    // 5) إبراز أفضل Top K
+    const pick = (
+      i: number,
+    ): {
       id: string;
       name?: string;
       price?: number;
       url?: string;
       score: number;
-    }[]
-  > {
-    // 1. استخرج embedding للسؤال
-    const vector = await this.embed(text);
-
-    // 2. استخرج المنتجات من Qdrant
-    const rawResults = await this.qdrant.search(this.collection, {
-      vector,
-      limit: topK * 4, // عدد أكبر لأن Gemini سيعيد ترتيبهم!
-      with_payload: {
-        include: ['mongoId', 'name', 'price', 'url'],
-      },
-      filter: {
-        must: [{ key: 'merchantId', match: { value: merchantId } }],
-      },
-    });
-
-    if (!rawResults.length) return [];
-
-    // 3. حضّر المرشحين للنموذج
-    const candidates = rawResults.map((item) => {
+    } => {
+      const item = rawResults[i];
       const p = item.payload as any;
-      // يمكنك إضافة تفاصيل إضافية (سعر/وصف) لو أردت زيادة دقة Gemini
-      return `اسم المنتج: ${p.name ?? ''}${p.price ? ` - السعر: ${p.price}` : ''}`;
-    });
+      return {
+        id: String(p.mongoId),
+        name: p.name,
+        price: typeof p.price === 'number' ? p.price : undefined,
+        url: p.url ?? undefined,
+        score: item.score ?? 0,
+      };
+    };
 
-    // 4. استعمل Gemini لترتيب النتائج
-    const geminiResult = await geminiRerankTopN({
-      query: text,
-      candidates,
-      topN: topK,
-    });
-
-    // 5. أرجع أفضل نتيجة واحدة أو عدة (يمكن تعديل البرومبت لإرجاع Top N)
-    if (geminiResult.length > 0) {
-      const bestItem = rawResults[geminiResult[0]];
-      const payload = bestItem.payload as any;
-      return [
-        {
-          id: payload.mongoId as string,
-          name: payload.name,
-          price: payload.price,
-          url: payload.url,
-          score: 1, // يمكنك إضافة سكّور ثابت أو تركه 1 للتمييز فقط
-        },
-      ];
+    if (rerankedIdx && rerankedIdx.length) {
+      return rerankedIdx
+        .filter((i) => i >= 0 && i < rawResults.length)
+        .slice(0, topK)
+        .map(pick);
     }
 
-    // إذا لم يجد Gemini جوابًا مناسبًا
-    return [];
+    // بدون إعادة ترتيب: خذ الأوائل حسب مسافة المتجه
+    return rawResults.slice(0, topK).map((_, index) => pick(index));
   }
 
   public async upsertFaqs(points: any[]) {

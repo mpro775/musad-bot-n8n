@@ -1,15 +1,16 @@
 // src/vector/types.ts
 export interface EmbeddableProduct {
-  id: string; // Product._id.toString()
+  id: string;
+  merchantId: string;
   name: string;
   description?: string;
   category?: string;
   specsBlock?: string[];
   keywords?: string[];
-  merchantId: string;
-  price?: number;
-  url?: string; // ← نضيفه لأننا نستخدمه في Qdrant payload
+  url?: string;      // 👈 جديد
+  price?: number;    // 👈 جديد
 }
+
 export type FAQData = {
   question?: string;
   answer?: string;

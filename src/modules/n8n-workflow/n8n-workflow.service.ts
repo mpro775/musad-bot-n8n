@@ -75,13 +75,16 @@ export class N8nWorkflowService {
     @Inject(forwardRef(() => MerchantsService))
     private readonly merchants: MerchantsService,
   ) {
+    // const keyName = 'X-N8N-API-KEY';
+    // const apiKey =
+    //   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4N2M4NjU2OS01ZGFmLTQyNjYtOTVhYy04OTQxY2U1YWVhZTgiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzU1MTk0MjE3LCJleHAiOjE3NTc3MzYwMDB9.LEFrlXhDS6E1Urrst5GMy63ebz4ZaeMP7RNylkk_Rlk';
+    // const baseUrl = 'https://n8n.kaleem-ai.com'.replace(/\/+$/, '');
     const keyName = 'X-N8N-API-KEY';
-    const apiKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4N2M4NjU2OS01ZGFmLTQyNjYtOTVhYy04OTQxY2U1YWVhZTgiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzU1MTk0MjE3LCJleHAiOjE3NTc3MzYwMDB9.LEFrlXhDS6E1Urrst5GMy63ebz4ZaeMP7RNylkk_Rlk';
-    const baseUrl = 'https://n8n.kaleem-ai.com'.replace(/\/+$/, '');
+    const apiKey = process.env.N8N_API_KEY!;
+    const baseUrl = (process.env.N8N_API_URL || 'http://n8n:5678/api/v1').replace(/\/+$/, '');
 
-    this.logger.log(`â–¶ï¸ڈ [n8n.baseURL] = ${baseUrl}`);
-    this.logger.log(`â–¶ï¸ڈ [n8n.header]  = ${keyName}: ${apiKey}`);
+    this.logger.log(`[n8n.baseURL] = ${baseUrl}`);
+    this.logger.log(`[n8n.header]  = ${keyName}: ${apiKey}`);
 
     this.api = axios.create({
       baseURL: `${baseUrl}/api/v1`,
@@ -118,7 +121,7 @@ export class N8nWorkflowService {
       isObj(v) ? v : {};
     const get = (o: unknown, k: string): unknown => {
       if (!isObj(o)) return undefined;
-      return o[k]; // âœ… ط¨ط¹ط¯ ط§ظ„ظ€ guard طµط§ط± o: Record<string, unknown>
+      return o[k]; 
     };
 
     const isCred = (v: unknown): v is { name: string } =>

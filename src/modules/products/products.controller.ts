@@ -17,14 +17,15 @@ import {
   BadRequestException,
   InternalServerErrorException,
   NotFoundException,
+  UploadedFiles,
 } from '@nestjs/common';
-import { 
-  ApiTags, 
-  ApiBearerAuth, 
-  ApiOperation, 
-  ApiParam, 
-  ApiBody, 
-  ApiOkResponse, 
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiBody,
+  ApiOkResponse,
   ApiCreatedResponse,
   ApiResponse,
   ApiUnauthorizedResponse,
@@ -42,6 +43,7 @@ import { RequestWithUser } from '../../common/interfaces/request-with-user.inter
 import { Public } from '../../common/decorators/public.decorator';
 import { ProductSetupConfigDto } from './dto/product-setup-config.dto';
 import { ProductSetupConfigService } from './product-setup-config.service';
+import { FilesInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('المنتجات')
 @ApiBearerAuth()
@@ -96,6 +98,8 @@ export class ProductsController {
       sourceUrl: dto.sourceUrl,
       externalId: dto.externalId,
       name: dto.name || '',
+      currency: dto.currency,             // ← جديد
+      offer: dto.offer,           
       price: dto.price || 0,
       isAvailable: dto.isAvailable ?? true,
       keywords: dto.keywords || [],
@@ -103,21 +107,13 @@ export class ProductsController {
       description: dto.description || '',
       images: dto.images || [],
       category: dto.category || '',
-      lowQuantity: dto.lowQuantity || '',
       specsBlock: dto.specsBlock || [],
-      // alerts
-      errorState: 'queued',
+      attributes: dto.attributes,
+  
     };
     const product = await this.productsService.create(input);
     // enqueue scrape job for api/scraper
-    if (dto.source !== ProductSource.MANUAL) {
-      await this.productsService.enqueueScrapeJob({
-        productId: product._id.toString(),
-        url: dto.sourceUrl || dto.originalUrl || '',
-        merchantId: req.user.merchantId,
-        mode: 'minimal',
-      });
-    }
+
     return plainToInstance(ProductResponseDto, product, {
       excludeExtraneousValues: true,
     });
@@ -166,6 +162,29 @@ export class ProductsController {
     const docs = await this.productsService.findAllByMerchant(merchantObjectId);
 
     return plainToInstance(ProductResponseDto, docs);
+  }
+
+  @Post(':id/images')
+  @UseInterceptors(FilesInterceptor('files', 6))
+  async uploadProductImages(
+    @Param('id') id: string,
+    @Query('replace') replace = 'false',
+    @Request() req: RequestWithUser,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    const result = await this.productsService.uploadProductImagesToMinio(
+      id,
+      req.user.merchantId,
+      files,
+      { replace: replace === 'true' },
+    );
+    // ✅ رجّع فقط الحقول هذه (بدون أي buffer)
+    return {
+      urls: result.urls,
+      count: result.count,
+      accepted: result.accepted,
+      remaining: result.remaining,
+    };
   }
 
   @Public()
@@ -223,20 +242,6 @@ export class ProductsController {
       console.error('Find Product Error:', error);
       throw error;
     }
-  }
-  @Post('import-link')
-  @HttpCode(HttpStatus.ACCEPTED)
-  async importByLink(
-    @Request() req: RequestWithUser,
-    @Body('url') url: string,
-  ) {
-    if (!url) throw new BadRequestException('URL is required');
-    await this.productsService.create({
-      merchantId: req.user.merchantId,
-      originalUrl: url,
-      source: ProductSource.SCRAPER, // أو ProductSource.API حسب الحالة
-    });
-    return { status: 'queued' };
   }
 
   @Put(':id')
@@ -362,32 +367,6 @@ export class ProductsController {
     @Body('isAvailable') isAvailable: boolean,
   ) {
     return this.productsService.setAvailability(id, isAvailable);
-  }
-
-  @Post(':id/sync')
-  @ApiParam({ name: 'id', description: 'معرّف المنتج' })
-  @ApiOperation({ summary: 'مزامنة يدوية للمنتجات الآلية' })
-  @ApiOkResponse({ type: ProductResponseDto })
-  @ApiForbiddenResponse({ description: 'لا يمكن مزامنة المنتجات اليدوية' })
-  @ApiNotFoundResponse({ description: 'المنتج غير موجود' })
-  async triggerSync(
-    @Param('id') id: string,
-    @Request() req: RequestWithUser,
-  ): Promise<ProductResponseDto> {
-    const product = await this.productsService.findOne(id);
-    if (
-      product.merchantId.toString() !== req.user.merchantId &&
-      req.user.role !== 'ADMIN'
-    ) {
-      throw new ForbiddenException('ليس لديك صلاحية مزامنة هذا المنتج');
-    }
-    if (product.source === 'manual') {
-      throw new BadRequestException('لا يمكن مزامنة المنتجات اليدوية');
-    }
-    const synced = await this.productsService.triggerSync(id);
-    return plainToInstance(ProductResponseDto, synced, {
-      excludeExtraneousValues: true,
-    });
   }
 
   @Delete(':id')

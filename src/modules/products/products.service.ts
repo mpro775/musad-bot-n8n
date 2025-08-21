@@ -1,23 +1,39 @@
 // src/modules/products/products.service.ts
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model, set, Types } from 'mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { ScrapeQueue } from './scrape.queue';
-import { Cron, CronExpression } from '@nestjs/schedule';
+
 import { CreateProductDto, ProductSource } from './dto/create-product.dto';
 import { VectorService } from '../vector/vector.service';
-import { ZidService } from '../integrations/zid/zid.service';
+import { forwardRef, Inject } from '@nestjs/common';
 import { ExternalProduct } from '../integrations/types';
+import {
+  Storefront,
+  StorefrontDocument,
+} from '../storefront/schemas/storefront.schema';
 import { mapZidImageUrls } from './utils/map-image-urls';
-interface ZidProductImage {
-  url: string;
-  [key: string]: any;
+import { ZidProductImage } from '../integrations/zid/zid.model';
+import {
+  Category,
+  CategoryDocument,
+} from '../categories/schemas/category.schema';
+import * as Minio from 'minio';
+import { unlink } from 'fs/promises';
+import sharp from 'sharp';
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeQuery(query: string) {
+  return query.trim().toLowerCase();
 }
 
 @Injectable()
@@ -25,80 +41,535 @@ export class ProductsService {
   constructor(
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
-    private readonly scrapeQueue: ScrapeQueue,
+    @Inject(forwardRef(() => VectorService))
     private readonly vectorService: VectorService,
-    private readonly zidService: ZidService,
+    @InjectModel(Storefront.name)
+    private readonly storefrontModel: Model<StorefrontDocument>,
+    @InjectModel(Category.name)
+    private readonly categoryModel: Model<CategoryDocument>, // 👈 جديد
+    @Inject('MINIO_CLIENT') private readonly minio: Minio.Client,
   ) {}
 
+  private normalizeSlug(input: string): string {
+    let s = (input || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s-]/gu, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    if (s.length > 50) s = s.slice(0, 50).replace(/-+$/g, '');
+    return s;
+  }
+
+  private baseStoreSlug(merchantId: Types.ObjectId) {
+    return this.normalizeSlug(`store-${merchantId.toString().slice(-8)}`);
+  }
+
+  // 🔧 نسخة مرنة + تخلق افتراضي عند الحاجة
+  private async getStorefrontInfo(
+    merchantId: Types.ObjectId,
+  ): Promise<{ slug: string; domain?: string }> {
+    // ابحث بكل الطرق (في حال كان النوع String في DB لسبب قديم)
+    const or = [
+      { merchant: merchantId },
+      { merchant: merchantId.toString() as any },
+    ];
+
+    let sf = await this.storefrontModel.findOne({ $or: or });
+    if (!sf) {
+      // لوج للتشخيص
+      console.warn(
+        '[getStorefrontInfo] storefront not found for merchant:',
+        merchantId.toString(),
+        '→ creating default',
+      );
+
+      // أنشئ واجهة متجر افتراضية و slug فريد
+      let slug = this.baseStoreSlug(merchantId);
+      let i = 1;
+      while (await this.storefrontModel.exists({ slug })) {
+        slug = this.normalizeSlug(`${this.baseStoreSlug(merchantId)}-${i++}`);
+      }
+      sf = await this.storefrontModel.create({
+        merchant: merchantId,
+        primaryColor: '#FF8500',
+        secondaryColor: '#1976d2',
+        buttonStyle: 'rounded',
+        slug,
+      });
+    }
+
+    // لو موجود لكن slug فاضي لأي سبب، ثبّته
+    if (!sf.slug || !sf.slug.trim()) {
+      let slug = this.baseStoreSlug(merchantId);
+      let i = 1;
+      while (
+        await this.storefrontModel.exists({ slug, _id: { $ne: sf._id } })
+      ) {
+        slug = this.normalizeSlug(`${this.baseStoreSlug(merchantId)}-${i++}`);
+      }
+      sf.slug = slug;
+      await sf.save();
+    }
+
+    // ارجاع البيانات
+    return { slug: sf.slug, domain: sf.domain ?? undefined };
+  }
+  private genStoreSlugFallback(merchantId: Types.ObjectId) {
+    return this.normalizeSlug(`store-${merchantId.toString().slice(-8)}`);
+  }
+  private async ensureUniqueSlug(merchantId: Types.ObjectId, base: string) {
+    // لو base فاضي استخدم fallback
+    let s = base && base.trim() ? base : this.genStoreSlugFallback(merchantId);
+    let i = 0;
+    while (await this.productModel.exists({ merchantId, slug: s })) {
+      i += 1;
+      // في الحالات العربية نزيد لاحقة رقمية آمنة
+      s = `${base && base.trim() ? base : this.genStoreSlugFallback(merchantId)}-${i}`;
+    }
+    return s;
+  }
+
+  // ====== Helpers للتخزين ======
+  private async ensureBucket(bucket: string) {
+    const exists = await this.minio.bucketExists(bucket).catch(() => false);
+    if (!exists) await this.minio.makeBucket(bucket, '');
+  }
+  private async publicUrlFor(bucket: string, key: string): Promise<string> {
+    const cdnBase = (process.env.ASSETS_CDN_BASE_URL || '').replace(/\/+$/, '');
+    const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(
+      /\/+$/,
+      '',
+    );
+    if (cdnBase) return `${cdnBase}/${bucket}/${key}`;
+    if (minioPublic) return `${minioPublic}/${bucket}/${key}`;
+    return this.minio.presignedUrl('GET', bucket, key, 7 * 24 * 60 * 60);
+  }
+
+  // ====== التحقق من الفئة Leaf ======
+  private async assertLeafCategory(
+    merchantId: Types.ObjectId,
+    categoryId: string,
+  ) {
+    const cat = await this.categoryModel
+      .findOne({ _id: categoryId, merchantId })
+      .lean();
+    if (!cat) throw new BadRequestException('الفئة غير موجودة لهذا التاجر');
+    const hasChildren = await this.categoryModel.exists({
+      merchantId,
+      parent: cat._id,
+    });
+    if (hasChildren) {
+      throw new BadRequestException(
+        'لا يمكن إضافة منتجات لفئة لديها أبناء. اختر فئة فرعية نهائية.',
+      );
+    }
+    return cat._id;
+  }
+
+  // ====== معالجة الصورة (مربع ≤2MB) ======
+  private async processToSquareUnder2MB(
+    inputPath: string,
+  ): Promise<{ buffer: Buffer; mime: string; ext: string }> {
+    const MAX_SIDE = 1024; // بإمكانك تعديله
+    const MAX_BYTES = 2 * 1024 * 1024;
+
+    // نقرأ الأبعاد مبدئياً عبر sharp
+    const img = sharp(inputPath);
+    const meta = await img.metadata();
+    if (!meta.width || !meta.height)
+      throw new BadRequestException('لا يمكن قراءة أبعاد الصورة');
+
+    // نجعلها مربعة (cover) ثم نُصغّر للـ 1024x1024
+    let pipeline = img.resize(MAX_SIDE, MAX_SIDE, {
+      fit: 'cover',
+      position: 'attention',
+    });
+
+    // نجرّب WEBP جودات متدرجة لضمان ≤2MB
+    const qualities = [85, 75, 65, 50];
+    for (const q of qualities) {
+      const buf = await pipeline.webp({ quality: q }).toBuffer();
+      if (buf.length <= MAX_BYTES) {
+        return { buffer: buf, mime: 'image/webp', ext: 'webp' };
+      }
+    }
+
+    // آخر محاولة: JPEG بجودة منخفضة
+    for (const q of [80, 70, 60, 50]) {
+      const buf = await pipeline.jpeg({ quality: q }).toBuffer();
+      if (buf.length <= MAX_BYTES) {
+        return { buffer: buf, mime: 'image/jpeg', ext: 'jpg' };
+      }
+    }
+
+    throw new BadRequestException('تعذر ضغط الصورة تحت 2MB، جرّب صورة أصغر.');
+  }
+
+  // ====== رفع صور المنتج المتعددة ======
+  async uploadProductImagesToMinio(
+    productId: string,
+    merchantId: string,
+    files: Express.Multer.File[],
+    opts?: { replace?: boolean },
+  ): Promise<{
+    urls: string[];
+    count: number;
+    accepted: number;
+    remaining: number;
+  }> {
+    const MAX_IMAGES = 6;
+
+    const p = await this.productModel.findOne({
+      _id: productId,
+      merchantId: new Types.ObjectId(merchantId),
+    });
+    if (!p) throw new NotFoundException('المنتج غير موجود لهذا التاجر');
+
+    const bucket = process.env.MINIO_BUCKET!;
+    await this.ensureBucket(bucket);
+
+    // احسب المتاح
+    const current = opts?.replace ? 0 : (p.images?.length ?? 0);
+    if (current >= MAX_IMAGES && !opts?.replace) {
+      throw new BadRequestException(
+        'لا يمكن إضافة المزيد من الصور: الحد الأقصى 6 صور.',
+      );
+    }
+    const availableSlots = MAX_IMAGES - current;
+    const filesToProcess = opts?.replace
+      ? files.slice(0, MAX_IMAGES)
+      : files.slice(0, availableSlots);
+
+    const urls: string[] = [];
+    let i = 0;
+    for (const file of filesToProcess) {
+      const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+      if (!allowed.includes(file.mimetype)) {
+        try {
+          await unlink(file.path);
+        } catch {}
+        throw new BadRequestException('صيغة الصورة غير مدعومة (PNG/JPG/WEBP)');
+      }
+
+      // حول للصيغة/الحجم المطلوبين
+      const out = await this.processToSquareUnder2MB(file.path); // { buffer, mime, ext }
+      const key = `merchants/${merchantId}/products/${productId}/image-${Date.now()}-${i++}.${out.ext}`;
+
+      try {
+        // ارفع الـ buffer الناتج وليس الملف الأصلي
+        await this.minio.putObject(bucket, key, out.buffer, out.buffer.length, {
+          'Content-Type': out.mime,
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        });
+
+        const url = await this.publicUrlFor(bucket, key);
+        urls.push(url);
+      } finally {
+        try {
+          await unlink(file.path);
+        } catch {}
+      }
+    }
+
+    if (opts?.replace) {
+      p.images = urls;
+    } else {
+      p.images = [...(p.images || []), ...urls].slice(0, MAX_IMAGES);
+    }
+    await p.save();
+
+    return {
+      urls,
+      count: p.images.length,
+      accepted: filesToProcess.length,
+      remaining: Math.max(0, MAX_IMAGES - p.images.length),
+    };
+  }
+  private async generateUniqueSlug(
+    merchantId: string | Types.ObjectId,
+  ): Promise<string> {
+    const MAX_TRIES = 6;
+    for (let i = 0; i < MAX_TRIES; i++) {
+      const slug = 'p-' + Math.random().toString(16).slice(2, 8);
+      const exists = await this.productModel.exists({ merchantId, slug });
+      if (!exists) return slug;
+    }
+    // fallback أطول
+    return 'p-' + Date.now().toString(36);
+  }
+
+  private sanitizeAttributes(input?: Record<string, string[]>) {
+    if (!input || typeof input !== 'object') return undefined;
+    const out: Record<string, string[]> = {};
+    for (const [k, arr] of Object.entries(input)) {
+      const key = String(k || '').trim();
+      if (!key) continue;
+      const vals = Array.isArray(arr)
+        ? arr.map((v) => String(v).trim()).filter(Boolean)
+        : [];
+      if (vals.length) out[key] = Array.from(new Set(vals)).slice(0, 50); // حد أقصى مع إزالة التكرار
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+
+  private isLeafCategory(categoryId: string, cats: any[]): boolean {
+    const parentIds = new Set(
+      cats.filter((c) => c.parent).map((c) => String(c.parent)),
+    );
+    return !parentIds.has(String(categoryId));
+  }
+
+  // src/modules/products/products.service.ts (المقتطفات الأهم)
   async create(
     dto: CreateProductDto & { merchantId: string },
   ): Promise<ProductDocument> {
     const merchantId = new Types.ObjectId(dto.merchantId);
-    const uniqueKey = `${dto.merchantId}|${
-      dto.source === ProductSource.API ? dto.externalId : dto.originalUrl
-    }`;
+    const { slug: storefrontSlug, domain: storefrontDomain } =
+      await this.getStorefrontInfo(merchantId);
 
-    const product = new this.productModel({
+    const name = dto.name?.trim() || '';
+    const base = dto.slug
+      ? this.normalizeSlug(dto.slug)
+      : this.normalizeSlug(name);
+    const productSlug = await this.ensureUniqueSlug(merchantId, base);
+
+    const uniqueKey =
+      dto.source === ProductSource.API && dto.externalId
+        ? `${dto.merchantId}|ext:${dto.externalId}`
+        : `${dto.merchantId}|slug:${productSlug}`;
+
+    const product = await this.productModel.create({
       merchantId,
-      originalUrl: dto.originalUrl,
+      storefrontSlug, // ✅ صار string مؤكد
+      storefrontDomain, // ✅ undefined بدل null
+      slug: productSlug, // ✅ مضمون دائمًا
+      originalUrl:
+        dto.source === ProductSource.API
+          ? (dto.originalUrl ?? dto.sourceUrl ?? null)
+          : null,
+      sourceUrl:
+        dto.source === ProductSource.API
+          ? (dto.sourceUrl ?? dto.originalUrl ?? null)
+          : null,
+      externalId:
+        dto.source === ProductSource.API ? (dto.externalId ?? null) : null,
       platform: dto.platform || '',
-      name: dto.name || '',
+      name,
       description: dto.description || '',
       price: dto.price || 0,
+      currency: dto.currency ?? 'SAR',
+      offer: dto.offer
+        ? {
+            enabled: !!dto.offer.enabled,
+            oldPrice: dto.offer.oldPrice ?? undefined,
+            newPrice: dto.offer.newPrice ?? undefined,
+            startAt: dto.offer.startAt
+              ? new Date(dto.offer.startAt)
+              : undefined,
+            endAt: dto.offer.endAt ? new Date(dto.offer.endAt) : undefined,
+          }
+        : undefined,
       isAvailable: dto.isAvailable ?? true,
       images: dto.images || [],
-      category: dto.category || '',
-      lowQuantity: dto.lowQuantity || '',
+      category: dto.category ? new Types.ObjectId(dto.category) : undefined,
+      lowQuantity: dto.lowQuantity || undefined,
       specsBlock: dto.specsBlock || [],
-      lastFetchedAt: dto.lastFetchedAt || null,
-      lastFullScrapedAt: dto.lastFullScrapedAt || null,
-      errorState: 'queued',
-      source: dto.source,
-      sourceUrl: dto.sourceUrl || null,
-      externalId: dto.externalId || null,
+      attributes: this.sanitizeAttributes(dto.attributes),
+
+      lastFetchedAt: null,
+      lastFullScrapedAt: null,
+      errorState: null,
+      source: dto.source ?? ProductSource.MANUAL,
       status: 'active',
       lastSync: null,
-      syncStatus: 'pending',
+      syncStatus: dto.source === ProductSource.API ? 'pending' : 'ok',
       offers: [],
       keywords: dto.keywords || [],
       uniqueKey,
     });
 
-    await product.save();
-    if (dto.source !== ProductSource.MANUAL) {
-      await this.enqueueScrapeJob({
-        productId: product._id.toString(),
-        url: dto.sourceUrl || dto.originalUrl,
-        merchantId: dto.merchantId,
-        mode: dto.source === ProductSource.API ? 'full' : 'minimal',
-      });
-    }
     await this.vectorService.upsertProducts([
       {
         id: product._id.toString(),
-        merchantId: product.merchantId.toString(), // ← هنا
-
+        merchantId: product.merchantId.toString(),
         name: product.name,
         description: product.description,
-        category: product.category?.toString(), // ← الحل هنا
+        category: product.category?.toString(),
         specsBlock: product.specsBlock,
         keywords: product.keywords,
+        url: (product as any).publicUrl,
+        price: product.price ?? 0,
       },
     ]);
+
     return product;
   }
+
+  async update(id: string, dto: UpdateProductDto) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid product id');
+    }
+    const _id = new Types.ObjectId(id);
+
+    // قيّم مسموح تحديثها
+    const allowed: (keyof UpdateProductDto)[] = [
+      'name',
+      'description',
+      'price',
+      'isAvailable',
+      'currency',
+      'keywords',
+      'specsBlock',
+      'images',
+      'category',
+      'offer',
+      'attributes',
+    ];
+
+    const update: any = {};
+    for (const k of allowed) {
+      if ((dto as any)[k] !== undefined) update[k] = (dto as any)[k];
+    }
+
+    // category يجب أن تكون string (معرّف الفئة)
+    if (update.category != null && typeof update.category !== 'string') {
+      update.category = String(update.category);
+    }
+
+    // صور بحد أقصى 6 وبشرط أن تكون مصفوفة نصوص
+    if (Array.isArray(update.images)) {
+      update.images = update.images
+        .filter((u: any) => typeof u === 'string')
+        .slice(0, 6);
+    }
+
+    // العرض: إن لم يكن مفعلاً اجعله { enabled:false } فقط
+    if (update.offer && update.offer.enabled !== true) {
+      update.offer = { enabled: false };
+    }
+
+    // attributes يجب أن تكون Record<string,string[]>
+    if (update.attributes && typeof update.attributes === 'object') {
+      const norm: Record<string, string[]> = {};
+      for (const [k, v] of Object.entries(update.attributes)) {
+        if (Array.isArray(v)) norm[k] = v.map((x) => String(x));
+      }
+      update.attributes = norm;
+    }
+
+    const doc = await this.productModel.findByIdAndUpdate(
+      _id,
+      { $set: update },
+      { new: true, runValidators: true },
+    );
+
+    if (!doc) throw new NotFoundException('Product not found');
+
+    // (اختياري) تحدّث المتجهات لو يلزم
+    try {
+      await this.vectorService.upsertProducts([
+        {
+          id: doc._id.toString(),
+          merchantId: doc.merchantId.toString?.() ?? String(doc.merchantId),
+          name: doc.name,
+          description: doc.description,
+          category:
+            typeof doc.category === 'object'
+              ? doc.category.toString()
+              : doc.category,
+          specsBlock: doc.specsBlock,
+          keywords: doc.keywords,
+        },
+      ]);
+    } catch (e) {
+      // لا تكسر الطلب بسبب المتجهات
+    }
+
+    return doc;
+  }
+
+  // مزامنة خارجي (زد/سلة)
+  // src/modules/products/products.service.ts (مقتطف التكييف لـ Zid/Salla)
+  async upsertExternalProduct(
+    merchantId: string,
+    provider: 'zid' | 'salla',
+    p: ExternalProduct,
+  ): Promise<{ created: boolean; id: string }> {
+    const mId = new Types.ObjectId(merchantId);
+    const sf = await this.storefrontModel.findOne({ merchant: mId }).lean();
+    const storefrontSlug = sf?.slug || undefined;
+    const storefrontDomain = sf?.domain || undefined;
+
+    const filter = {
+      merchantId: mId,
+      source: ProductSource.API,
+      externalId: p.externalId,
+    };
+
+    const productData: Partial<Product> = {
+      merchantId: mId,
+      storefrontSlug,
+      storefrontDomain,
+
+      source: ProductSource.API,
+      externalId: p.externalId,
+      platform: provider,
+
+      name: p.title ?? '',
+      description: (p.raw as any)?.description ?? '',
+      price: p.price ?? 0,
+      isAvailable: (p.stock ?? 0) > 0,
+      images: mapZidImageUrls((p.raw as any)?.images),
+
+      // لا تضع category كاسم (اتركها فارغة لحين mapping لاحقًا)
+      category: undefined,
+
+      sourceUrl: (p.raw as any)?.permalink ?? null,
+      originalUrl: (p.raw as any)?.permalink ?? null,
+
+      keywords: [],
+      syncStatus: 'ok',
+      status: 'active',
+    };
+
+    const doc = await this.productModel.findOneAndUpdate(
+      filter,
+      { $set: productData, $setOnInsert: { createdAt: new Date() } },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+
+    await this.vectorService.upsertProducts([
+      {
+        id: doc._id.toString(),
+        merchantId,
+        name: doc.name,
+        description: doc.description,
+        category:
+          typeof doc.category === 'object'
+            ? String(doc.category)
+            : (doc.category as any),
+        specsBlock: doc.specsBlock,
+        keywords: doc.keywords,
+        url: (doc as any).publicUrl, // 👈 بالـ ID
+      },
+    ]);
+
+    const existed = await this.productModel.exists(filter);
+    const created = !(existed && (existed as any)._id?.equals(doc._id));
+    return { created, id: doc._id.toString() };
+  }
+
   async countByMerchant(merchantId: string): Promise<number> {
     return this.productModel.countDocuments({
       merchantId: new Types.ObjectId(merchantId),
     });
-  }
-  async enqueueScrapeJob(jobData: {
-    productId: string;
-    url: string;
-    merchantId: string;
-    mode: 'full' | 'minimal';
-  }) {
-    return this.scrapeQueue.addJob(jobData);
   }
 
   async findAllByMerchant(merchantObjectId: Types.ObjectId): Promise<any[]> {
@@ -115,10 +586,7 @@ export class ProductsService {
     }));
   }
   // البحث حسب الاسم مهما كان متوفرًا أو لا
-  async findByName(
-    merchantId: string,
-    name: string,
-  ): Promise<ProductDocument | null> {
+  async findByName(merchantId: string, name: string): Promise<any> {
     const mId = new Types.ObjectId(merchantId);
     const regex = new RegExp(name, 'i');
     return this.productModel
@@ -129,7 +597,7 @@ export class ProductsService {
   async searchProducts(
     merchantId: string | Types.ObjectId,
     query: string,
-  ): Promise<ProductDocument[]> {
+  ): Promise<any[]> {
     const mId =
       typeof merchantId === 'string'
         ? new Types.ObjectId(merchantId)
@@ -210,10 +678,7 @@ export class ProductsService {
     if (!prod) throw new NotFoundException('Product not found');
     return prod;
   }
-  async getProductByIdList(
-    ids: string[],
-    merchantId: string,
-  ): Promise<ProductDocument[]> {
+  async getProductByIdList(ids: string[], merchantId: string): Promise<any[]> {
     if (!ids.length) return [];
 
     return this.productModel
@@ -225,34 +690,10 @@ export class ProductsService {
       .exec();
   }
 
-  async update(id: string, dto: UpdateProductDto): Promise<ProductDocument> {
-    delete (dto as any).source;
-    const updated = await this.productModel
-      .findByIdAndUpdate(id, dto, { new: true })
-      .exec();
-    if (!updated) throw new NotFoundException('Product not found');
-
-    // صحّحنا هنا: استخدمنا 'updated' بدل 'product'
-    await this.vectorService.upsertProducts([
-      {
-        id: updated._id.toString(),
-        merchantId: updated.merchantId.toString(), // ← هنا
-
-        description: updated.description,
-        name: updated.name,
-        category: updated.category?.toString(),
-        specsBlock: updated.specsBlock,
-        keywords: updated.keywords,
-      },
-    ]);
-
-    return updated;
-  }
-
   async getFallbackProducts(
     merchantId: string | Types.ObjectId,
     limit = 20,
-  ): Promise<ProductDocument[]> {
+  ): Promise<any[]> {
     const mId =
       typeof merchantId === 'string'
         ? new Types.ObjectId(merchantId)
@@ -260,7 +701,7 @@ export class ProductsService {
 
     return this.productModel
       .find({ merchantId: mId, isAvailable: true })
-      .sort({ lastFetchedAt: -1 }) // أو { createdAt: -1 } حسب ما يناسب
+      .sort({ createdAt: -1 })
       .limit(limit)
       .lean()
       .exec();
@@ -272,176 +713,80 @@ export class ProductsService {
     return { message: 'Product deleted successfully' };
   }
 
-  async triggerSync(id: string): Promise<ProductDocument> {
-    const product = await this.findOne(id);
-    if (product.source === 'manual') {
-      throw new NotFoundException('Cannot sync manual products');
-    }
-    await this.enqueueScrapeJob({
-      productId: id,
-      url: product.sourceUrl || product.originalUrl,
-      merchantId: product.merchantId.toString(),
-      mode: 'full',
-    });
-    return product;
-  }
-
-  async updateAfterScrape(productId: string, updateData: Partial<Product>) {
-    const existing = await this.productModel.findById(productId).lean();
-    if (!existing) throw new NotFoundException('Product not found');
-
-    const updated = await this.productModel
-      .findByIdAndUpdate(productId, updateData, { new: true })
-      .exec();
-    if (!updated) {
-      throw new NotFoundException('Product not found');
-    }
-    if (updateData.category && typeof updateData.category === 'string') {
-      updateData.category = new Types.ObjectId(updateData.category);
-    }
-    const shouldUpdateEmbedding =
-      existing.name !== updated.name ||
-      existing.description !== updated.description ||
-      existing.category !== updated.category;
-
-    if (shouldUpdateEmbedding) {
-      await this.vectorService.upsertProducts([
-        {
-          id: updated._id.toString(),
-          merchantId: updated.merchantId.toString(),
-          name: updated.name,
-          description: updated.description,
-          category:
-            typeof updated.category === 'object'
-              ? updated.category.toString()
-              : updated.category,
-          specsBlock: updated.specsBlock,
-          keywords: updated.keywords,
-        },
-      ]);
-    }
-
-    return updated;
-  }
-  // داخل ProductsService
-  async upsertExternalProduct(
-    merchantId: string,
-    provider: 'zid' | 'salla',
-    p: ExternalProduct,
-  ): Promise<{ created: boolean; id: string }> {
-    const filter = {
-      merchantId: new Types.ObjectId(merchantId),
-      source: ProductSource.API,
-      externalId: p.externalId,
-    };
-
-    const productData: CreateProductDto = {
-      merchantId,
-      source: ProductSource.API,
-      externalId: p.externalId,
-      name: p.title,
-      description:
-        typeof p.raw === 'object' && p.raw
-          ? ((p.raw as any).description ?? '')
-          : '',
-      price: p.price ?? 0,
-      isAvailable: (p.stock ?? 0) > 0,
-      images: mapZidImageUrls((p.raw as any)?.images),
-      category: (p.raw as any)?.category?.name ?? '',
-      sourceUrl: (p.raw as any)?.permalink ?? '',
-      originalUrl: (p.raw as any)?.permalink ?? '',
-      keywords: [],
-    };
-
-    const doc = await this.productModel.findOneAndUpdate(
-      filter,
-      { $set: productData, $setOnInsert: { createdAt: new Date() } },
-      {
-        new: true,
-        upsert: true,
-        runValidators: true,
-        setDefaultsOnInsert: true,
-      },
-    );
-
-    if (!doc) {
-      throw new InternalServerErrorException('Failed to upsert product');
-    }
-
-    // Vector embedding
-    await this.vectorService.upsertProducts([
-      {
-        id: doc._id.toString(),
-        merchantId,
-        name: doc.name,
-        description: doc.description,
-        category:
-          typeof doc.category === 'object'
-            ? String(doc.category)
-            : doc.category,
-        specsBlock: doc.specsBlock,
-        keywords: doc.keywords,
-      },
-    ]);
-
-    // created = لم يكن موجودًا قبل التحديث
-    const created =
-      (doc as any).wasNew ?? !(await this.productModel.exists(filter));
-    return { created, id: doc._id.toString() };
-  }
-
-  // async importZidProducts(merchantId: string, zidAccessToken: string) {
-  //   const zidProducts = await this.zidService.fetchZidProducts(
-  //     new Types.ObjectId(merchantId),
-  //     zidAccessToken,
-  //   );
-
-  //   for (const zProd of zidProducts) {
-  //     // جلب أو إضافة المنتج بناءً على externalId (معرف زد)
-  //     await this.createOrUpdateFromZid(merchantId, zProd);
-  //   }
-  // }
-
   // يمكنك وضع هذه الدالة في ProductsService:
   async createOrUpdateFromZid(merchantId: string, zidProduct: any) {
-    // تحقق هل المنتج موجود
+    const mId = new Types.ObjectId(merchantId);
+
+    // اجلب بيانات واجهة المتجر لتوليد publicUrl لاحقًا
+    const sf = await this.storefrontModel.findOne({ merchant: mId }).lean();
+    const storefrontSlug = sf?.slug || undefined; // ← لا تستخدم null
+    const storefrontDomain = sf?.domain || undefined; // ← لا تستخدم null
+
+    // هل المنتج موجود؟
     const existing = await this.productModel.findOne({
-      merchantId: new Types.ObjectId(merchantId),
-      source: 'api',
+      merchantId: mId,
+      source: ProductSource.API,
       externalId: zidProduct.id,
     });
 
-    const productData: CreateProductDto = {
-      merchantId,
+    // قصّ الصور إلى 6 فقط
+    const images: string[] = Array.isArray(zidProduct.images)
+      ? zidProduct.images
+          .map((img: { url: string }) => img?.url)
+          .filter(Boolean)
+          .slice(0, 6)
+      : [];
+
+    // لا ترجع سلاسل فارغة؛ استخدم undefined لو ما فيه رابط
+    const permalink: string | undefined = zidProduct?.permalink || undefined;
+
+    // نبني بيانات التحديث/الإنشاء
+    const docData: Partial<Product> = {
+      merchantId: mId,
+
+      storefrontSlug,
+      storefrontDomain,
+
       source: ProductSource.API,
       externalId: zidProduct.id,
-      name: zidProduct.name,
-      description: zidProduct.description,
-      price: zidProduct.price,
-      isAvailable: zidProduct.is_available,
-      images: Array.isArray(zidProduct.images)
-        ? zidProduct.images.map((img: ZidProductImage) => img.url)
-        : [],
+      platform: 'zid',
 
-      category: zidProduct.category?.name ?? '',
-      sourceUrl: zidProduct.permalink ?? '', // استخدم permalink كرابط عام للمنتج (زد)
-      originalUrl: zidProduct.permalink ?? '', // أو أي رابط أساسي للمنتج (يفضل أن يكون الرابط العام)
-      keywords: [], // يمكنك توليدها لاحقاً
+      name: zidProduct.name ?? '',
+      description: zidProduct.description ?? '',
+      price:
+        typeof zidProduct.price === 'number'
+          ? zidProduct.price
+          : Number(zidProduct.price) || 0,
+      isAvailable: Boolean(zidProduct.is_available),
+
+      images,
+      // اترك category غير محددة إن لم تكن ObjectId لديك:
+      category: undefined,
+
+      sourceUrl: permalink,
+      originalUrl: permalink,
+
+      keywords: [], // يمكنك توليدها لاحقًا
+      status: 'active',
+      syncStatus: 'ok',
     };
-    let productDoc: ProductDocument | null = null;
+
+    let productDoc: ProductDocument | null;
     if (existing) {
       productDoc = await this.productModel.findByIdAndUpdate(
         existing._id,
-        productData,
+        docData,
         { new: true },
       );
     } else {
-      productDoc = await this.create(productData as any);
+      productDoc = await this.productModel.create(docData);
     }
+
     if (!productDoc) {
       throw new NotFoundException('فشل إضافة أو تحديث المنتج القادم من زد');
     }
-    // أضف للفيكتور (embedding)
+
+    // حدّث المتجهات مع URL عام بالـ ID (publicUrl virtual)
     await this.vectorService.upsertProducts([
       {
         id: productDoc._id.toString(),
@@ -450,10 +795,11 @@ export class ProductsService {
         description: productDoc.description,
         category:
           typeof productDoc.category === 'object'
-            ? productDoc.category.toString()
-            : productDoc.category,
+            ? productDoc.category?.toString()
+            : (productDoc.category as any),
         specsBlock: productDoc.specsBlock,
         keywords: productDoc.keywords,
+        url: (productDoc as any).publicUrl, // ← رابط بالـ ID
       },
     ]);
 
@@ -471,51 +817,4 @@ export class ProductsService {
     // (اختياري) احذف من الفيكتور أيضا
     // await this.vectorService.removeProductEmbedding(externalId);
   }
-
-  /**
-   * يمر كل 10 دقائق على جميع المنتجات ويجدّد السعر والتوفّر فقط
-   */
-  @Cron(CronExpression.EVERY_10_MINUTES)
-  async scheduleMinimalScrape() {
-    const products = await this.productModel
-      .find({ source: { $in: ['api', 'scraper'] } })
-      .select(' _id originalUrl merchantId lastFetchedAt')
-      .exec();
-    const now = Date.now();
-    for (const p of products) {
-      if (
-        !p.lastFetchedAt ||
-        now - p.lastFetchedAt.getTime() > 10 * 60 * 1000
-      ) {
-        await this.enqueueScrapeJob({
-          productId: p._id.toString(),
-          url: p.originalUrl,
-          merchantId: p.merchantId.toString(),
-          mode: 'minimal',
-        });
-      }
-    }
-  }
-}
-
-/**
- * هروب من الأحرف الخاصة في Regex
- */
-function escapeRegExp(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function normalizeQuery(raw: string): string {
-  return raw
-    .toLowerCase()
-    .replace(/[؟?]/g, '')
-    .replace(
-      /\b(هل|عندك|عندكم|فيه|يتوفر|أحتاج|أبي|ابغى|ممكن|وش|شو|ايش|لو سمحت)\b/gi,
-      '',
-    )
-    .replace(/\s+/g, ' ')
-    .replace(/كايبلات|كيبلات|كابلات|كابلات|كبلات/gi, 'كيبل')
-    .replace(/سماعات|سماعه|هيدفون/gi, 'سماعة')
-    .replace(/شواحن|شاحنات/gi, 'شاحن')
-    .trim();
 }

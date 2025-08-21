@@ -23,8 +23,8 @@ interface EvolutionWebhookResponse {
 @Injectable()
 export class EvolutionService {
   private readonly logger = new Logger(EvolutionService.name);
-  private readonly baseUrl = 'http://31.97.155.167:8080';
-  private readonly apiKey = 'any-secret-key';
+  private readonly baseUrl = (process.env.EVOLUTION_API_URL || 'http://evolution:8080').replace(/\/+$/, '');
+  private readonly apiKey = process.env.EVOLUTION_API_KEY || '';
 
   private getHeaders() {
     return {

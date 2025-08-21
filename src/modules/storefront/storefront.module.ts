@@ -10,6 +10,9 @@ import {
   CategorySchema,
 } from '../categories/schemas/category.schema';
 import { Storefront, StorefrontSchema } from './schemas/storefront.schema';
+import { VectorModule } from '../vector/vector.module';
+import { MulterModule } from '@nestjs/platform-express';
+import * as Minio from 'minio';
 
 @Module({
   imports: [
@@ -19,9 +22,22 @@ import { Storefront, StorefrontSchema } from './schemas/storefront.schema';
       { name: Category.name, schema: CategorySchema },
       { name: Storefront.name, schema: StorefrontSchema },
     ]),
+    VectorModule,
+    MulterModule.register({ dest: './uploads' }),
   ],
   controllers: [StorefrontController],
-  providers: [StorefrontService],
+  providers: [StorefrontService,
+    {
+      provide: 'MINIO_CLIENT',
+      useFactory: () =>
+        new Minio.Client({
+          endPoint: process.env.MINIO_ENDPOINT!,
+          port: parseInt(process.env.MINIO_PORT ?? '9000', 10),
+          useSSL: process.env.MINIO_USE_SSL === 'true',
+          accessKey: process.env.MINIO_ACCESS_KEY!,
+          secretKey: process.env.MINIO_SECRET_KEY!,
+        }),
+    },],
   exports: [StorefrontService],
 })
 export class StorefrontModule {}
