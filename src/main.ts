@@ -27,27 +27,27 @@ async function bootstrap() {
   app.useWebSocketAdapter(new IoAdapter(app));
 
   app.use(helmet());
-  // app.enableCors({
-  //   origin: '*',
-  //   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-  //   credentials: true,
-  // });
   app.enableCors({
-    origin: (origin, cb) => {
-      const allowList = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim());
-      if (!origin) return cb(null, true); // أدوات/بوتات بلا Origin
-      const ok = allowList.some(allowed => {
-        // دعم wildcards بسيطة *.kaleem-ai.com
-        if (allowed.startsWith('*.')) {
-          const domain = allowed.slice(2);
-          return origin.endsWith('.' + domain);
-        }
-        return origin === allowed;
-      });
-      cb(null, ok);
-    },
+    origin: '*',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
+  // app.enableCors({
+  //   origin: (origin, cb) => {
+  //     const allowList = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim());
+  //     if (!origin) return cb(null, true); // أدوات/بوتات بلا Origin
+  //     const ok = allowList.some(allowed => {
+  //       // دعم wildcards بسيطة *.kaleem-ai.com
+  //       if (allowed.startsWith('*.')) {
+  //         const domain = allowed.slice(2);
+  //         return origin.endsWith('.' + domain);
+  //       }
+  //       return origin === allowed;
+  //     });
+  //     cb(null, ok);
+  //   },
+  //   credentials: true,
+  // });
   
   app.use(
     rateLimit({
