@@ -188,4 +188,12 @@ export class StorefrontController {
   ) {
     return this.svc.uploadBannerImagesToMinio(merchantId, files);
   }
+  @Public()
+  @Get('my-orders')
+  myOrders(
+    @Param('merchantId') merchantId: string,
+    @Query('sessionId') sessionId: string
+  ) {
+    return this.svc.getMyOrdersForSession(merchantId, sessionId);
+  }
 }

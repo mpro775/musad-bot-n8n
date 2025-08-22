@@ -93,6 +93,15 @@ class CustomerDto {
   phone: string;
 
   @ApiPropertyOptional({
+    description: 'رقم الهاتف الموحّد بدون رموز',
+    example: '966501234567',
+    required: false,
+  })
+  @IsString({ message: 'يجب أن يكون رقم الهاتف الموحّد نصيًا' })
+  @IsOptional()
+  phoneNormalized?: string;
+
+  @ApiPropertyOptional({
     description: 'ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ ظ„ظ„ط¹ظ…ظٹظ„',
     example: 'customer@example.com',
     required: false,

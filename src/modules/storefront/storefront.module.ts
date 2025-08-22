@@ -13,7 +13,8 @@ import { Storefront, StorefrontSchema } from './schemas/storefront.schema';
 import { VectorModule } from '../vector/vector.module';
 import { MulterModule } from '@nestjs/platform-express';
 import * as Minio from 'minio';
-
+import { Order, OrderSchema } from '../orders/schemas/order.schema';
+import { LeadsModule } from '../leads/leads.module';
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -21,9 +22,11 @@ import * as Minio from 'minio';
       { name: Product.name, schema: ProductSchema },
       { name: Category.name, schema: CategorySchema },
       { name: Storefront.name, schema: StorefrontSchema },
+      { name: Order.name, schema: OrderSchema },
     ]),
     VectorModule,
     MulterModule.register({ dest: './uploads' }),
+    LeadsModule,
   ],
   controllers: [StorefrontController],
   providers: [StorefrontService,

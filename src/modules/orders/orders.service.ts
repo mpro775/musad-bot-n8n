@@ -10,6 +10,7 @@ import {
   Merchant,
   MerchantDocument,
 } from '../merchants/schemas/merchant.schema';
+import { normalizePhone } from './utils/phone.util';
 
 function toOrderType(orderDoc: any): OrderType {
   return {
@@ -43,15 +44,20 @@ export class OrdersService {
   ) {}
 
   async create(dto: CreateOrderDto): Promise<Order> {
-    const created = await this.orderModel.create(dto);
+    const phoneNormalized = normalizePhone(dto.customer?.phone);
+    const created = await this.orderModel.create({
+      ...dto,
+      customer: { ...dto.customer, phoneNormalized }, // ← مهم
+    });
+  
     await this.leadsService.create(dto.merchantId, {
       sessionId: dto.sessionId,
-      data: dto.customer, // هنا تحفظ بيانات العميل (الاسم/الجوال/العنوان)
-      source: 'order', // مصدر العميل: جاء عبر الطلبات
+      data: dto.customer,
+      source: 'order',
     });
+  
     return created.toObject();
   }
-
   // جلب كل الطلبات
   async findAll(): Promise<Order[]> {
     return this.orderModel.find().sort({ createdAt: -1 }).exec();
@@ -80,8 +86,9 @@ export class OrdersService {
       externalId: zidOrder.id,
       source: 'api',
     });
+    const phoneNormalized = normalizePhone(zidOrder.customer?.phone);
 
-    const orderData: CreateOrderDto = {
+    const orderData = {
       merchantId: merchant.id.toString(),
       sessionId: zidOrder.session_id,
       source: 'api',
@@ -92,6 +99,8 @@ export class OrdersService {
         name: zidOrder.customer?.name ?? '',
         phone: zidOrder.customer?.phone ?? '',
         address: zidOrder.customer?.address ?? '',
+        phoneNormalized, 
+
       },
       items:
         zidOrder.products?.map((p: any) => ({
@@ -119,7 +128,18 @@ export class OrdersService {
     }
     return order;
   }
-
+  async findMine(merchantId: string, sessionId: string) {
+    const phone = await this.leadsService.getPhoneBySession(merchantId, sessionId);
+    const or: any[] = [{ sessionId }];
+    if (phone) {
+      // داعم للحالات القديمة والجديدة
+      or.push({ 'customer.phone': phone }, { 'customer.phoneNormalized': phone });
+    }
+    return this.orderModel
+      .find({ merchantId, $or: or })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
   // Helper: جلب merchant عبر store_id من merchants collection
   async findMerchantByStoreId(storeId: string) {
     // عدّل اسم الكوليكشن أو الموديل حسب مشروعك

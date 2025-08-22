@@ -24,7 +24,8 @@ import { VectorService } from '../vector/vector.service';
 import * as Minio from 'minio';
 import { unlink } from 'node:fs/promises';
 import sharp from 'sharp';
-
+import { LeadsService } from '../leads/leads.service';
+import { Order, OrderDocument } from '../orders/schemas/order.schema';
 export interface StorefrontResult {
   merchant: any;
   products: any[];
@@ -146,6 +147,8 @@ export class StorefrontService {
     private storefrontModel: Model<StorefrontDocument>,
     private vectorService: VectorService,
     @Inject('MINIO_CLIENT') private readonly minio: Minio.Client,
+    private readonly leads: LeadsService,
+    @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
   ) {}
   async create(dto: CreateStorefrontDto): Promise<Storefront> {
     return this.storefrontModel.create(dto);
@@ -312,5 +315,14 @@ export class StorefrontService {
     Object.assign(sf, update);
     await sf.save();
     return sf;
+  }
+  async getMyOrdersForSession(merchantId: string, sessionId: string) {
+    const phone = await this.leads.getPhoneBySession(merchantId, sessionId);
+
+    const filter: any = { merchantId, $or: [{ sessionId }] };
+    if (phone) filter.$or.push({ 'customer.phone': phone });
+
+    const orders = await this.orderModel.find(filter).sort({ createdAt: -1 }).lean();
+    return { orders };
   }
 }

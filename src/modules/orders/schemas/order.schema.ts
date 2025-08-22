@@ -49,6 +49,9 @@ export class Order {
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
+OrderSchema.index({ merchantId: 1, sessionId: 1 });
+OrderSchema.index({ merchantId: 1, 'customer.phoneNormalized': 1 });
+
 OrderSchema.index(
   { merchantId: 1, externalId: 1 },
   { unique: true, sparse: true },

@@ -31,7 +31,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 @ApiBearerAuth()
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
-
+  @Public()
   @Post()
   @ApiOperation({
     summary: 'إنشاء طلب جديد',
@@ -97,6 +97,14 @@ export class OrdersController {
     return this.ordersService.findAll();
   }
 
+  @Public()
+@Get('mine/:merchantId/:sessionId')
+async findMine(
+  @Param('merchantId') merchantId: string,
+  @Param('sessionId') sessionId: string,
+) {
+  return this.ordersService.findMine(merchantId, sessionId);
+}
   // جلب طلب محدد بالتفصيل
   @Public()
   @Get(':id')
