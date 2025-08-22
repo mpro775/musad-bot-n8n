@@ -1,5 +1,13 @@
 {
     "rabbit_version": "3.13",
+    "users": [
+    {
+      "name": "kaleem",
+      "password_hash": "xwd48Z5IXsSP48A7vdDabVYw8WiMGUHpgDcISg3EWv1nLS6m",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": ["administrator"]
+    }
+  ],
     "vhosts": [
         {
             "name": "kleem"
