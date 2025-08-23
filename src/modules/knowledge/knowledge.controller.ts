@@ -1,4 +1,13 @@
-import { Controller, Post, Body, Param, Get } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Param,
+  Get,
+  Query,
+  Delete,
+  HttpCode,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -6,6 +15,7 @@ import {
   ApiParam,
   ApiBody,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { KnowledgeService } from './knowledge.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -20,9 +30,9 @@ export class KnowledgeController {
   constructor(private readonly svc: KnowledgeService) {}
 
   @Post()
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'إضافة روابط معرفية للتاجر',
-    description: 'إضافة قائمة من الروابط المعرفية لتاجر معين' 
+    description: 'إضافة قائمة من الروابط المعرفية لتاجر معين',
   })
   @ApiParam({ name: 'merchantId', description: 'معرف التاجر', type: String })
   @ApiBody({
@@ -33,10 +43,10 @@ export class KnowledgeController {
         urls: {
           type: 'array',
           items: { type: 'string', format: 'url' },
-          description: 'قائمة الروابط المعرفية'
-        }
-      }
-    }
+          description: 'قائمة الروابط المعرفية',
+        },
+      },
+    },
   })
   @ApiResponse({ status: 201, description: 'تمت إضافة الروابط بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -49,9 +59,9 @@ export class KnowledgeController {
     return this.svc.addUrls(merchantId, urls);
   }
   @Get('status')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'حالة الروابط المعرفية',
-    description: 'استرجاع حالة معالجة الروابط المعرفية للتاجر' 
+    description: 'استرجاع حالة معالجة الروابط المعرفية للتاجر',
   })
   @ApiParam({ name: 'merchantId', description: 'معرف التاجر', type: String })
   @ApiResponse({ status: 200, description: 'تم استرجاع حالة الروابط بنجاح' })
@@ -61,9 +71,9 @@ export class KnowledgeController {
     return this.svc.getUrlsStatus(merchantId);
   }
   @Get()
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'الحصول على الروابط المعرفية',
-    description: 'استرجاع جميع الروابط المعرفية المرتبطة بالتاجر' 
+    description: 'استرجاع جميع الروابط المعرفية المرتبطة بالتاجر',
   })
   @ApiParam({ name: 'merchantId', description: 'معرف التاجر', type: String })
   @ApiResponse({ status: 200, description: 'تم استرجاع الروابط بنجاح' })
@@ -71,5 +81,42 @@ export class KnowledgeController {
   @ApiResponse({ status: 404, description: 'التاجر غير موجود' })
   async getUrls(@Param('merchantId') merchantId: string) {
     return this.svc.getUrls(merchantId);
+  }
+  // حذف واحد باستخدام id
+  @Delete(':id')
+  @ApiOperation({ summary: 'حذف رابط معرفي واحد بالمعرف (id) + حذف متجهاته' })
+  @ApiParam({ name: 'merchantId', type: String })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    description: 'معرف السجل في قاعدة البيانات',
+  })
+  @ApiResponse({ status: 200, description: 'تم الحذف' })
+  async deleteOneById(
+    @Param('merchantId') merchantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.svc.deleteById(merchantId, id);
+  }
+
+  // حذف واحد باستخدام url (Query)
+  // ======= حذف برابط أو حذف الكل =======
+  @Delete()
+  @ApiOperation({ summary: 'حذف رابط عبر url أو حذف جميع الروابط' })
+  @ApiParam({ name: 'merchantId', type: String })
+  @ApiQuery({ name: 'url', required: false })
+  @ApiQuery({
+    name: 'all',
+    required: false,
+    description: 'إذا true يحذف جميع الروابط والمتجهات',
+  })
+  deleteByUrlOrAll(
+    @Param('merchantId') merchantId: string,
+    @Query('url') url?: string,
+    @Query('all') all?: string,
+  ) {
+    if (all === 'true') return this.svc.deleteAll(merchantId);
+    if (url) return this.svc.deleteByUrl(merchantId, url);
+    return { success: false, message: 'حدد url أو all=true' };
   }
 }

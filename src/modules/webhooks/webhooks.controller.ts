@@ -545,6 +545,70 @@ export class WebhooksController {
 
     return { sessionId, status: 'ok' };
   }
+  @Public()
+@Post(':merchantId/test-bot-reply')
+@ApiOperation({ summary: 'إرسال ردّ التستنج إلى الداشبورد فقط' })
+@ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
+@ApiBody({
+  description: 'بيانات ردّ التستنج',
+  schema: {
+    example: {
+      sessionId: 'dash-1727000000000',
+      text: 'ردّ الاختبار من الـ AI',
+      channel: 'dashboard-test',
+      metadata: { promptVersion: 'v3' }
+    }
+  }
+})
+@ApiResponse({
+  status: 200,
+  description: 'تم إرسال ردّ التستنج بنجاح',
+  schema: { example: { sessionId: 'dash-1727000000000', status: 'ok', test: true } }
+})
+async handleTestBotReply(
+  @Param('merchantId') merchantId: string,
+  @Body() body: any,
+) {
+  const { sessionId, text, channel = 'dashboard-test', metadata } = body || {};
+  if (!merchantId || !sessionId || !text) {
+    throw new BadRequestException('Payload missing required fields');
+  }
+
+  // 1) خزّن الرسالة role='bot' مع وسم أنها test
+  await this.messageService.createOrAppend({
+    merchantId,
+    sessionId,
+    channel,
+    messages: [
+      {
+        role: 'bot',
+        text,
+        timestamp: new Date(),
+        metadata: { ...(metadata || {}), test: true },
+      },
+    ],
+  });
+
+  // 2) أرسلها للداشبورد فقط (WebSocket)
+  this.chatGateway.sendMessageToSession(sessionId, {
+    role: 'bot',
+    text,
+    ts: Date.now(),
+    meta: { test: true },
+  });
+
+  // (اختياري) دفع Outbox event داخلي إن كنت تريد سجل اختبار مركزي
+  await this.outbox.enqueueEvent({
+    aggregateType: 'conversation',
+    aggregateId: sessionId,
+    eventType: 'chat.testReply',
+    payload: { merchantId, sessionId, channel, text },
+    exchange: 'chat.reply',
+    routingKey: 'dashboard-test',
+  }).catch(() => { /* تجاهل لو ما عندك outbox أو مو مهم */ });
+
+  return { sessionId, status: 'ok', test: true };
+}
   @Post('agent-reply/:merchantId')
   @Post(':merchantId/agent-reply')
   @ApiOperation({ summary: 'معالجة ردود الموظفين' })

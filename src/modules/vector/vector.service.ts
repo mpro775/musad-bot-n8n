@@ -90,6 +90,23 @@ export class VectorService implements OnModuleInit {
     return this.qdrant.upsert(this.botFaqCollection, { wait: true, points });
   }
 
+  async deleteWebKnowledgeByFilter(filter: any) {
+    // @qdrant/js-client-rest يدعم:
+    // client.delete(collection, { filter })
+    return this.qdrant.delete(this.webCollection, { filter });
+  }
+
+  async deleteFaqsByFilter(filter: any) {
+    return this.qdrant.delete(this.faqCollection, { filter });
+  }
+
+  // حذف نقطة FAQ واحدة بواسطة faqId (Mongo) باستخدام generateFaqId
+  async deleteFaqPointByFaqId(faqMongoId: string) {
+    const id = this.generateFaqId(faqMongoId);
+    return this.qdrant.delete(this.faqCollection, { points: [id] });
+  }
+
+  
   // vector.service.ts
   public async embed(text: string): Promise<number[]> {
     const embeddingUrl = this.embeddingBase; // تأكد من إزالة المسافة الأولى قبل http

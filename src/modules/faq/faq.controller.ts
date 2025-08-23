@@ -1,11 +1,21 @@
 // src/modules/faq/faq.controller.ts
-import { Controller, Post, Get, Body, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Delete,
+  Query,
+  Patch,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiParam,
   ApiBody,
   ApiResponse,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { FaqService } from './faq.service';
 
@@ -20,7 +30,7 @@ export class FaqController {
   constructor(private readonly svc: FaqService) {}
 
   @Post()
-  @ApiOperation({ summary: 'إضافة مجموعة من الأسئلة الشائعة' })
+  @ApiOperation({ summary: 'إضافة مجموعة من الأسئلة الشائعة (queue)' })
   @ApiBody({
     description: 'مصفوفة من كائنات الأسئلة والأجوبة',
     schema: {
@@ -28,17 +38,17 @@ export class FaqController {
       items: {
         type: 'object',
         properties: {
-          question: { type: 'string', example: 'ما هي سياسة الإرجاع؟' },
-          answer: {
-            type: 'string',
-            example: 'يمكنك إرجاع المنتج خلال 14 يومًا.',
-          },
+          question: { type: 'string' },
+          answer: { type: 'string' },
         },
       },
     },
   })
-  @ApiResponse({ status: 201, description: 'تم إنشاء الأسئلة الشائعة بنجاح.' })
-  async uploadFaqs(
+  @ApiResponse({
+    status: 201,
+    description: 'تمت جدولة الأسئلة للشحن إلى Qdrant.',
+  })
+  uploadFaqs(
     @Param('merchantId') merchantId: string,
     @Body() faqs: { question: string; answer: string }[],
   ) {
@@ -46,25 +56,59 @@ export class FaqController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'الحصول على قائمة بجميع الأسئلة الشائعة للتاجر' })
-  @ApiResponse({ status: 200, description: 'قائمة الأسئلة الشائعة.' })
-  async list(@Param('merchantId') merchantId: string) {
-    return this.svc.list(merchantId);
+  @ApiOperation({ summary: 'قائمة الأسئلة الشائعة' })
+  @ApiQuery({ name: 'includeDeleted', required: false, example: 'false' })
+  list(
+    @Param('merchantId') merchantId: string,
+    @Query('includeDeleted') includeDeleted?: string,
+  ) {
+    return this.svc.list(merchantId, includeDeleted === 'true');
+  }
+
+  @Get('status')
+  @ApiOperation({ summary: 'حالة التدريب/الفهرسة للأسئلة الشائعة' })
+  status(@Param('merchantId') merchantId: string) {
+    return this.svc.getStatus(merchantId);
+  }
+
+  @Patch(':faqId')
+  @ApiOperation({ summary: 'تحديث سؤال/جواب وإعادة الفهرسة' })
+  updateOne(
+    @Param('merchantId') merchantId: string,
+    @Param('faqId') faqId: string,
+    @Body() body: { question?: string; answer?: string },
+  ) {
+    return this.svc.updateOne(merchantId, faqId, body);
   }
 
   @Delete(':faqId')
-  @ApiOperation({ summary: 'حذف سؤال شائع' })
-  @ApiParam({
-    name: 'faqId',
-    description: 'معرف السؤال الشائع',
-    example: 'faq_12345',
+  @ApiOperation({ summary: 'حذف سؤال شائع (soft/hard)' })
+  @ApiQuery({
+    name: 'hard',
+    required: false,
+    example: 'false',
+    description: 'true للحذف النهائي + حذف المتجهات',
   })
-  @ApiResponse({ status: 200, description: 'تم حذف السؤال بنجاح.' })
-  @ApiResponse({ status: 404, description: 'السؤال الشائع غير موجود.' })
-  async delete(
+  deleteOne(
     @Param('merchantId') merchantId: string,
     @Param('faqId') faqId: string,
+    @Query('hard') hard?: string,
   ) {
-    return this.svc.delete(merchantId, faqId);
+    return hard === 'true'
+      ? this.svc.hardDelete(merchantId, faqId)
+      : this.svc.softDelete(merchantId, faqId);
+  }
+
+  @Delete()
+  @ApiOperation({ summary: 'حذف كل الأسئلة الشائعة لهذا التاجر (soft/hard)' })
+  @ApiQuery({ name: 'all', required: true, example: 'true' })
+  @ApiQuery({ name: 'hard', required: false, example: 'false' })
+  deleteAll(
+    @Param('merchantId') merchantId: string,
+    @Query('all') all: string,
+    @Query('hard') hard?: string,
+  ) {
+    if (all !== 'true') return { success: false, message: 'حدد all=true' };
+    return this.svc.deleteAll(merchantId, hard === 'true');
   }
 }

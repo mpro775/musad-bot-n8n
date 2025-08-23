@@ -20,8 +20,10 @@ import {
 
 @WebSocketGateway({
   path: '/api/kleem/ws',
-  cors: { origin: ['http://localhost:5173'], credentials: true },
-  transports: ['websocket'],
+  cors: { 
+    origin: ['http://localhost:5173', 'https://kleem-ai.com'], 
+    credentials: true 
+  },  transports: ['websocket'],
 })
 @Injectable()
 export class KleemGateway implements OnGatewayConnection, OnGatewayDisconnect {
