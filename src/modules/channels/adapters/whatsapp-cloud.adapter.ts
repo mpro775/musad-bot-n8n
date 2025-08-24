@@ -17,10 +17,13 @@ export class WhatsAppCloudAdapter implements ChannelAdapter {
     c.wabaId = payload.wabaId;
     c.appSecretEnc = payload.appSecret ? encryptSecret(payload.appSecret) : undefined;
     c.verifyTokenHash = payload.verifyToken ? hashSecret(payload.verifyToken) : undefined;
-    c.webhookUrl = `${this.config.get('PUBLIC_WEBHOOK_BASE')}/webhooks/whatsapp_cloud/${c.id}`;
+    const rawBase = this.config.get('PUBLIC_WEBHOOK_BASE') || '';
+const base = rawBase.replace(/\/+$/, '');                 // شيل السلاشات الأخيرة
+const hooksBase = /\/webhooks$/i.test(base) ? base : `${base}/webhooks`;
+    const hookUrl = `${hooksBase}/whatsapp_cloud/${c.id}`;
     c.enabled = true; c.status = 'connected' as any;
     await c.save();
-    return { mode: 'webhook', webhookUrl: c.webhookUrl };
+    return { mode: 'webhook', webhookUrl: hookUrl };
   }
 
   async disconnect(c: ChannelDocument, mode: 'disable'|'disconnect'|'wipe'): Promise<void> {

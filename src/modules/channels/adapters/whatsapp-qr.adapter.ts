@@ -33,7 +33,10 @@ export class WhatsAppQrAdapter implements ChannelAdapter {
     const { qr, instanceId } = await this.evo.startSession(instanceName, token);
 
     // اضبط Webhook على مسار القناة
-    const webhookUrl = `${this.config.get('PUBLIC_WEBHOOK_BASE')}/webhooks/whatsapp_qr/${c.id}`;
+    const rawBase = this.config.get('PUBLIC_WEBHOOK_BASE') || '';
+const base = rawBase.replace(/\/+$/, '');                 // شيل السلاشات الأخيرة
+const hooksBase = /\/webhooks$/i.test(base) ? base : `${base}/webhooks`;
+    const webhookUrl = `${hooksBase}/whatsapp_qr/${c.id}`;
     await this.evo.setWebhook(
       instanceName,
       webhookUrl,
