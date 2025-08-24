@@ -21,6 +21,8 @@ import {
 } from './schemas/kleem-missing-response.schema';
 import { AnalyticsAdminController } from './analytics.admin.controller';
 import { FaqModule } from '../faq/faq.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { Channel, ChannelSchema } from '../channels/schemas/channel.schema';
 
 @Module({
   imports: [
@@ -30,10 +32,13 @@ import { FaqModule } from '../faq/faq.module';
       { name: Order.name, schema: OrderSchema },
       { name: MissingResponse.name, schema: MissingResponseSchema },
       { name: KleemMissingResponse.name, schema: KleemMissingResponseSchema },
-      { name: Merchant.name, schema: MerchantSchema }, // أضف هذا السطر
+      { name: Merchant.name, schema: MerchantSchema },
+      { name: Channel.name, schema: ChannelSchema },
     ]),
     forwardRef(() => ProductsModule),
     FaqModule,
+    NotificationsModule,  // ← أضف هذا السطر    
+
   ],
   providers: [AnalyticsService],
   controllers: [AnalyticsController, AnalyticsAdminController],

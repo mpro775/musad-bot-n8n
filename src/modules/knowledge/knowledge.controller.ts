@@ -7,6 +7,7 @@ import {
   Query,
   Delete,
   HttpCode,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -55,8 +56,10 @@ export class KnowledgeController {
   async uploadUrls(
     @Param('merchantId') merchantId: string,
     @Body('urls') urls: string[],
+    @Req() req: any,                           // ⬅️ جديد
   ) {
-    return this.svc.addUrls(merchantId, urls);
+    // مرّر userId لصاحب العملية لغايات الإشعار
+    return this.svc.addUrls(merchantId, urls, req.user?.userId);
   }
   @Get('status')
   @ApiOperation({

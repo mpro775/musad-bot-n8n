@@ -71,15 +71,16 @@ async function bootstrap() {
     app.get(HttpMetricsInterceptor),
   );
 
-  // ⚠️ Raw body لمكالمات WhatsApp Cloud API فقط
-  app.use('/api/webhooks/incoming', (req: any, res, next) => {
-    const hasMetaSig = req.headers['x-hub-signature-256'];
-    const isMetaVerify = !!req.query?.['hub.mode']; // GET verify
-    if (hasMetaSig || isMetaVerify) {
-      return bodyParser.raw({ type: '*/*' })(req, res, next);
-    }
-    return bodyParser.json()(req, res, next);
-  });
+// ⚠️ Parse JSON عادي لكن خزّن الـ raw buffer للتحقق من توقيع Meta
+const captureRaw = (req: any, _res: any, buf: Buffer) => {
+  if (buf?.length) req.rawBody = Buffer.from(buf); // للاستخدام لاحقًا في التحقق
+};
+app.use('/api/webhooks',
+  bodyParser.json({ limit: '2mb', verify: captureRaw }),
+);
+app.use('/api/webhooks',
+  bodyParser.urlencoded({ extended: true, limit: '2mb', verify: captureRaw }),
+);
 
   // Swagger
   const config = new DocumentBuilder()

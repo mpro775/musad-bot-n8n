@@ -8,6 +8,10 @@ import {
   Param,
   BadRequestException,
   UseGuards,
+  Req,
+  ForbiddenException,
+  Get,
+  Res,
 } from '@nestjs/common';
 import { MessageService } from '../messaging/message.service';
 import { Public } from 'src/common/decorators/public.decorator';
@@ -15,7 +19,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { normalizeIncomingMessage } from './schemas/utils/normalize-incoming';
 import axios from 'axios';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model } from 'mongoose';
+import { Connection, Model, Types } from 'mongoose';
 import {
   Merchant,
   MerchantDocument,
@@ -36,8 +40,21 @@ import { ConfigService } from '@nestjs/config';
 import { ChatGateway } from '../chat/chat.gateway';
 import { OutboxService } from 'src/common/outbox/outbox.service';
 import { createHmac, timingSafeEqual } from 'crypto';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiBody,
+} from '@nestjs/swagger';
+import * as bcrypt from 'bcrypt';
 
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+// NEW: القنوات الجديدة + فك التشفير
+import { Channel, ChannelDocument, ChannelProvider } from '../channels/schemas/channel.schema';
+import { decryptSecret, hashSecret } from '../channels/utils/secrets.util';
+
+// ================= Utils =================
 function detectOrderIntent(msg: string): {
   step: string;
   orderId?: string;
@@ -45,8 +62,7 @@ function detectOrderIntent(msg: string): {
 } {
   const phoneRegex = /^77\d{7}$/;
   const orderIdRegex = /^[0-9a-fA-F]{24}$/;
-
-  msg = msg.trim();
+  msg = (msg || '').trim();
 
   if (orderIdRegex.test(msg)) {
     return { step: 'orderDetails', orderId: msg };
@@ -61,12 +77,18 @@ function detectOrderIntent(msg: string): {
   }
   return { step: 'normal' };
 }
+
 function verifyMetaSig(appSecret: string, raw: Buffer, sig?: string) {
-  if (!sig || !sig.startsWith('sha256=')) return false;
-  const theirs = Buffer.from(sig.split('=')[1], 'hex');
+  if (!sig) return false;
+  const parts = sig.split('=');
+  if (parts.length !== 2) return false;
+  const scheme = parts[0];
+  if (scheme !== 'sha256') return false;
+  const theirs = Buffer.from(parts[1], 'hex');
   const ours = createHmac('sha256', appSecret).update(raw).digest();
   return theirs.length === ours.length && timingSafeEqual(theirs, ours);
 }
+
 @ApiTags('Webhooks')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -79,85 +101,244 @@ export class WebhooksController {
     private readonly evoService: EvolutionService,
     private readonly config: ConfigService,
     private readonly chatGateway: ChatGateway,
-    @InjectConnection() private readonly conn: Connection, // NEW
+    @InjectConnection() private readonly conn: Connection,
     private readonly outbox: OutboxService,
     @InjectModel(Merchant.name)
     private readonly merchantModel: Model<MerchantDocument>,
-  ) {}
-  /**
-   * إرسال رد إلى القناة المناسبة
-   * @param sessionId معرف الجلسة
-   * @param text نص الرد
-   * @param channel القناة (whatsapp, telegram, webchat)
-   * @param merchantId معرف التاجر
-   */
-  @ApiOperation({ summary: 'إرسال رد إلى القناة المناسبة' })
-  @ApiResponse({
-    status: 200,
-    description: 'تم إرسال الرد بنجاح'
-  })
-  async sendReplyToChannel({ sessionId, text, channel, merchantId }) {
-    const merchant = await this.merchantModel.findById(merchantId).lean();
-    if (!merchant) throw new Error('Merchant not found');
 
-    if (channel === 'telegram') {
-      const token = merchant.channels?.telegram?.token;
-      if (!token) throw new Error('Telegram not configured');
-      await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
-        chat_id: sessionId,
-        text,
-        // parse_mode: 'HTML' // إن احتجتم تنسيق
-      });
-    } else if (channel === 'whatsapp') {
-      const session = merchant.channels?.whatsappQr?.sessionId;
-      if (!session) throw new Error('WhatsApp not configured');
-      await this.evoService.sendMessage(session, sessionId, text);
-    } else if (channel === 'webchat') {
+    // NEW: مجموعة القنوات
+    @InjectModel(Channel.name)
+    private readonly channelModel: Model<ChannelDocument>,
+  ) {}
+
+  // ================= Helpers (قناة افتراضية/تحقق/إرسال) =================
+
+  /** احصل على القناة الافتراضية لمزوّد محدد */
+  private async getDefaultChannel(
+    merchantId: string,
+    provider: 'telegram' | 'whatsapp_cloud' | 'whatsapp_qr' | 'webchat',
+  ) {
+    return this.channelModel.findOne({
+      merchantId: new Types.ObjectId(merchantId),
+      provider,
+      isDefault: true,
+      deletedAt: null,
+    });
+  }
+
+  /** تحقق توقيع Meta/Telegram لو توفرت المؤشرات */
+  private async verifyIfPossible(merchantId: string, req: any): Promise<void> {
+    const rawBody: Buffer =
+      (req as any).rawBody || Buffer.from(JSON.stringify(req.body || {}));
+
+    // Telegram header
+    const tgHeader =
+      req.headers?.['x-telegram-bot-api-secret-token'] ||
+      req.headers?.['X-Telegram-Bot-Api-Secret-Token'];
+    if (tgHeader) {
+      const expected = process.env.TELEGRAM_WEBHOOK_SECRET || '';
+      const ok =
+        expected &&
+        (() => {
+          try {
+            return timingSafeEqual(
+              Buffer.from(String(tgHeader)),
+              Buffer.from(expected),
+            );
+          } catch {
+            return false;
+          }
+        })();
+      if (!ok) throw new ForbiddenException('Invalid Telegram signature');
+      return; // تم التحقق
+    }
+
+    // Meta (WhatsApp Cloud) header
+    const metaSig =
+      req.headers?.['x-hub-signature-256'] || req.headers?.['x-hub-signature'];
+    if (metaSig) {
+      // احصل على appSecret من قناة whatsapp_cloud الافتراضية
+      const c = await this.getDefaultChannel(merchantId, 'whatsapp_cloud');
+      const appSecretEnc = c?.appSecretEnc;
+      if (!appSecretEnc) throw new ForbiddenException('App secret missing');
+      const appSecret = decryptSecret(appSecretEnc);
+      const ok = verifyMetaSig(appSecret, rawBody, String(metaSig));
+      if (!ok) throw new ForbiddenException('Invalid Meta signature');
+    }
+  }
+
+  /** تحقّق إذا البوت مفعّل على القناة الافتراضية للمزوّد */
+  private async isBotEnabled(
+    merchantId: string,
+    channel: string,
+  ): Promise<boolean> {
+    const provider =
+      channel === 'whatsapp'
+        ? 'whatsapp_cloud'
+        : channel === 'telegram'
+          ? 'telegram'
+          : channel === 'webchat'
+            ? 'webchat'
+            : undefined;
+    if (!provider) return false;
+    const c = await this.getDefaultChannel(merchantId, provider as any);
+    return !!c?.enabled;
+  }
+
+  /** إرسال رد (Telegram/WA Cloud/WA QR/Webchat) باختيار القناة المتاحة */
+  private async sendReplyToChannel({
+    merchantId,
+    channel, // whatsapp | telegram | webchat
+    sessionId,
+    text,
+  }: {
+    merchantId: string;
+    channel: 'whatsapp' | 'telegram' | 'webchat';
+    sessionId: string;
+    text: string;
+  }) {
+    if (channel === 'webchat') {
       this.chatGateway.sendMessageToSession(sessionId, {
         role: 'bot',
         text,
         ts: Date.now(),
       });
+      return;
     }
+
+    if (channel === 'telegram') {
+      const c = await this.getDefaultChannel(merchantId, 'telegram');
+      const tokenEnc = c?.botTokenEnc;
+      if (!tokenEnc) throw new Error('Telegram not configured');
+      const token = decryptSecret(tokenEnc);
+      await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
+        chat_id: sessionId,
+        text,
+      });
+      return;
+    }
+
+    // whatsapp: جرّب Cloud ثم QR كاحتياط
+    const cloud = await this.getDefaultChannel(merchantId, 'whatsapp_cloud');
+    if (cloud?.enabled && cloud.accessTokenEnc && cloud.phoneNumberId) {
+      const accessToken = decryptSecret(cloud.accessTokenEnc);
+      await axios.post(
+        `https://graph.facebook.com/v19.0/${cloud.phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          to: sessionId,
+          type: 'text',
+          text: { body: text },
+        },
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      return;
+    }
+
+    const qr = await this.getDefaultChannel(merchantId, 'whatsapp_qr');
+    if (qr?.enabled && qr.sessionId) {
+      await this.evoService.sendMessage(qr.sessionId, sessionId, text);
+      return;
+    }
+
+    throw new Error('WhatsApp not configured');
   }
+
+  private async verifyMetaSignature(merchantId: string, req: any): Promise<boolean> {
+    const sig = req.headers['x-hub-signature-256']; // format: sha256=...
+    if (!sig || !sig.startsWith('sha256=')) return false;
+
+    // جيب قناة WA Cloud الافتراضية + فكّ appSecret
+    const ch = await this.channelModel.findOne({
+      merchantId: new Types.ObjectId(merchantId),
+      provider: ChannelProvider.WHATSAPP_CLOUD,
+      isDefault: true,
+      deletedAt: null,
+    }).select('+appSecretEnc').lean();
+
+    const appSecret = ch?.appSecretEnc ? decryptSecret(ch.appSecretEnc) : undefined;
+    if (!appSecret || !req['rawBody']) return false;
+
+    const theirs = Buffer.from(sig.split('=')[1], 'hex');
+    const ours = createHmac('sha256', appSecret).update(req['rawBody']).digest();
+    return (theirs.length === ours.length) && timingSafeEqual(theirs, ours);
+  }
+
+  // ================= End Helpers =================
+
+  @Public()
+  @Get(':merchantId/incoming')
+  async verifyWebhook(
+    @Param('merchantId') merchantId: string,
+    @Req() req: any,
+    @Res() res: any,
+  ) {
+    const mode = req.query['hub.mode'];
+    const token = String(req.query['hub.verify_token'] || '');
+    const challenge = req.query['hub.challenge'];
+
+    if (mode !== 'subscribe' || !token) return res.status(400).send('Bad Request');
+
+    // قارن verify_token مع المخزّن (hashed)
+    const ch = await this.channelModel.findOne({
+      merchantId: new Types.ObjectId(merchantId),
+      provider: ChannelProvider.WHATSAPP_CLOUD,
+      isDefault: true,
+      deletedAt: null,
+    }).select('+verifyTokenHash').lean();
+
+    if (!ch?.verifyTokenHash) return res.status(404).send('Channel not found');
+
+    const ok = await bcrypt.compare(token, ch.verifyTokenHash);
+    if (!ok) return res.status(403).send('Forbidden');
+
+    return res.status(200).send(challenge);
+  }
+  /**
+   * استقبال الرسائل الواردة (مسار انتقالي قبل اعتماد /webhooks/:provider/:channelId)
+   */
+
   @Public()
   @Post('incoming/:merchantId')
-  @Post(':merchantId/incoming')
   @ApiOperation({ summary: 'معالجة الرسائل الواردة من القنوات' })
   @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
   @ApiBody({
     description: 'بيانات الرسالة الواردة',
     schema: {
       example: {
-        message: {
-          chat: { id: '12345' },
-          text: 'مرحباً',
-          from: { id: 'user123' }
-        },
+        message: { chat: { id: '12345' }, text: 'مرحباً', from: { id: 'u1' } },
         fileId: 'file_123',
         fileUrl: 'https://example.com/file.jpg',
-        mimeType: 'image/jpeg'
-      }
-    }
+        mimeType: 'image/jpeg',
+      },
+    },
   })
   @ApiResponse({
     status: 200,
-    description: 'تم استلام الرسالة بنجاح',
-    schema: {
-      example: {
-        success: true,
-        message: 'تم استلام الرسالة',
-        sessionId: 'session_123'
-      }
-    }
+    description: 'تم الاستلام',
+    schema: { example: { status: 'ok', sessionId: 'session_123' } },
   })
   async handleIncoming(
     @Param('merchantId') merchantId: string,
     @Body() body: any,
+    @Req() req: any, // نحتاجه للـ rawBody + headers
   ) {
+
+    if (req.headers['x-hub-signature-256']) {
+      const ok = await this.verifyMetaSignature(merchantId, req);
+      if (!ok) return { status: 'invalid_signature' };
+    } 
+
+    // 1) طبّع الحمولة
     const normalized = normalizeIncomingMessage(body, merchantId);
 
-    // ====== فرع الملفات (كما هو، مع إضافة Outbox بعد الحفظ) ======
+    // (اختياري) Idempotency: لو أضفت index فريد لـ sourceMessageId
+    // if (normalized?.metadata?.sourceMessageId) {
+    //   const exists = await this.messageService.existsBySourceId(normalized.metadata.sourceMessageId);
+    //   if (exists) return { status: 'duplicate_ignored' };
+    // }
+
+    // 2) ملفات
     if (normalized.fileId || normalized.fileUrl) {
       let tmpPath: string | undefined;
       let originalName: string | undefined;
@@ -165,8 +346,11 @@ export class WebhooksController {
         normalized.mimeType || 'application/octet-stream';
 
       if (normalized.channel === 'telegram' && normalized.fileId) {
-        const merchant = await this.merchantModel.findById(merchantId).lean();
-        const telegramToken = merchant?.channels?.telegram?.token;
+        // Telegram: احصل على توكن من قناة telegram
+        const tg = await this.getDefaultChannel(merchantId, 'telegram');
+        const telegramToken = tg?.botTokenEnc
+          ? decryptSecret(tg.botTokenEnc)
+          : undefined;
         if (!telegramToken) throw new Error('Telegram token missing');
         const dl = await downloadTelegramFile(normalized.fileId, telegramToken);
         tmpPath = dl.tmpPath;
@@ -189,7 +373,7 @@ export class WebhooksController {
         mimeType,
       );
 
-      // NEW: نفّذ حفظ+Outbox داخل معاملة لضمان at-least-once
+      // 3) خزّن وادفع للـ Outbox في معاملة
       const session = await this.conn.startSession();
       try {
         await session.withTransaction(async () => {
@@ -216,7 +400,6 @@ export class WebhooksController {
             session,
           );
 
-          // NEW: ادفع حدث chat.incoming.<channel> للـ AI worker
           await this.outbox.enqueueEvent(
             {
               aggregateType: 'conversation',
@@ -236,7 +419,7 @@ export class WebhooksController {
                 },
               },
               exchange: 'chat.incoming',
-              routingKey: normalized.channel, // whatsapp | telegram | web
+              routingKey: normalized.channel, // whatsapp | telegram | webchat
             },
             session,
           );
@@ -248,7 +431,7 @@ export class WebhooksController {
       }
     }
 
-    // ====== تحقق الحقول النصيّة ======
+    // 4) تحقق الحقول النصّية
     if (
       !normalized.merchantId ||
       !normalized.sessionId ||
@@ -258,12 +441,11 @@ export class WebhooksController {
       throw new BadRequestException('Payload missing required fields');
     }
 
-    // ====== فرع الرسائل النصية (نفس منطقك + Outbox داخل معاملة) ======
+    // 5) رسائل نصّية
     const tx = await this.conn.startSession();
     try {
       let sessionDoc: any;
       await tx.withTransaction(async () => {
-        // 2. خزّن الرسالة
         sessionDoc = await this.messageService.createOrAppend(
           {
             merchantId: normalized.merchantId,
@@ -281,7 +463,6 @@ export class WebhooksController {
           tx,
         );
 
-        // NEW: ادفع الحدث إلى AI عبر Rabbit (بدل النداء المباشر للنود n8n)
         await this.outbox.enqueueEvent(
           {
             aggregateType: 'conversation',
@@ -301,14 +482,13 @@ export class WebhooksController {
         );
       });
 
-      // ====== نفس منطق الـ intents الخاص بك ======
+      // 6) Intents (كما هو)
       const intent = detectOrderIntent(normalized.text);
 
       if (intent.step === 'orderDetails') {
         const order = await this.ordersServices.findOne(intent.orderId!);
         const reply = buildOrderDetailsMessage(order);
 
-        // NEW: خزّن ردّ البوت + Outbox للرد (بدل الإرسال المباشر)
         await this.messageService.createOrAppend({
           merchantId,
           sessionId: normalized.sessionId,
@@ -330,7 +510,6 @@ export class WebhooksController {
           routingKey: normalized.channel,
         });
 
-        // (اختياري أثناء الانتقال) إرسال مباشر خلف Feature Flag
         if (process.env.DIRECT_SEND_FALLBACK === 'true') {
           await this.sendReplyToChannel({
             sessionId: normalized.sessionId,
@@ -435,15 +614,16 @@ export class WebhooksController {
         };
       }
 
-      // ====== handover (كما هو)
+      // 7) handover
       const messages = sessionDoc.messages;
       const lastRole = messages.length
         ? messages[messages.length - 1].role
         : 'customer';
       const isHandover = sessionDoc.handoverToAgent === true;
-      const merchant = await this.merchantModel.findById(merchantId).lean();
-      const isBotEnabled =
-        merchant?.channels?.[normalized.channel]?.enabled === true;
+      const botEnabled = await this.isBotEnabled(
+        merchantId,
+        normalized.channel,
+      );
 
       if (lastRole === 'agent' || isHandover) {
         return {
@@ -454,16 +634,14 @@ export class WebhooksController {
         };
       }
 
-      // CHANGED: بدل استدعاء n8n المباشر، احنا أصلاً دفعنا chat.incoming فوق.
-      // لو تبغى تحافظ مؤقتًا على النداء المباشر (للتحقق/المقارنة) خلّه خلف علم:
       if (
         lastRole === 'customer' &&
         !isHandover &&
-        isBotEnabled &&
+        botEnabled &&
         process.env.N8N_DIRECT_CALL_FALLBACK === 'true'
       ) {
         const base = this.config.get<string>('N8N_BASE')!.replace(/\/+$/, '');
-        const url = `${base}/webhook/ai-agent`; // أو مسارك الحالي
+        const url = `${base}/webhook/ai-agent`;
         await axios.post(url, {
           merchantId: normalized.merchantId,
           sessionId: normalized.sessionId,
@@ -478,21 +656,33 @@ export class WebhooksController {
         handoverToAgent: false,
         role: normalized.role,
       };
+      
     } catch (err: any) {
-      // نفس سلوكك: لا نفشل الويبهوك حتى لو صار خطأ
+      await this.outbox.enqueueEvent({
+        exchange: 'analytics.events',
+        routingKey: 'webhook.error',
+        eventType: 'webhook.error',
+        aggregateType: 'webhook',
+        aggregateId: merchantId,
+        payload: { merchantId, error: err?.message, stack: err?.stack?.slice(0,1000) },
+      }).catch(()=>{});
       console.error('Webhook error:', err);
       return {
         sessionId: normalized.sessionId,
         status: 'received_with_error',
         error: err.message,
       };
+      
     } finally {
       await tx.endSession();
     }
   }
+
+  /**
+   * ردود البوت (عام)
+   */
   @Public()
   @Post('bot-reply/:merchantId')
-  @Post(':merchantId/bot-reply')
   @ApiOperation({ summary: 'معالجة ردود البوت الآلية' })
   @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
   @ApiBody({
@@ -502,19 +692,14 @@ export class WebhooksController {
         sessionId: 'session_123',
         text: 'مرحباً بك في خدمة العملاء',
         channel: 'whatsapp',
-        metadata: {}
-      }
-    }
+        metadata: {},
+      },
+    },
   })
   @ApiResponse({
     status: 200,
     description: 'تم إرسال رد البوت بنجاح',
-    schema: {
-      example: {
-        sessionId: 'session_123',
-        status: 'ok'
-      }
-    }
+    schema: { example: { sessionId: 'session_123', status: 'ok' } },
   })
   async handleBotReply(
     @Param('merchantId') merchantId: string,
@@ -525,7 +710,6 @@ export class WebhooksController {
       throw new BadRequestException('Payload missing required fields');
     }
 
-    // خزّن الرسالة role='bot' في الجلسة
     await this.messageService.createOrAppend({
       merchantId,
       sessionId,
@@ -540,77 +724,105 @@ export class WebhooksController {
       ],
     });
 
-    // أرسل الرد للعميل في القناة المناسبة
-    await this.sendReplyToChannel({ sessionId, text, channel, merchantId });
+    if (process.env.DIRECT_SEND_FALLBACK === 'true') {
+      await this.sendReplyToChannel({ sessionId, text, channel, merchantId });
+    } else {
+      await this.outbox.enqueueEvent({
+        aggregateType: 'conversation',
+        aggregateId: sessionId,
+        eventType: 'chat.reply',
+        payload: { merchantId, sessionId, channel, text, metadata },
+        exchange: 'chat.reply',
+        routingKey: channel,
+      });
+    }
 
     return { sessionId, status: 'ok' };
   }
+
+  /**
+   * ردّ اختبار للداشبورد فقط
+   */
   @Public()
-@Post(':merchantId/test-bot-reply')
-@ApiOperation({ summary: 'إرسال ردّ التستنج إلى الداشبورد فقط' })
-@ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
-@ApiBody({
-  description: 'بيانات ردّ التستنج',
-  schema: {
-    example: {
-      sessionId: 'dash-1727000000000',
-      text: 'ردّ الاختبار من الـ AI',
-      channel: 'dashboard-test',
-      metadata: { promptVersion: 'v3' }
-    }
-  }
-})
-@ApiResponse({
-  status: 200,
-  description: 'تم إرسال ردّ التستنج بنجاح',
-  schema: { example: { sessionId: 'dash-1727000000000', status: 'ok', test: true } }
-})
-async handleTestBotReply(
-  @Param('merchantId') merchantId: string,
-  @Body() body: any,
-) {
-  const { sessionId, text, channel = 'dashboard-test', metadata } = body || {};
-  if (!merchantId || !sessionId || !text) {
-    throw new BadRequestException('Payload missing required fields');
-  }
-
-  // 1) خزّن الرسالة role='bot' مع وسم أنها test
-  await this.messageService.createOrAppend({
-    merchantId,
-    sessionId,
-    channel,
-    messages: [
-      {
-        role: 'bot',
-        text,
-        timestamp: new Date(),
-        metadata: { ...(metadata || {}), test: true },
+  @Post(':merchantId/test-bot-reply')
+  @ApiOperation({ summary: 'إرسال ردّ التستنج إلى الداشبورد فقط' })
+  @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
+  @ApiBody({
+    description: 'بيانات ردّ التستنج',
+    schema: {
+      example: {
+        sessionId: 'dash-1727000000000',
+        text: 'ردّ الاختبار من الـ AI',
+        channel: 'dashboard-test',
+        metadata: { promptVersion: 'v3' },
       },
-    ],
-  });
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'تم إرسال ردّ التستنج بنجاح',
+    schema: {
+      example: {
+        sessionId: 'dash-1727000000000',
+        status: 'ok',
+        test: true,
+      },
+    },
+  })
+  async handleTestBotReply(
+    @Param('merchantId') merchantId: string,
+    @Body() body: any,
+  ) {
+    const {
+      sessionId,
+      text,
+      channel = 'dashboard-test',
+      metadata,
+    } = body || {};
+    if (!merchantId || !sessionId || !text) {
+      throw new BadRequestException('Payload missing required fields');
+    }
 
-  // 2) أرسلها للداشبورد فقط (WebSocket)
-  this.chatGateway.sendMessageToSession(sessionId, {
-    role: 'bot',
-    text,
-    ts: Date.now(),
-    meta: { test: true },
-  });
+    await this.messageService.createOrAppend({
+      merchantId,
+      sessionId,
+      channel,
+      messages: [
+        {
+          role: 'bot',
+          text,
+          timestamp: new Date(),
+          metadata: { ...(metadata || {}), test: true },
+        },
+      ],
+    });
 
-  // (اختياري) دفع Outbox event داخلي إن كنت تريد سجل اختبار مركزي
-  await this.outbox.enqueueEvent({
-    aggregateType: 'conversation',
-    aggregateId: sessionId,
-    eventType: 'chat.testReply',
-    payload: { merchantId, sessionId, channel, text },
-    exchange: 'chat.reply',
-    routingKey: 'dashboard-test',
-  }).catch(() => { /* تجاهل لو ما عندك outbox أو مو مهم */ });
+    this.chatGateway.sendMessageToSession(sessionId, {
+      role: 'bot',
+      text,
+      ts: Date.now(),
+      meta: { test: true },
+    });
 
-  return { sessionId, status: 'ok', test: true };
-}
+    await this.outbox
+      .enqueueEvent({
+        aggregateType: 'conversation',
+        aggregateId: sessionId,
+        eventType: 'chat.testReply',
+        payload: { merchantId, sessionId, channel, text },
+        exchange: 'chat.reply',
+        routingKey: 'dashboard-test',
+      })
+      .catch(() => {});
+
+    return { sessionId, status: 'ok', test: true };
+  }
+
+  /**
+   * ردود الموظف (Agent)
+   * (تقدر تخليها محمية فقط بدون @Public حسب احتياجك)
+   */
   @Post('agent-reply/:merchantId')
-  @Post(':merchantId/agent-reply')
   @ApiOperation({ summary: 'معالجة ردود الموظفين' })
   @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
   @ApiBody({
@@ -621,18 +833,14 @@ async handleTestBotReply(
         text: 'شكراً لتواصلك معنا',
         channel: 'whatsapp',
         agentId: 'agent_123',
-        metadata: {}
-      }
-    }
+        metadata: {},
+      },
+    },
   })
   @ApiResponse({
     status: 200,
     description: 'تم إرسال رد الموظف بنجاح',
-    schema: {
-      example: {
-        sessionId: 'session_123'
-      }
-    }
+    schema: { example: { sessionId: 'session_123' } },
   })
   async handleAgentReply(
     @Param('merchantId') merchantId: string,
@@ -643,7 +851,6 @@ async handleTestBotReply(
       throw new BadRequestException('Payload missing required fields');
     }
 
-    // خزّن الرسالة role='agent' في الجلسة
     await this.messageService.createOrAppend({
       merchantId,
       sessionId,
@@ -658,8 +865,18 @@ async handleTestBotReply(
       ],
     });
 
-    // أرسل الرد للعميل في القناة المناسبة
-    await this.sendReplyToChannel({ sessionId, text, channel, merchantId });
+    if (process.env.DIRECT_SEND_FALLBACK === 'true') {
+      await this.sendReplyToChannel({ sessionId, text, channel, merchantId });
+    } else {
+      await this.outbox.enqueueEvent({
+        aggregateType: 'conversation',
+        aggregateId: sessionId,
+        eventType: 'chat.reply',
+        payload: { merchantId, sessionId, channel, text },
+        exchange: 'chat.reply',
+        routingKey: channel,
+      });
+    }
 
     return { sessionId };
   }

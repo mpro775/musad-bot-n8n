@@ -13,13 +13,18 @@ import { ChatMediaModule } from '../media/chat-media.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { ChatModule } from '../chat/chat.module';
 import { OutboxModule } from 'src/common/outbox/outbox.module';
-
+import { ChannelsModule } from '../channels/channels.module';
+import { TelegramWebhookController } from './telegram.webhook.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { Channel, ChannelSchema } from '../channels/schemas/channel.schema';
+  
 @Module({
   imports: [
     // فقط موديل Webhook لتخزين الأحداث الواردة
     MongooseModule.forFeature([{ name: Webhook.name, schema: WebhookSchema }]),
     MongooseModule.forFeature([
       { name: Merchant.name, schema: MerchantSchema },
+      { name: Channel.name, schema: ChannelSchema },
     ]),
     OrdersModule,
     ChatMediaModule,
@@ -27,12 +32,15 @@ import { OutboxModule } from 'src/common/outbox/outbox.module';
     OutboxModule,
     ChatModule,
     // وحدات الاعتمادية
+    NotificationsModule,
     MessagingModule, // لحفظ الرسائل (MessageService)
-  ],
+    ChannelsModule,
+    ],
   providers: [
     WebhooksService, // خدمة معالجة الـ webhook العامة
+    WebhooksController, // لإعادة استخدامه في TelegramWebhookController
   ],
-  controllers: [WebhooksController],
+  controllers: [WebhooksController, TelegramWebhookController],
   exports: [WebhooksService],
 })
 export class WebhooksModule {}

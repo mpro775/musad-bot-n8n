@@ -1,5 +1,3 @@
-// src/modules/webhooks/utils/normalize-incoming.ts
-
 export type NormalizedMessage = {
   merchantId: string;
   sessionId: string; // chat_id أو رقم العميل
@@ -36,8 +34,12 @@ export function normalizeIncomingMessage(
   let mimeType: string | undefined;
   let mediaType: NormalizedMessage['mediaType'] | undefined;
 
-  const metadata: Record<string, any> = body?.metadata ?? {};
+  const metadata: Record<string, any> = { ...(body?.metadata ?? {}) };
   const timestamp = new Date();
+
+  // تمرير channelId/provider لو مسارك الجديد يرسلهم
+  if (body?.channelId) metadata.channelId = body.channelId;
+  if (body?.provider) metadata.provider = body.provider;
 
   // -----------------------------------
   // Telegram
@@ -49,7 +51,6 @@ export function normalizeIncomingMessage(
     text = m.text ?? m.caption ?? '';
     platformMessageId = String(m.message_id);
 
-    // media
     if (m.photo?.length) {
       const last = m.photo[m.photo.length - 1];
       fileId = last.file_id;
@@ -65,7 +66,6 @@ export function normalizeIncomingMessage(
       mediaType = inferMediaType(mimeType, fileName);
     }
 
-    // agent detection (اختياري): لو عندك منطق يميز الوكيل
     if (body.role === 'agent' || body.sentBy === 'agent') role = 'agent';
 
     return {
@@ -75,7 +75,7 @@ export function normalizeIncomingMessage(
       transport,
       text,
       role,
-      metadata: { ...metadata, from: m.from, entities: m.entities },
+      metadata: { ...metadata, from: m.from, entities: m.entities, sourceMessageId: platformMessageId, provider: 'telegram' },
       timestamp,
       platformMessageId,
       fileUrl,
@@ -98,9 +98,8 @@ export function normalizeIncomingMessage(
     transport = 'api';
 
     const from = wMsg?.from || wValue?.contacts?.[0]?.wa_id || '';
-    sessionId = from; // رقم العميل بصيغة E.164
+    sessionId = from;
 
-    // نصوص محتملة
     text =
       wMsg?.text?.body ??
       wMsg?.button?.text ??
@@ -110,7 +109,6 @@ export function normalizeIncomingMessage(
 
     platformMessageId = wMsg?.id || `${from}:${Date.now()}`;
 
-    // وسائط (Cloud API يعطينا IDs لا URLs)
     const type = wMsg?.type;
     if (type === 'image') {
       fileId = wMsg?.image?.id;
@@ -140,7 +138,7 @@ export function normalizeIncomingMessage(
       transport,
       text,
       role,
-      metadata: { ...metadata, value: wValue, type },
+      metadata: { ...metadata, value: wValue, type, sourceMessageId: platformMessageId, provider: 'whatsapp_cloud' },
       timestamp,
       platformMessageId,
       fileUrl,
@@ -173,13 +171,10 @@ export function normalizeIncomingMessage(
 
     platformMessageId = m?.key?.id || `${sessionId}:${Date.now()}`;
 
-    // وسائط Evolution (قد تكون Base64 حسب الإعداد)
     if (m?.message?.imageMessage) {
       mediaType = 'image';
       mimeType = m.message.imageMessage.mimetype;
       fileName = m.message.imageMessage.fileName;
-      // قد يصل base64 في body وفق إعداد webhook_base64=true
-      // احتفظ به في metadata بدل fileUrl لو أردت:
       metadata.base64 = m.message.imageMessage?.base64;
     } else if (m?.message?.audioMessage) {
       mediaType = 'audio';
@@ -202,7 +197,7 @@ export function normalizeIncomingMessage(
       transport,
       text,
       role,
-      metadata: { ...metadata, pushName: body?.pushName },
+      metadata: { ...metadata, pushName: body?.pushName, sourceMessageId: platformMessageId, provider: 'whatsapp_qr' },
       timestamp,
       platformMessageId,
       fileUrl,
@@ -255,7 +250,7 @@ export function normalizeIncomingMessage(
       transport,
       text,
       role,
-      metadata,
+      metadata: { ...metadata, sourceMessageId: platformMessageId, provider: 'whatsapp_qr' },
       timestamp,
       platformMessageId,
       fileUrl,
@@ -292,7 +287,7 @@ export function normalizeIncomingMessage(
       transport,
       text,
       role,
-      metadata: body?.metadata ?? {},
+      metadata: { ...(body?.metadata ?? {}), sourceMessageId: platformMessageId, provider: 'webchat' },
       timestamp,
       platformMessageId,
       fileUrl,
@@ -303,7 +298,7 @@ export function normalizeIncomingMessage(
     };
   }
 
-  // افتراضي (لن يصل هنا غالبًا)
+  // افتراضي
   return {
     merchantId,
     sessionId: sessionId || '',
@@ -335,8 +330,7 @@ function inferMediaType(
   const n = (name || '').toLowerCase();
   const m = (mime || '').toLowerCase();
   if (m.includes('pdf') || n.endsWith('.pdf')) return 'pdf';
-  if (m.includes('image') || /\.(png|jpg|jpeg|webp|gif)$/i.test(n))
-    return 'image';
+  if (m.includes('image') || /\.(png|jpg|jpeg|webp|gif)$/i.test(n)) return 'image';
   if (m.includes('audio') || /\.(mp3|ogg|wav|m4a)$/i.test(n)) return 'audio';
   if (m.includes('video') || /\.(mp4|mov|mkv|webm)$/i.test(n)) return 'video';
   return 'document';

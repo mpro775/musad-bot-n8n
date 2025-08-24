@@ -54,6 +54,9 @@ import { MetricsModule } from './metrics/metrics.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { InstructionsModule } from './modules/instructions/instructions.module';
 import { AiModule } from './modules/ai/ai.module';
+import { SupportModule } from './modules/support/support.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { CatalogModule } from './modules/catalog/catalog.module';
 
 @Module({
   imports: [
@@ -125,6 +128,7 @@ import { AiModule } from './modules/ai/ai.module';
     ProductsModule,
     MessagingModule,
     MerchantsModule,
+    SupportModule,
     PlansModule,
     VectorModule,
     ChatModule,
@@ -144,6 +148,8 @@ import { AiModule } from './modules/ai/ai.module';
     KleemModule,
     InstructionsModule,
     AiModule,
+    NotificationsModule,
+    CatalogModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

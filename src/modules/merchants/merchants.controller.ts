@@ -25,7 +25,6 @@ import {
 import { MerchantsService } from './merchants.service';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
-import { ChannelDetailsDto } from './dto/channel.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
 import {
@@ -43,7 +42,6 @@ import {
 } from '@nestjs/swagger';
 import { Public } from 'src/common/decorators/public.decorator';
 import { OnboardingResponseDto } from './dto/onboarding-response.dto';
-import { OnboardingDto } from './dto/onboarding.dto';
 import {
   ChecklistGroup,
   MerchantChecklistService,
@@ -52,7 +50,13 @@ import { OnboardingBasicDto } from './dto/onboarding-basic.dto';
 import { UpdateProductSourceDto } from './dto/update-product-source.dto';
 import { unlink } from 'fs/promises';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ChannelKey, UpdateChannelDto } from './dto/channels.dto';
+import { InjectModel } from '@nestjs/mongoose';
+import { User, UserDocument } from '../users/schemas/user.schema';
+import { Model } from 'mongoose';
+import * as bcrypt from 'bcrypt';
+import { NotificationsService } from '../notifications/notifications.service';
+import { CatalogService } from '../catalog/catalog.service';
+import { OutboxService } from 'src/common/outbox/outbox.service';
 
 @ApiTags('التجار')
 @ApiBearerAuth()
@@ -62,6 +66,10 @@ export class MerchantsController {
   constructor(
     private readonly svc: MerchantsService,
     private readonly checklist: MerchantChecklistService,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private readonly notifications: NotificationsService,
+    private readonly catalog: CatalogService,
+    private readonly outbox: OutboxService,
   ) {}
 
   @Post()
@@ -77,27 +85,6 @@ export class MerchantsController {
   @ApiOkResponse({ description: 'قائمة التجار' })
   findAll() {
     return this.svc.findAll();
-  }
-
-  @Put('actions/onboarding')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'إكمال عملية onboarding للتاجر الحالي' })
-  @ApiBody({ type: OnboardingDto })
-  @ApiOkResponse({
-    description: 'تم إكمال onboarding',
-    type: OnboardingResponseDto,
-  })
-  completeOnboarding(
-    @Req() { user }: RequestWithUser,
-    @Body() dto: OnboardingDto,
-  ): Promise<{ message: string } & OnboardingResponseDto> {
-    return this.svc
-      .completeOnboarding(user.merchantId, dto)
-      .then(({ merchant, webhookInfo }) => ({
-        message: 'Onboarding completed',
-        merchant,
-        webhookInfo,
-      }));
   }
 
   @Get(':id/checklist')
@@ -218,98 +205,6 @@ export class MerchantsController {
     }));
   }
 
-  /**
-   * تحديث قناة محددة (واتساب/تلجرام/ويبشات)
-   */
-  @Patch(':id/channels/:key')
-  @ApiOperation({ summary: 'تعديل قناة (Patch قناة معينة)' })
-  @ApiParam({ name: 'id' })
-  @ApiParam({ name: 'key', enum: ChannelKey })
-  @ApiBody({ type: UpdateChannelDto })
-  async patchChannel(
-    @Param('id') id: string,
-    @Param('key', new ParseEnumPipe(ChannelKey)) key: ChannelKey,
-    @Body() dto: UpdateChannelDto,
-  ) {
-    return this.svc.patchChannel(id, key, dto);
-  }
-
-  /**
-   * mode:
-   * - disable: تعطيل فقط (يبقي الإعدادات)
-   * - disconnect: فصل مع تنظيف خارجي (deleteWebhook/ deleteInstance)
-   * - wipe: تعطيل + حذف الحقول الحسّاسة داخليًا (توكن/سشن/سر..) + فصل خارجي
-   */
-  @Delete(':id/channels/:key')
-  @ApiOperation({ summary: 'حذف/فصل قناة' })
-  @ApiParam({ name: 'id' })
-  @ApiParam({ name: 'key', enum: ChannelKey })
-  @ApiQuery({
-    name: 'mode',
-    required: false,
-    enum: ['disable', 'disconnect', 'wipe'],
-    description: 'الوضع الافتراضي disconnect',
-  })
-  async deleteChannel(
-    @Param('id') id: string,
-    @Param('key', new ParseEnumPipe(ChannelKey)) key: ChannelKey,
-    @Query('mode') mode: 'disable' | 'disconnect' | 'wipe' = 'disconnect',
-  ) {
-    return this.svc.deleteChannel(id, key, mode);
-  }
-
-  @Post(':id/telegram-webhook')
-  @ApiOperation({ summary: 'تفعيل Webhook تلجرام للتاجر' })
-  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
-  @ApiBody({ schema: { example: { botToken: '12345:ABCDEF...' } } })
-  @ApiOkResponse({ description: 'تم تسجيل الويبهوك بنجاح' })
-  @ApiNotFoundResponse({ description: 'التاجر أو الـ workflow غير موجود' })
-  registerTelegram(
-    @Param('id') id: string,
-    @Body('botToken') botToken: string,
-  ) {
-    if (!botToken) {
-      throw new BadRequestException('botToken مطلوب في جسم الطلب');
-    }
-    return this.svc.registerTelegramWebhook(id, botToken).then((result) => ({
-      message: 'تم تسجيل الويبهوك بنجاح',
-      ...result,
-    }));
-  }
-
-  @Post(':id/whatsapp/start-session')
-  @ApiOperation({ summary: 'بدء جلسة واتساب للتاجر' })
-  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
-  @ApiOkResponse({ description: 'تم بدء الجلسة بنجاح' })
-  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
-  async startSession(@Param('id') id: string) {
-    return this.svc.connectWhatsapp(id);
-  }
-
-  // جلب حالة الاتصال
-  @Get(':id/whatsapp/status')
-  @ApiOperation({ summary: 'جلب حالة الاتصال' })
-  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
-  @ApiOkResponse({ description: 'تم بدء الجلسة بنجاح' })
-  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
-  async getStatus(@Param('id') id: string) {
-    return this.svc.getWhatsappStatus(id);
-  }
-
-  // إرسال رسالة (اختياري للاختبار/التجربة)
-  @Post(':id/whatsapp/send-message')
-  @ApiOperation({ summary: 'إرسال رسالة واتساب للتاجر' })
-  @ApiParam({ name: 'id', description: 'معرّف التاجر' })
-  @ApiBody({ schema: { example: { to: '123456789', text: 'Hello' } } })
-  @ApiOkResponse({ description: 'تم إرسال الرسالة بنجاح' })
-  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
-  async sendMsg(
-    @Param('id') id: string,
-    @Body() body: { to: string; text: string },
-  ) {
-    return this.svc.sendWhatsappMessage(id, body.to, body.text);
-  }
-
   @Post(':id/checklist/:itemKey/skip')
   @ApiOperation({ summary: 'تخطي عنصر في قائمة التحقق' })
   @ApiParam({ name: 'id', description: 'معرّف التاجر' })
@@ -371,26 +266,107 @@ export class MerchantsController {
     return this.svc.getStoreContext(id);
   }
 
-  @ApiOperation({ summary: 'تعيين مصدر المنتج' })
+  @ApiOperation({
+    summary: 'تعيين مصدر المنتج (مع تأكيد كلمة المرور واختيار وضع المزامنة)',
+  })
   @ApiParam({ name: 'id', description: 'معرّف التاجر' })
   @ApiBody({ type: UpdateProductSourceDto })
-  @ApiOkResponse({ description: 'تم تعيين مصدر المنتج بنجاح' })
-  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
+  @ApiOkResponse({ description: 'تم التبديل وربما بدأت المزامنة' })
   @Patch(':id/product-source')
-  setSource(@Param('id') id: string, @Body() dto: UpdateProductSourceDto) {
-    return this.svc.setProductSource(id, dto.source);
-  }
-
-  @ApiOperation({ summary: 'تحديث إعدادات الاتصال' })
-  @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
-  @ApiOkResponse({ description: 'تم تحديث إعدادات الاتصال بنجاح' })
-  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
-  @Patch(':merchantId/leads-settings')
-  @Public()
-  updateLeadsSettings(
-    @Param('merchantId') merchantId: string,
-    @Body('settings') settings: any[],
+  async setSource(
+    @Param('id') merchantId: string,
+    @Body() dto: UpdateProductSourceDto,
+    @Req() req: any,
   ) {
-    return this.svc.updateLeadsSettings(merchantId, settings);
+    const userId = req.user?.userId;
+    const user = await this.userModel
+      .findById(userId)
+      .select('+password role email name')
+      .exec();
+    if (!user) throw new BadRequestException('User not found');
+
+    // تأكيد كلمة المرور
+    const ok = await bcrypt.compare(dto.confirmPassword, user.password);
+    if (!ok) throw new BadRequestException('كلمة المرور غير صحيحة');
+
+    // (اختياري) تحقّق صلاحيات: Only OWNER/ADMIN يبدّل المصدر
+    if (req.user?.role !== 'ADMIN' && req.user?.role !== 'MERCHANT') {
+      throw new BadRequestException('ليست لديك صلاحية تغيير المصدر');
+    }
+
+    // 1) بدّل المصدر
+    const merchant = await this.svc.setProductSource(merchantId, dto.source);
+
+    // 2) أشعر المستخدم بعملية التغيير
+    await this.notifications.notifyUser(userId, {
+      type: 'productSource.changed',
+      title: 'تم تغيير مصدر المنتجات',
+      body: `المصدر الحالي: ${dto.source}`,
+      merchantId,
+      severity: 'info',
+      data: { source: dto.source },
+    });
+
+    // 3) المزامنة حسب الوضع
+    const mode = dto.syncMode ?? 'background';
+    if (mode === 'immediate') {
+      // مزامنة الآن (قد تستغرق)
+      try {
+        await this.notifications.notifyUser(userId, {
+          type: 'catalog.sync.started',
+          title: 'بدء مزامنة الكتالوج',
+          body: 'بدأت عملية المزامنة الآن.',
+          merchantId,
+          severity: 'info',
+        });
+        const result = await this.catalog.syncForMerchant(merchantId);
+        await this.notifications.notifyUser(userId, {
+          type: 'catalog.sync.completed',
+          title: 'اكتمال مزامنة الكتالوج',
+          body: `تم الاستيراد: ${result.imported} | التحديث: ${result.updated}`,
+          merchantId,
+          severity: 'success',
+          data: result,
+        });
+        return { merchant, sync: { mode, ...result } };
+      } catch (e: any) {
+        await this.notifications.notifyUser(userId, {
+          type: 'catalog.sync.failed',
+          title: 'فشل مزامنة الكتالوج',
+          body: e?.message || 'حدث خطأ أثناء المزامنة',
+          merchantId,
+          severity: 'error',
+        });
+        throw e;
+      }
+    }
+
+    if (mode === 'background') {
+      // أطلق حدث لخلفية/وركر (Outbox/Rabbit أو Cron)
+      await this.outbox
+        .enqueueEvent({
+          aggregateType: 'catalog',
+          aggregateId: merchantId,
+          eventType: 'catalog.sync.requested',
+          payload: { merchantId, requestedBy: userId, source: dto.source },
+          exchange: 'catalog.sync',
+          routingKey: 'requested',
+        })
+        .catch(() => {
+          /* لو ما عندك Outbox عامل حالياً—تجاهل */
+        });
+
+      await this.notifications.notifyUser(userId, {
+        type: 'catalog.sync.queued',
+        title: 'تم جدولة مزامنة الكتالوج',
+        body: 'ستبدأ المزامنة في الخلفية.',
+        merchantId,
+        severity: 'info',
+      });
+      return { merchant, sync: { mode: 'background', queued: true } };
+    }
+
+    // none
+    return { merchant, sync: { mode: 'none' } };
   }
 }

@@ -5,7 +5,6 @@ import { Document, Types } from 'mongoose';
 
 import { QuickConfig, QuickConfigSchema } from './quick-config.schema';
 import { AdvancedConfig, AdvancedConfigSchema } from './advanced-config.schema';
-import { ChannelConfig, ChannelConfigSchema } from './channel.schema';
 import { WorkingHour, WorkingHourSchema } from './working-hours.schema';
 import { Address, AddressSchema } from './address.schema';
 import {
@@ -116,33 +115,8 @@ export class Merchant {
   @Prop({ default: '' })
   shippingPolicy: string;
 
-  // — Channels —
-  @Prop({
-    type: {
-      // WhatsApp الرسمي:
-      whatsappApi: ChannelConfigSchema,
-      // WhatsApp QR عبر Evolution:
-      whatsappQr: ChannelConfigSchema,
+ 
 
-      // تلغرام/ويبشات وبقية القنوات:
-      telegram: ChannelConfigSchema,
-      webchat: ChannelConfigSchema,
-      instagram: ChannelConfigSchema,
-      messenger: ChannelConfigSchema,
-    },
-    default: {},
-  })
-  channels: {
-    whatsappApi?: ChannelConfig;
-    whatsappQr?: ChannelConfig;
-    telegram?: ChannelConfig;
-    webchat?: ChannelConfig;
-    instagram?: ChannelConfig;
-    messenger?: ChannelConfig;
-  };
-
-  @Prop({ type: Array, default: [] })
-  leadsSettings?: any[];
 
   @Prop({ type: Types.ObjectId, ref: 'Storefront' })
   storefront?: Types.ObjectId;

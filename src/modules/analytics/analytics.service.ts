@@ -1,5 +1,4 @@
 // src/analytics/analytics.service.ts
-
 import {
   ForbiddenException,
   Injectable,
@@ -8,6 +7,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
 import dayjs from 'dayjs';
+
 import {
   MessageSession,
   MessageSessionDocument,
@@ -18,6 +18,7 @@ import {
 } from '../merchants/schemas/merchant.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
+
 import { CreateMissingResponseDto } from './dto/create-missing-response.dto';
 import {
   MissingResponse,
@@ -31,32 +32,38 @@ import {
 import { QueryKleemMissingResponsesDto } from './dto/query-kleem-missing-responses.dto';
 import { FaqService } from '../faq/faq.service';
 import { AddToKnowledgeDto } from './dto/add-to-knowledge.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+
+// ✅ القنوات الجديدة
+import {
+  Channel,
+  ChannelDocument,
+  ChannelProvider,
+  ChannelStatus,
+} from '../channels/schemas/channel.schema';
 
 export interface KeywordCount {
   keyword: string;
   count: number;
 }
-
 export interface ChannelCount {
   channel: string;
   count: number;
 }
-
 export interface TopProduct {
   productId: string;
   name: string;
   count: number;
 }
-
 export interface Overview {
-  sessions: { count: number; changePercent: number };
+  sessions: { count: number; changePercent: number | null };
   messages: number;
   topKeywords: KeywordCount[];
   topProducts: TopProduct[];
   channels: { total: number; breakdown: ChannelCount[] };
   orders: {
     count: number;
-    changePercent: number;
+    changePercent: number | null;
     byStatus: Record<string, number>;
     totalSales: number;
   };
@@ -81,33 +88,84 @@ export class AnalyticsService {
     private missingResponseModel: Model<MissingResponseDocument>,
     @InjectModel(KleemMissingResponse.name)
     private kleemMissingModel: Model<KleemMissingResponseDocument>,
+    // ✅ جديد: نقرأ القنوات من مجموعتها
+    @InjectModel(Channel.name)
+    private readonly channelModel: Model<ChannelDocument>,
     private faqService: FaqService,
+    private notificationsService: NotificationsService,
   ) {}
 
-  /**
-   * يحسب تواريخ البداية والنهاية للفترة المحددة.
-   * يدعم 'week'، 'month'، و 'quarter' يدويًا.
-   */
+  // ✅ نطاق الفترة = بداية الفترة الحالية حتى الآن
   private getPeriodDates(period: 'week' | 'month' | 'quarter'): {
     start: Date;
     end: Date;
   } {
-    let start: Date, end: Date;
-    if (period === 'week' || period === 'month') {
-      end = dayjs().endOf(period).toDate();
-      start = dayjs(end).subtract(1, period).toDate();
-    } else {
-      const now = dayjs();
-      const m = now.month();
-      const qStart = Math.floor(m / 3) * 3;
-      start = now.month(qStart).startOf('month').toDate();
-      end = now
-        .month(qStart + 2)
-        .endOf('month')
-        .toDate();
+    const now = dayjs();
+    if (period === 'week') {
+      return { start: now.startOf('week').toDate(), end: now.toDate() };
     }
-    return { start, end };
+    if (period === 'month') {
+      return { start: now.startOf('month').toDate(), end: now.toDate() };
+    }
+    const m = now.month();
+    const qStart = Math.floor(m / 3) * 3;
+    const start = now.month(qStart).startOf('month').toDate();
+    return { start, end: now.toDate() };
   }
+
+  // ✅ الفترة السابقة (لنسبة التغيّر)
+  private getPrevPeriodDates(
+    start: Date,
+    period: 'week' | 'month' | 'quarter',
+  ): { prevStart: Date; prevEnd: Date } {
+    const s = dayjs(start);
+    if (period === 'week') {
+      return { prevStart: s.subtract(1, 'week').toDate(), prevEnd: s.toDate() };
+    }
+    if (period === 'month') {
+      return {
+        prevStart: s.subtract(1, 'month').toDate(),
+        prevEnd: s.toDate(),
+      };
+    }
+    return { prevStart: s.subtract(3, 'month').toDate(), prevEnd: s.toDate() };
+  }
+
+  // ✅ Helper: قنوات منطقية مفعّلة من مجموعة القنوات
+  private async getEnabledLogicalChannels(
+    merchantId: Types.ObjectId,
+  ): Promise<Set<'telegram' | 'whatsapp' | 'webchat'>> {
+    const rows = await this.channelModel
+      .find({
+        merchantId,
+        enabled: true,
+        deletedAt: null,
+        status: { $ne: ChannelStatus.DISCONNECTED },
+        provider: {
+          $in: [
+            ChannelProvider.TELEGRAM,
+            ChannelProvider.WHATSAPP_CLOUD,
+            ChannelProvider.WHATSAPP_QR,
+            ChannelProvider.WEBCHAT,
+          ],
+        },
+      })
+      .select(['provider'])
+      .lean();
+
+    const set = new Set<'telegram' | 'whatsapp' | 'webchat'>();
+    for (const r of rows) {
+      if (r.provider === ChannelProvider.TELEGRAM) set.add('telegram');
+      else if (
+        r.provider === ChannelProvider.WHATSAPP_CLOUD ||
+        r.provider === ChannelProvider.WHATSAPP_QR
+      )
+        set.add('whatsapp');
+      else if (r.provider === ChannelProvider.WEBCHAT) set.add('webchat');
+    }
+    return set;
+  }
+
   private async getCsat(
     merchantId: Types.ObjectId,
     start: Date,
@@ -144,10 +202,11 @@ export class AnalyticsService {
         },
       ],
     );
-    const value = r && Array.isArray(r) && r.length > 0 ? r[0].csat : null;
+    const value = r?.[0]?.csat ?? null;
     return typeof value === 'number' || value === null ? value : null;
   }
 
+  // ✅ استبدال 'user' بـ 'customer'
   private async getFirstResponseTimeSec(
     merchantId: Types.ObjectId,
     start: Date,
@@ -158,14 +217,14 @@ export class AnalyticsService {
         { $match: { merchantId, createdAt: { $gte: start, $lte: end } } },
         {
           $project: {
-            firstUser: {
+            firstCustomer: {
               $min: {
                 $map: {
                   input: {
                     $filter: {
                       input: '$messages',
                       as: 'm',
-                      cond: { $eq: ['$$m.role', 'user'] },
+                      cond: { $eq: ['$$m.role', 'customer'] },
                     },
                   },
                   as: 'm',
@@ -190,19 +249,23 @@ export class AnalyticsService {
             },
           },
         },
-        // احسب الفرق فقط إذا عندنا أول رسالة مستخدم وبوت
         {
           $project: {
             diffSec: {
               $cond: [
                 {
                   $and: [
-                    '$firstUser',
+                    '$firstCustomer',
                     '$firstBot',
-                    { $gt: ['$firstBot', '$firstUser'] },
+                    { $gt: ['$firstBot', '$firstCustomer'] },
                   ],
                 },
-                { $divide: [{ $subtract: ['$firstBot', '$firstUser'] }, 1000] },
+                {
+                  $divide: [
+                    { $subtract: ['$firstBot', '$firstCustomer'] },
+                    1000,
+                  ],
+                },
                 null,
               ],
             },
@@ -212,8 +275,7 @@ export class AnalyticsService {
         { $group: { _id: null, avgSec: { $avg: '$diffSec' } } },
         { $project: { _id: 0, avgSec: { $round: ['$avgSec', 1] } } },
       ]);
-    const value =
-      r && Array.isArray(r) && r.length > 0 ? (r[0]?.avgSec ?? null) : null;
+    const value = r?.[0]?.avgSec ?? null;
     return typeof value === 'number' || value === null ? value : null;
   }
 
@@ -229,7 +291,6 @@ export class AnalyticsService {
     start: Date,
     end: Date,
   ) {
-    // عدّ الطلبات المدفوعة واحسب AOV
     const paid = await this.orderModel.countDocuments({
       merchantId,
       createdAt: { $gte: start, $lte: end },
@@ -250,30 +311,15 @@ export class AnalyticsService {
     return { paidOrders: paid, aov };
   }
 
-  /**
-   * يجمع الإحصاءات الأساسية: عدد الجلسات، إجمالي الرسائل،
-   * أعلى الكلمات المفتاحية، أعلى المنتجات طلبًا، وتفصيل القنوات.
-   */
   async getOverview(
     merchantId: string,
     period: 'week' | 'month' | 'quarter',
   ): Promise<Overview> {
-    // حساب تواريخ الفترة الحالية والسابقة
     const { start, end } = this.getPeriodDates(period);
-    let prevStart: Date;
-    let prevEnd: Date;
-
-    if (period === 'week' || period === 'month') {
-      prevStart = dayjs(start).subtract(1, period).toDate();
-      prevEnd = dayjs(start).toDate();
-    } else {
-      prevStart = dayjs(start).subtract(3, 'month').toDate();
-      prevEnd = start;
-    }
-
+    const { prevStart, prevEnd } = this.getPrevPeriodDates(start, period);
     const mId = new Types.ObjectId(merchantId);
 
-    // 1) عدد الجلسات الحالية والسابقة
+    // 1) الجلسات الحالية والسابقة
     const [currSessions, prevSessions] = await Promise.all([
       this.sessionModel.countDocuments({
         merchantId: mId,
@@ -284,11 +330,12 @@ export class AnalyticsService {
         createdAt: { $gte: prevStart, $lte: prevEnd },
       }),
     ]);
-    const changePercent = prevSessions
-      ? Math.round(((currSessions - prevSessions) / prevSessions) * 100)
-      : 100;
+    const changePercent =
+      prevSessions > 0
+        ? Math.round(((currSessions - prevSessions) / prevSessions) * 100)
+        : null; // ✅ لا نفرض 100%
 
-    // 2) إجمالي عدد الرسائل خلال الفترة
+    // 2) إجمالي الرسائل
     const messagesAgg = await this.sessionModel.aggregate<{
       _id: null;
       total: number;
@@ -297,8 +344,9 @@ export class AnalyticsService {
       { $project: { count: { $size: '$messages' } } },
       { $group: { _id: null, total: { $sum: '$count' } } },
     ]);
-    const totalMessages = messagesAgg.length > 0 ? messagesAgg[0].total : 0;
+    const totalMessages = messagesAgg[0]?.total ?? 0;
 
+    // 3) الطلبات + تغيّرها
     const [currOrders, prevOrders] = await Promise.all([
       this.orderModel.countDocuments({
         merchantId: mId,
@@ -309,22 +357,18 @@ export class AnalyticsService {
         createdAt: { $gte: prevStart, $lte: prevEnd },
       }),
     ]);
-    const ordersChangePercent = prevOrders
-      ? Math.round(((currOrders - prevOrders) / prevOrders) * 100)
-      : 100;
+    const ordersChangePercent =
+      prevOrders > 0
+        ? Math.round(((currOrders - prevOrders) / prevOrders) * 100)
+        : null;
 
-    // 2) تفصيل حسب الحالة
     const orderStatusAgg = await this.orderModel.aggregate([
       { $match: { merchantId: mId, createdAt: { $gte: start, $lte: end } } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]);
-    // حول الـ aggregate إلى كائن مثل {pending: 2, paid: 5, ...}
-    const ordersByStatus = {};
-    orderStatusAgg.forEach((s) => {
-      ordersByStatus[s._id] = s.count;
-    });
+    const ordersByStatus: Record<string, number> = {};
+    for (const s of orderStatusAgg) ordersByStatus[s._id] = s.count;
 
-    // 3) اجمالي المبيعات (مجموع مبلغ الطلبات)
     const salesAgg = await this.orderModel.aggregate([
       {
         $match: {
@@ -336,7 +380,8 @@ export class AnalyticsService {
       { $group: { _id: null, total: { $sum: '$total' } } },
     ]);
     const totalSales = salesAgg[0]?.total || 0;
-    // 3) أعلى 3 كلمات مفتاحية
+
+    // 4) أعلى الكلمات
     const topKeywords = await this.sessionModel.aggregate<KeywordCount>([
       { $match: { merchantId: mId, createdAt: { $gte: start, $lte: end } } },
       { $unwind: '$messages' },
@@ -347,7 +392,7 @@ export class AnalyticsService {
       { $project: { keyword: '$_id', count: 1, _id: 0 } },
     ]);
 
-    // 4) أعلى 3 منتجات طلبًا عبر نقرات رابط التتبع
+    // 5) أعلى المنتجات (تحويل آمن لـ ObjectId)
     const topProducts = await this.sessionModel.aggregate<TopProduct>([
       { $match: { merchantId: mId, createdAt: { $gte: start, $lte: end } } },
       { $unwind: '$messages' },
@@ -358,8 +403,25 @@ export class AnalyticsService {
       {
         $lookup: {
           from: 'products',
-          localField: '_id',
-          foreignField: '_id',
+          let: { pid: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $eq: [
+                    '$_id',
+                    {
+                      $cond: [
+                        { $ne: [{ $type: '$$pid' }, 'objectId'] },
+                        { $toObjectId: '$$pid' },
+                        '$$pid',
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+          ],
           as: 'product',
         },
       },
@@ -374,32 +436,22 @@ export class AnalyticsService {
       },
     ]);
 
-    // 5) جلب القنوات المفعلة من التاجر مباشرة
-    const merchant = await this.merchantModel.findById(merchantId);
-    if (!merchant) {
-      throw new Error('Merchant not found');
-    }
-    const enabledChannels: string[] = [];
-    if (merchant.channels?.telegram?.enabled) enabledChannels.push('telegram');
-    if (merchant.channels?.whatsappQr?.enabled) enabledChannels.push('whatsapp');
-    if (merchant.channels?.webchat?.enabled) enabledChannels.push('webchat');
+    // 6) القنوات المفعلة من مجموعة القنوات (بدلاً من merchant.channels)
+    const enabledSet = await this.getEnabledLogicalChannels(mId);
 
-    // 6) تجميع usage لكل قناة من الـ Sessions
+    // 7) استخدام القنوات من الجلسات
     const channelsUsage = await this.sessionModel.aggregate<ChannelCount>([
       { $match: { merchantId: mId, createdAt: { $gte: start, $lte: end } } },
       { $group: { _id: '$channel', count: { $sum: 1 } } },
       { $project: { channel: '$_id', count: 1, _id: 0 } },
     ]);
 
-    // 7) بناء breakdown النهائي للقنوات: جميع القنوات المفعلة حتى لو usage=0
-    const breakdown: ChannelCount[] = enabledChannels.map((channel) => ({
-      channel,
-      count: channelsUsage.find((c) => c.channel === channel)?.count || 0,
+    const breakdown: ChannelCount[] = Array.from(enabledSet).map((ch) => ({
+      channel: ch,
+      count: channelsUsage.find((c) => c.channel === ch)?.count || 0,
     }));
 
-    // (اختياري) احسب تغيّر الرسائل هنا إذا احتجته لاحقًا
-
-    // المؤشرات الجديدة
+    // مؤشرات إضافية
     const [csat, frt, missingOpen, storeExtras] = await Promise.all([
       this.getCsat(mId, start, end),
       this.getFirstResponseTimeSec(mId, start, end),
@@ -407,26 +459,25 @@ export class AnalyticsService {
       this.getStoreExtras(mId, start, end),
     ]);
 
-    // ثم أعِد النتيجة مع الحقول الجديدة:
     return {
       sessions: { count: currSessions, changePercent },
-      messages: totalMessages, // (إن بغيت: messages: { count: totalMessages, changePercent: messagesChangePercent })
+      messages: totalMessages,
       topKeywords,
       topProducts,
-      channels: { total: enabledChannels.length, breakdown },
+      channels: { total: enabledSet.size, breakdown },
       orders: {
         count: currOrders,
         changePercent: ordersChangePercent,
         byStatus: ordersByStatus,
         totalSales,
       },
-      // إضافات
-      csat: csat ?? undefined, // مثال: 0.87
-      firstResponseTimeSec: frt ?? undefined, // مثال: 6.4
-      missingOpen, // مثال: 14
-      storeExtras, // { paidOrders: 32, aov: 127.5 }
+      csat: csat ?? undefined,
+      firstResponseTimeSec: frt ?? undefined,
+      missingOpen,
+      storeExtras,
     };
   }
+
   async getMessagesTimeline(
     merchantId: string,
     period: 'week' | 'month' | 'quarter' = 'week',
@@ -434,8 +485,6 @@ export class AnalyticsService {
   ) {
     const { start, end } = this.getPeriodDates(period);
     const mId = new Types.ObjectId(merchantId);
-
-    // حدد صيغة التجميع حسب groupBy
     const dateFormat = groupBy === 'hour' ? '%Y-%m-%d %H:00' : '%Y-%m-%d';
 
     return this.sessionModel.aggregate([
@@ -473,12 +522,13 @@ export class AnalyticsService {
       ])
       .then((res) => res);
   }
+
   async getProductsCount(merchantId: string) {
     const mId = new Types.ObjectId(merchantId);
     return this.productModel.countDocuments({ merchantId: mId });
   }
+
   async createFromWebhook(dto: CreateMissingResponseDto) {
-    // تحويل merchant ل ObjectId إن كان لديك Merchant فعلي
     const merchant = new Types.ObjectId(dto.merchant);
     return this.missingResponseModel.create({
       ...dto,
@@ -511,7 +561,6 @@ export class AnalyticsService {
     } = params;
 
     const q: any = { merchant: new Types.ObjectId(merchantId) };
-
     if (resolved !== 'all') q.resolved = resolved === 'true';
     if (channel !== 'all') q.channel = channel;
     if (type !== 'all') q.type = type;
@@ -602,8 +651,9 @@ export class AnalyticsService {
 
     return this.missingResponseModel.aggregate(pipeline as any);
   }
+
   async addToKnowledge(params: {
-    merchantId: string; // من التوكن
+    merchantId: string;
     missingId: string;
     payload: AddToKnowledgeDto;
     userId?: string;
@@ -613,20 +663,14 @@ export class AnalyticsService {
     const doc = await this.missingResponseModel.findById(missingId);
     if (!doc) throw new NotFoundException('Missing response not found');
 
-    // تأكد أن الرسالة تخص نفس التاجر
     if (doc.merchant.toString() !== merchantId) {
       throw new ForbiddenException('Not your resource');
     }
 
-    // أنشئ FAQ واحد عبر الخدمة (تتولى هي embeddings + Qdrant)
     const created = await this.faqService.createMany(merchantId, [
-      {
-        question: payload.question,
-        answer: payload.answer,
-      },
+      { question: payload.question, answer: payload.answer },
     ]);
 
-    // علِّم الرسالة كمُعالج
     doc.resolved = true;
     doc.resolvedAt = new Date();
     doc.resolvedBy = userId ?? undefined;
@@ -639,10 +683,10 @@ export class AnalyticsService {
       resolved: true,
     };
   }
+
   async createKleemFromWebhook(
     dto: CreateKleemMissingResponseDto,
   ): Promise<KleemMissingResponseDocument> {
-    // تنظيف بسيط (اختياري)
     dto.question = (dto.question || '').trim();
     if (dto.botReply) dto.botReply = dto.botReply.trim();
 
@@ -651,6 +695,7 @@ export class AnalyticsService {
       resolved: dto.resolved ?? false,
     });
   }
+
   async getTopProducts(
     merchantId: string,
     period: 'week' | 'month' | 'quarter',
@@ -670,8 +715,25 @@ export class AnalyticsService {
         {
           $lookup: {
             from: 'products',
-            localField: '_id',
-            foreignField: '_id',
+            let: { pid: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $eq: [
+                      '$_id',
+                      {
+                        $cond: [
+                          { $ne: [{ $type: '$$pid' }, 'objectId'] },
+                          { $toObjectId: '$$pid' },
+                          '$$pid',
+                        ],
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
             as: 'product',
           },
         },
@@ -687,6 +749,7 @@ export class AnalyticsService {
       ])
       .then((res) => res);
   }
+
   async listKleemMissing(dto: QueryKleemMissingResponsesDto) {
     const {
       page,
@@ -767,5 +830,60 @@ export class AnalyticsService {
       { $set: { resolved: true } },
     );
     return { updated: ids.length };
+  }
+
+  private summarizeMissingStats(
+    rows: Array<{
+      _id: string; // day
+      channels: Array<{ channel: string; resolved: boolean; count: number }>;
+      total: number;
+    }>,
+  ) {
+    const totals = {
+      total: 0,
+      unresolved: 0,
+      byChannel: {} as Record<string, number>,
+    };
+    for (const d of rows) {
+      totals.total += d.total ?? 0;
+      for (const c of d.channels ?? []) {
+        totals.byChannel[c.channel] =
+          (totals.byChannel[c.channel] ?? 0) + c.count;
+        if (c.resolved === false) totals.unresolved += c.count;
+      }
+    }
+    const topChannel = Object.entries(totals.byChannel).sort(
+      (a, b) => b[1] - a[1],
+    )[0]?.[0];
+    return { ...totals, topChannel };
+  }
+
+  async notifyMissingStatsToUser(params: {
+    merchantId: string;
+    userId: string;
+    days?: number;
+  }) {
+    const { merchantId, userId, days = 7 } = params;
+    const statsRows = await this.stats(merchantId, days);
+    const s = this.summarizeMissingStats(statsRows as any);
+
+    const title = `ملخّص الرسائل المفقودة (آخر ${days} يوم)`;
+    const parts = [
+      `الإجمالي: ${s.total}`,
+      `غير محلولة: ${s.unresolved}`,
+      s.topChannel ? `الأكثر عبر: ${s.topChannel}` : undefined,
+    ].filter(Boolean);
+    const body = parts.join(' — ');
+
+    await this.notificationsService.notifyUser(userId, {
+      type: 'missingResponses.stats',
+      title,
+      body,
+      merchantId,
+      severity: s.unresolved > 0 ? 'warning' : 'info',
+      data: { days, summary: s, rows: statsRows },
+    });
+
+    return { sent: true, summary: s };
   }
 }

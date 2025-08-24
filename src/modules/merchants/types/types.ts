@@ -8,12 +8,6 @@ export interface MerchantStatusResponse {
     startDate: Date;
     endDate?: Date;
   };
-  channels: {
-    whatsappApi: { enabled: boolean; connected: boolean };
-    whatsappQr: { enabled: boolean; connected: boolean };
-    telegram: { enabled: boolean; connected: boolean };
-    webchat: { enabled: boolean; connected: boolean };
-  };
   lastActivity?: Date;
   promptStatus: {
     configured: boolean;

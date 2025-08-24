@@ -15,7 +15,6 @@ import { PromptPreviewService } from './services/prompt-preview.service';
 import { MerchantPromptController } from './controllers/merchant-prompt.controller';
 import { MerchantChecklistService } from './merchant-checklist.service';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
-import { IntegrationsModule } from '../integrations/integrations.module';
 import {
   Category,
   CategorySchema,
@@ -23,13 +22,20 @@ import {
 import { StorefrontModule } from '../storefront/storefront.module';
 import { InstructionsModule } from '../instructions/instructions.module';
 import { MetricsModule } from 'src/metrics/metrics.module';
+import { User, UserSchema } from '../users/schemas/user.schema';
+import { Channel, ChannelSchema } from '../channels/schemas/channel.schema';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { CatalogModule } from '../catalog/catalog.module';
+import { OutboxModule } from '../../common/outbox/outbox.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Merchant.name, schema: MerchantSchema },
-      { name: Product.name, schema: ProductSchema }, // ← هنا
+      { name: Product.name, schema: ProductSchema },
       { name: Category.name, schema: CategorySchema },
+      { name: User.name, schema: UserSchema },
+      { name: Channel.name, schema: ChannelSchema },
     ]),
     StorefrontModule,
     forwardRef(() => AuthModule),
@@ -37,8 +43,10 @@ import { MetricsModule } from 'src/metrics/metrics.module';
     forwardRef(() => InstructionsModule),
     HttpModule,
     forwardRef(() => N8nWorkflowModule),
-    IntegrationsModule,
     MetricsModule,
+    NotificationsModule,
+    CatalogModule,
+    OutboxModule,
   ],
   providers: [
     MerchantsService,

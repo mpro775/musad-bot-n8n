@@ -5,6 +5,7 @@ import { Model, Types } from 'mongoose';
 import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { NotificationsPrefsDto } from './dto/notifications-prefs.dto';
 
 @Injectable()
 export class UsersService {
@@ -61,5 +62,44 @@ export class UsersService {
     if (!updated) {
       throw new NotFoundException(`User with id ${userId} not found`);
     }
+  }
+  async getNotificationsPrefs(id: string) {
+    const user = await this.userModel.findById(id).lean();
+    if (!user) throw new NotFoundException('User not found');
+    return (
+      user.notificationsPrefs ?? {
+        channels: {
+          inApp: true,
+          email: true,
+          telegram: false,
+          whatsapp: false,
+        },
+        topics: {
+          syncFailed: true,
+          syncCompleted: true,
+          webhookFailed: true,
+          embeddingsCompleted: true,
+          missingResponsesDigest: 'daily',
+        },
+        quietHours: {
+          enabled: false,
+          start: '22:00',
+          end: '08:00',
+          timezone: 'Asia/Aden',
+        },
+      }
+    );
+  }
+
+  async updateNotificationsPrefs(id: string, dto: NotificationsPrefsDto) {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        id,
+        { notificationsPrefs: dto },
+        { new: true, projection: { notificationsPrefs: 1 } },
+      )
+      .lean();
+    if (!user) throw new NotFoundException('User not found');
+    return user.notificationsPrefs;
   }
 }

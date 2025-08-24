@@ -331,11 +331,22 @@ export class AnalyticsController {
   @Get('missing-responses/stats')
   @ApiOperation({ summary: 'إحصاءات الرسائل المنسية' })
   async stats(
-    @Req() req: Request & { user: { merchantId: string } },
+    @Req() req: Request & { user: { merchantId: string; userId: string } }, // ⬅️ نحتاج userId للإشعار
     @Query('days') days?: string,
+    @Query('notify') notify?: 'true' | 'false', // ⬅️ جديد
   ) {
     const merchantId = req.user.merchantId;
-    return this.analytics.stats(merchantId, Number(days ?? 7));
+    const d = Number(days ?? 7);
+    const result = await this.analytics.stats(merchantId, d);
+
+    // (اختياري) أرسل إشعارًا بالملخص عند الطلب
+    if (notify === 'true') {
+      const userId = (req as any).user?.userId;
+      if (userId) {
+        await this.analytics.notifyMissingStatsToUser({ merchantId, userId, days: d });
+      }
+    }
+    return result;
   }
   /**
    * الحصول على أبرز المنتجات حسب المشاهدات/التفاعلات

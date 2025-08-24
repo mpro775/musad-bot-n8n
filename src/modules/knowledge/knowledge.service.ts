@@ -5,6 +5,8 @@ import { Model, Types } from 'mongoose';
 import { chromium } from 'playwright';
 import { VectorService } from '../vector/vector.service';
 import { SourceUrl } from './schemas/source-url.schema';
+import { OutboxService } from 'src/common/outbox/outbox.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 function isUsefulChunk(text: string): boolean {
   const arabicCount = (text.match(/[\u0600-\u06FF]/g) || []).length;
@@ -18,82 +20,150 @@ export class KnowledgeService {
     @InjectModel(SourceUrl.name)
     private readonly sourceUrlModel: Model<SourceUrl>,
     private readonly vectorService: VectorService,
+    private readonly notifications: NotificationsService,   // ⬅️ جديد
+    private readonly outbox: OutboxService,                 // ⬅️ جديد 
   ) {}
 
-  async addUrls(merchantId: string, urls: string[]) {
+  async addUrls(merchantId: string, urls: string[], requestedBy?: string) {
+    const unique = Array.from(new Set((urls ?? []).map(u => (u || '').trim()).filter(Boolean)));
+    if (!unique.length) return { success: false, count: 0, message: 'No URLs' };
+
     const records = await this.sourceUrlModel.insertMany(
-      urls.map((url) => ({ merchantId, url, status: 'pending' })),
+      unique.map((url) => ({ merchantId, url, status: 'pending' })),
+      { ordered: false },
     );
 
-    this.processUrlsInBackground(merchantId, records).catch((error) => {
+    // إشعار “تمت جدولة الروابط”
+    if (requestedBy) {
+      await this.notifications.notifyUser(requestedBy, {
+        type: 'knowledge.urls.queued',
+        title: 'تمت جدولة روابط للمعرفة',
+        body: `عدد الروابط: ${records.length}`,
+        merchantId,
+        severity: 'info',
+        data: { count: records.length },
+      });
+    }
+
+    this.processUrlsInBackground(merchantId, records, requestedBy).catch((error) => {
       this.logger.error(`Background processing failed: ${error.message}`);
     });
 
     return { success: true, count: records.length, message: 'URLs queued for processing' };
   }
+  private async processUrlsInBackground(merchantId: string, records: any[], requestedBy?: string) {
+    let done = 0, failed = 0;
 
-  private async processUrlsInBackground(merchantId: string, records: any[]) {
     for (let index = 0; index < records.length; index++) {
       const rec = records[index];
       this.logger.log(`Processing URL ${index + 1}/${records.length}: ${rec.url}`);
+
+      // Outbox: started
+      await this.outbox.enqueueEvent({
+        exchange: 'knowledge.index',
+        routingKey: 'url.started',
+        eventType: 'knowledge.url.started',
+        aggregateType: 'knowledge',
+        aggregateId: merchantId,
+        payload: { merchantId, url: rec.url, index, total: records.length },
+      }).catch(() => {});
 
       try {
         const { text } = await this.extractTextFromUrl(rec.url);
         this.logger.log(`Extracted ${text.length} characters from ${rec.url}`);
 
-        const chunks = text.match(/.{1,1000}/gs) ?? [];
+        const chunks = (text.match(/.{1,1000}/gs) ?? []).map(s => s.trim());
         this.logger.log(`Split into ${chunks.length} chunks`);
 
         let processedChunks = 0;
         for (let i = 0; i < chunks.length; i++) {
-          const chunk = chunks[i].trim();
-          if (chunk.length < 30) {
-            this.logger.log(`Skipping chunk ${i}: too short (${chunk.length} chars)`);
-            continue;
-          }
-          if (!isUsefulChunk(chunk)) {
-            this.logger.log(`Skipping chunk ${i}: not useful`);
-            continue;
-          }
+          const chunk = chunks[i];
+          if (chunk.length < 30) continue;
+          if (!isUsefulChunk(chunk)) continue;
 
-          this.logger.log(`Embedding chunk ${i}...`);
           const embedding = await this.vectorService.embed(chunk);
-
           await this.vectorService.upsertWebKnowledge([{
-            id: this.vectorService.generateWebKnowledgeId(
-              merchantId,
-              `${rec.url}#${i}`,
-            ),
+            id: this.vectorService.generateWebKnowledgeId(merchantId, `${rec.url}#${i}`),
             vector: embedding,
-            payload: {
-              merchantId,
-              url: rec.url,
-              text: chunk,
-              type: 'url',
-              source: 'web',
-            },
+            payload: { merchantId, url: rec.url, text: chunk, type: 'url', source: 'web' },
           }]);
-
           processedChunks++;
         }
-
-        this.logger.log(`Processed ${processedChunks} chunks for ${rec.url}`);
 
         await this.sourceUrlModel.updateOne(
           { _id: rec._id },
           { status: 'completed', textExtracted: text },
         );
+        done++;
+
+        // إشعار “اكتملت فهرسة رابط”
+        if (requestedBy) {
+          await this.notifications.notifyUser(requestedBy, {
+            type: 'embeddings.completed',
+            title: 'اكتملت فهرسة رابط معرفي',
+            body: `تمت معالجة ${processedChunks} مقطع من: ${rec.url}`,
+            merchantId,
+            severity: 'success',
+            data: { url: rec.url, processedChunks },
+          });
+        }
+
+        // Outbox: completed
+        await this.outbox.enqueueEvent({
+          exchange: 'knowledge.index',
+          routingKey: 'url.completed',
+          eventType: 'knowledge.url.completed',
+          aggregateType: 'knowledge',
+          aggregateId: merchantId,
+          payload: { merchantId, url: rec.url, processedChunks },
+        }).catch(() => {});
+
       } catch (e: any) {
         this.logger.error(`Failed to process ${rec.url}: ${e.message}`, e.stack);
         await this.sourceUrlModel.updateOne(
           { _id: rec._id },
           { status: 'failed', errorMessage: e.message },
         );
+        failed++;
+
+        // إشعار فشل
+        if (requestedBy) {
+          await this.notifications.notifyUser(requestedBy, {
+            type: 'embeddings.failed',
+            title: 'فشل فهرسة رابط معرفي',
+            body: rec.url,
+            merchantId,
+            severity: 'error',
+            data: { url: rec.url, error: e.message },
+          });
+        }
+
+        // Outbox: failed
+        await this.outbox.enqueueEvent({
+          exchange: 'knowledge.index',
+          routingKey: 'url.failed',
+          eventType: 'knowledge.url.failed',
+          aggregateType: 'knowledge',
+          aggregateId: merchantId,
+          payload: { merchantId, url: rec.url, error: e.message },
+        }).catch(() => {});
       }
     }
 
+    // إشعار ملخّص الدفعة
+    if (requestedBy) {
+      await this.notifications.notifyUser(requestedBy, {
+        type: 'embeddings.batch.completed',
+        title: 'انتهت معالجة الروابط',
+        body: `تمت: ${done} — فشلت: ${failed} — المجموع: ${records.length}`,
+        merchantId,
+        severity: failed ? 'warning' : 'success',
+        data: { done, failed, total: records.length },
+      });
+    }
+
     this.logger.log(`Completed processing all URLs`);
-    return { success: true, count: records.length };
+    return { success: true, count: records.length, done, failed };
   }
 
   async getUrlsStatus(merchantId: string) {
@@ -113,6 +183,22 @@ export class KnowledgeService {
     };
   }
 
+  // ⬇️ تحسينات بسيطة للمتصفح (no-sandbox + timeout)
+  async extractTextFromUrl(url: string): Promise<{ text: string }> {
+    const browser = await chromium.launch({ args: ['--no-sandbox'] });
+    const page = await browser.newPage({ userAgent: 'Mozilla/5.0 (compatible; KaleemBot/1.0)' });
+    try {
+      page.setDefaultNavigationTimeout(45_000);
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+      // انتظر networkidle قليلاً إن أمكن
+      await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+      const text = await page.evaluate(() => document.body?.innerText || '');
+      return { text };
+    } finally {
+      await browser.close();
+    }
+  }
+
   async getUrls(merchantId: string) {
     return this.sourceUrlModel
       .find({ merchantId })
@@ -120,14 +206,6 @@ export class KnowledgeService {
       .lean();
   }
 
-  async extractTextFromUrl(url: string): Promise<{ text: string }> {
-    const browser = await chromium.launch();
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: 'networkidle' });
-    const text = await page.evaluate(() => document.body.innerText);
-    await browser.close();
-    return { text };
-  }
 
   // ===========================
   //        دوال الحذف

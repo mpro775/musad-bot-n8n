@@ -9,6 +9,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Faq } from './schemas/faq.schema';
 import { VectorService } from '../vector/vector.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { OutboxService } from 'src/common/outbox/outbox.service';
 
 @Injectable()
 export class FaqService {
@@ -17,13 +19,12 @@ export class FaqService {
   constructor(
     @InjectModel(Faq.name) private faqModel: Model<Faq>,
     private vectorService: VectorService,
+    private readonly notifications: NotificationsService,  // ⬅️ جديد
+    private readonly outbox: OutboxService,                // ⬅️ جديد
   ) {}
 
   /** إدراج جماعي: نحفظ سريعًا كـ pending ثم نُعالج في الخلفية */
-  async createMany(
-    merchantId: string,
-    faqs: { question: string; answer: string }[],
-  ) {
+  async createMany(merchantId: string, faqs: { question: string; answer: string }[], requestedBy?: string) {
     if (!faqs?.length) throw new BadRequestException('No FAQs provided');
 
     const toInsert = faqs.map((f) => ({
@@ -35,16 +36,20 @@ export class FaqService {
 
     const created = await this.faqModel.insertMany(toInsert);
 
-    // تشغيل المعالجة في الخلفية
-    this.processFaqsInBackground(
-      merchantId,
-      created.map((d) => d.id.toString()),
-    ).catch((err) =>
-      this.logger.error(
-        `[createMany] background error: ${err.message}`,
-        err.stack,
-      ),
-    );
+    // إشعار Queue
+    if (requestedBy) {
+      await this.notifications.notifyUser(requestedBy, {
+        type: 'faq.queued',
+        title: 'تمت جدولة أسئلة شائعة',
+        body: `عدد العناصر: ${created.length}`,
+        merchantId,
+        severity: 'info',
+        data: { count: created.length },
+      });
+    }
+
+    this.processFaqsInBackground(merchantId, created.map((d) => d.id.toString()), requestedBy)
+      .catch((err) => this.logger.error(`[createMany] background error: ${err.message}`, err.stack));
 
     return {
       success: true,
@@ -54,8 +59,8 @@ export class FaqService {
     };
   }
 
-  /** المعالجة الخلفية: توليد embedding ورفع إلى Qdrant وتحديث الحالة */
-  private async processFaqsInBackground(merchantId: string, ids: string[]) {
+  private async processFaqsInBackground(merchantId: string, ids: string[], requestedBy?: string) {
+    let done = 0, failed = 0;
     for (const id of ids) {
       const faq = await this.faqModel.findOne({ _id: id, merchantId });
       if (!faq) continue;
@@ -64,35 +69,84 @@ export class FaqService {
         const text = `${faq.question}\n${faq.answer}`;
         const embedding = await this.vectorService.embed(text);
 
-        await this.vectorService.upsertFaqs([
-          {
-            id: this.vectorService.generateFaqId(faq.id.toString()),
-            vector: embedding,
-            payload: {
-              merchantId,
-              faqId: faq.id.toString(),
-              question: faq.question,
-              answer: faq.answer,
-              type: 'faq',
-              source: 'manual',
-            },
+        await this.vectorService.upsertFaqs([{
+          id: this.vectorService.generateFaqId(faq.id.toString()),
+          vector: embedding,
+          payload: {
+            merchantId,
+            faqId: faq.id.toString(),
+            question: faq.question,
+            answer: faq.answer,
+            type: 'faq',
+            source: 'manual',
           },
-        ]);
+        }]);
 
-        await this.faqModel.updateOne(
-          { _id: faq._id },
-          { status: 'completed', errorMessage: null },
-        );
+        await this.faqModel.updateOne({ _id: faq._id }, { status: 'completed', errorMessage: null });
+        done++;
+
+        // إشعار نجاح عنصر
+        if (requestedBy) {
+          await this.notifications.notifyUser(requestedBy, {
+            type: 'embeddings.completed',
+            title: 'تم تدريب سؤال/جواب',
+            body: faq.question.slice(0, 80),
+            merchantId,
+            severity: 'success',
+            data: { faqId: faq.id.toString() },
+          });
+        }
+
+        await this.outbox.enqueueEvent({
+          exchange: 'knowledge.index',
+          routingKey: 'faq.completed',
+          eventType: 'knowledge.faq.completed',
+          aggregateType: 'knowledge',
+          aggregateId: merchantId,
+          payload: { merchantId, faqId: faq.id.toString() },
+        }).catch(() => {});
+
       } catch (e: any) {
         this.logger.error(`[processFaqs] failed for ${id}: ${e.message}`);
-        await this.faqModel.updateOne(
-          { _id: id },
-          { status: 'failed', errorMessage: e.message || 'Embedding failed' },
-        );
+        await this.faqModel.updateOne({ _id: id }, { status: 'failed', errorMessage: e.message || 'Embedding failed' });
+        failed++;
+
+        if (requestedBy) {
+          await this.notifications.notifyUser(requestedBy, {
+            type: 'embeddings.failed',
+            title: 'فشل تدريب سؤال/جواب',
+            body: faq?.question?.slice(0, 80) ?? id,
+            merchantId,
+            severity: 'error',
+            data: { faqId: id, error: e.message },
+          });
+        }
+
+        await this.outbox.enqueueEvent({
+          exchange: 'knowledge.index',
+          routingKey: 'faq.failed',
+          eventType: 'knowledge.faq.failed',
+          aggregateType: 'knowledge',
+          aggregateId: merchantId,
+          payload: { merchantId, faqId: id, error: e.message },
+        }).catch(() => {});
       }
+    }
+
+    // ملخّص الدفعة
+    if (requestedBy) {
+      await this.notifications.notifyUser(requestedBy, {
+        type: 'embeddings.batch.completed',
+        title: 'انتهى تدريب الأسئلة الشائعة',
+        body: `تمت: ${done} — فشلت: ${failed} — المجموع: ${ids.length}`,
+        merchantId,
+        severity: failed ? 'warning' : 'success',
+        data: { done, failed, total: ids.length },
+      });
     }
     this.logger.log(`[processFaqs] Completed batch of ${ids.length}`);
   }
+
 
   /** قائمة FAQs (افتراضي: تستثني المحذوف) */
   async list(merchantId: string, includeDeleted = false) {
@@ -128,6 +182,7 @@ export class FaqService {
     merchantId: string,
     faqId: string,
     data: { question?: string; answer?: string },
+    requestedBy?: string,
   ) {
     if (!Types.ObjectId.isValid(faqId))
       throw new BadRequestException('invalid id');
@@ -163,11 +218,52 @@ export class FaqService {
         },
       ]);
       await this.faqModel.updateOne({ _id: faqId }, { status: 'completed' });
+      
+      if (requestedBy) {
+        await this.notifications.notifyUser(requestedBy, {
+          type: 'faq.updated',
+          title: 'تم تحديث سؤال شائع',
+          body: `تم تحديث سؤال/جواب بنجاح.`,
+          merchantId,
+          severity: 'success',
+          data: { faqId },
+        });
+      }
+      await this.outbox.enqueueEvent({
+        exchange: 'knowledge.index',
+        routingKey: 'faq.updated',
+        eventType: 'knowledge.faq.updated',
+        aggregateType: 'knowledge',
+        aggregateId: merchantId,
+        payload: { merchantId, faqId },
+      }).catch(()=>{});
     } catch (e: any) {
       await this.faqModel.updateOne(
         { _id: faqId },
         { status: 'failed', errorMessage: e.message || 'Embedding failed' },
       );
+      if (requestedBy) {
+        await this.notifications.notifyUser(requestedBy, {
+          type: 'embeddings.failed',
+          title: 'فشل تحديث سؤال/جواب',
+          body: e?.message || 'خطأ غير معروف',
+          merchantId,
+          severity: 'error',
+          data: { faqId, error: e?.message },
+        });
+      }
+
+      // ✅ حدث Outbox اختياري
+      await this.outbox.enqueueEvent({
+        exchange: 'knowledge.index',
+        routingKey: 'faq.update_failed',
+        eventType: 'knowledge.faq.update_failed',
+        aggregateType: 'knowledge',
+        aggregateId: merchantId,
+        payload: { merchantId, faqId, error: e?.message },
+      }).catch(()=>{});
+
+     
       throw e;
     }
 

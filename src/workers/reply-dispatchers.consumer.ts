@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import amqp from 'amqplib';
 import { ConfigService } from '@nestjs/config';
-import { ChannelsDispatcherService } from 'src/modules/webhooks/channels-dispatcher.service';
+import { ChannelsDispatcherService } from 'src/modules/channels/channels-dispatcher.service';
 
 @Injectable()
 export class ReplyDispatchers implements OnModuleInit {

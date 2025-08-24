@@ -18,10 +18,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AddressDto } from './address.dto';
 import { SubscriptionPlanDto } from './subscription-plan.dto';
 import { QuickConfigDto } from './quick-config.dto';
-import { ChannelsDto } from './channel.dto';
 import { WorkingHourDto } from './working-hours.dto';
 import { AdvancedTemplateDto } from './advanced-template.dto';
-import { LeadsSettingsDto } from './leads-settings.dto';
 
 /**
  * بيانات إنشاء تاجر جديد
@@ -169,15 +167,7 @@ export class CreateMerchantDto {
   @Type(() => AdvancedTemplateDto)
   advancedConfigHistory?: AdvancedTemplateDto[];
 
-  @ApiPropertyOptional({
-    description: 'إعدادات قنوات التواصل',
-    type: () => ChannelsDto,
-    required: false,
-  })
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => ChannelsDto)
-  channels?: ChannelsDto;
+ 
 
   @ApiPropertyOptional({
     description: 'ساعات العمل',
@@ -222,15 +212,6 @@ export class CreateMerchantDto {
   @MaxLength(2000, { message: 'يجب أن لا تزيد سياسة الاستبدال عن 2000 حرف' })
   exchangePolicy?: string;
 
-  @ApiPropertyOptional({
-    description: 'إعدادات العملاء المحتملين',
-    type: () => LeadsSettingsDto,
-    required: false,
-  })
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => LeadsSettingsDto)
-  leadsSettings?: LeadsSettingsDto;
 
   @ApiPropertyOptional({
     description: 'سياسة الشحن',

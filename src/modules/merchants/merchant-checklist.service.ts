@@ -2,10 +2,19 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+
 import { MerchantDocument } from './schemas/merchant.schema';
 import { ProductDocument } from '../products/schemas/product.schema';
 import { CategoryDocument } from '../categories/schemas/category.schema';
 import { StorefrontService } from '../storefront/storefront.service';
+
+// ✅ القنوات الجديدة
+import {
+  Channel,
+  ChannelDocument,
+  ChannelProvider,
+  ChannelStatus,
+} from '../channels/schemas/channel.schema';
 
 export type ChecklistItem = {
   key: string;
@@ -29,16 +38,36 @@ export class MerchantChecklistService {
     @InjectModel('Merchant') private merchantModel: Model<MerchantDocument>,
     @InjectModel('Product') private productModel: Model<ProductDocument>,
     @InjectModel('Category') private categoryModel: Model<CategoryDocument>,
+    @InjectModel(Channel.name) private channelModel: Model<ChannelDocument>, // ✅
     private readonly storefrontService: StorefrontService,
   ) {}
 
   private inferSource(m: MerchantDocument | any): 'internal' | 'salla' | 'zid' {
-    // بدون حقل productSource صريح، نستنتج من config:
     const sallaActive = !!m?.productSourceConfig?.salla?.active;
     const zidActive = !!m?.productSourceConfig?.zid?.active;
     if (zidActive) return 'zid';
     if (sallaActive) return 'salla';
     return 'internal';
+  }
+
+  // ✅ Helper: جلب قناة افتراضية/مفعّلة لكل مزوّد
+  private async getDefaultChannelFor(
+    merchantId: string,
+    provider: ChannelProvider,
+  ) {
+    const q = { merchantId: new Types.ObjectId(merchantId), provider, deletedAt: null } as any;
+    const def = await this.channelModel.findOne({ ...q, isDefault: true }).lean();
+    if (def) return def;
+    // fallback: أول قناة مفعلة أو أحدث قناة
+    const enabled = await this.channelModel.findOne({ ...q, enabled: true }).sort({ updatedAt: -1 }).lean();
+    if (enabled) return enabled;
+    return this.channelModel.findOne(q).sort({ updatedAt: -1 }).lean();
+  }
+
+  private isConnected(c?: ChannelDocument | null) {
+    if (!c) return false;
+    // اعتبره مكتملًا عندما enabled=true و status=CONNECTED
+    return !!c.enabled && c.status === ChannelStatus.CONNECTED;
   }
 
   async getChecklist(merchantId: string): Promise<ChecklistGroup[]> {
@@ -47,23 +76,23 @@ export class MerchantChecklistService {
 
     const source = this.inferSource(m);
     const isInternal = source === 'internal';
-
-    const skipped = Array.isArray(m.skippedChecklistItems)
-      ? m.skippedChecklistItems
+    const skipped = Array.isArray((m as any).skippedChecklistItems)
+      ? (m as any).skippedChecklistItems
       : [];
 
     const storefront = await this.storefrontService.findByMerchant(merchantId);
 
-    const [productCount, categoryCount] = await Promise.all([
-      this.productModel.countDocuments({
-        merchantId: new Types.ObjectId(merchantId),
-      }),
-      this.categoryModel.countDocuments({
-        merchantId: new Types.ObjectId(merchantId),
-      }),
-    ]);
+    const [productCount, categoryCount, tgCh, waQrCh, waApiCh, webCh] =
+      await Promise.all([
+        this.productModel.countDocuments({ merchantId: new Types.ObjectId(merchantId) }),
+        this.categoryModel.countDocuments({ merchantId: new Types.ObjectId(merchantId) }),
+        this.getDefaultChannelFor(merchantId, ChannelProvider.TELEGRAM),
+        this.getDefaultChannelFor(merchantId, ChannelProvider.WHATSAPP_QR),
+        this.getDefaultChannelFor(merchantId, ChannelProvider.WHATSAPP_CLOUD),
+        this.getDefaultChannelFor(merchantId, ChannelProvider.WEBCHAT),
+      ]);
 
-    // 1) معلومات المتجر (تظهر للجميع)
+    // 1) معلومات المتجر
     const storeInfo: ChecklistItem[] = [
       {
         key: 'logo',
@@ -77,11 +106,9 @@ export class MerchantChecklistService {
       {
         key: 'storeUrl',
         title: 'رابط المتجر',
-        isComplete: !!storefront?.storefrontUrl,
+        isComplete: !!(storefront as any)?.storefrontUrl,
         isSkipped: skipped.includes('storeUrl'),
-        message: storefront?.storefrontUrl
-          ? undefined
-          : 'أضف رابط المتجر لعرضه للعملاء',
+        message: (storefront as any)?.storefrontUrl ? undefined : 'أضف رابط المتجر لعرضه للعملاء',
         actionPath: '/dashboard/marchinfo',
         skippable: true,
       },
@@ -100,44 +127,55 @@ export class MerchantChecklistService {
       },
     ];
 
-    // 2) قنوات التواصل (تظهر للجميع)
+    // 2) قنوات التواصل — ✅ الآن من collection القنوات
     const channels: ChecklistItem[] = [
       {
-        key: 'channel_whatsapp',
-        title: 'واتساب',
-        isComplete: !!m.channels?.whatsappQr?.enabled,
-        isSkipped: skipped.includes('channel_whatsapp'),
-        message: m.channels?.whatsappQr?.enabled
+        key: 'channel_whatsapp_qr',
+        title: 'واتساب (QR / Evolution)',
+        isComplete: this.isConnected(waQrCh),
+        isSkipped: skipped.includes('channel_whatsapp_qr'),
+        message: this.isConnected(waQrCh)
           ? undefined
-          : 'فعّل واتساب وأضف رقم الجوال وربط الـ webhook',
-        actionPath: '/settings/merchant/channels/whatsapp',
+          : 'اربط جلسة Evolution وفعّل الويبهوك',
+        actionPath: '/dashboard/channels', // واجهة القنوات الجديدة
+        skippable: true,
+      },
+      {
+        key: 'channel_whatsapp_api',
+        title: 'واتساب الرسمي (Cloud API)',
+        isComplete: this.isConnected(waApiCh),
+        isSkipped: skipped.includes('channel_whatsapp_api'),
+        message: this.isConnected(waApiCh)
+          ? undefined
+          : 'أدخل بيانات WABA (Access Token / Phone Number ID / App Secret)',
+        actionPath: '/dashboard/channels',
         skippable: true,
       },
       {
         key: 'channel_telegram',
         title: 'تيليجرام',
-        isComplete: !!m.channels?.telegram?.enabled,
+        isComplete: this.isConnected(tgCh),
         isSkipped: skipped.includes('channel_telegram'),
-        message: m.channels?.telegram?.enabled
+        message: this.isConnected(tgCh)
           ? undefined
-          : 'فعّل تيليجرام وأنشئ بوت وربطه بالتطبيق',
-        actionPath: '/settings/merchant/channels/telegram',
+          : 'أدخل توكن البوت واضبط Webhook تلقائياً',
+        actionPath: '/dashboard/channels',
         skippable: true,
       },
       {
         key: 'channel_webchat',
         title: 'الويب شات',
-        isComplete: !!m.channels?.webchat?.enabled,
+        isComplete: this.isConnected(webCh),
         isSkipped: skipped.includes('channel_webchat'),
-        message: m.channels?.webchat?.enabled
+        message: this.isConnected(webCh)
           ? undefined
-          : 'فعّل الويب شات واختر الـ theme وربط الـ webhook',
-        actionPath: '/settings/merchant/channels/webchat',
+          : 'فعّل الويب شات واستخرج كود الويدجت',
+        actionPath: '/dashboard/channels',
         skippable: true,
       },
     ];
 
-    // 3) إعدادات البرومبت (تظهر للجميع)
+    // 3) إعدادات البرومبت
     const quickConfig: ChecklistItem[] = [
       {
         key: 'quickConfig_dialect',
@@ -159,11 +197,9 @@ export class MerchantChecklistService {
       },
     ];
 
-    // 4) متفرقات — تتغير حسب المصدر
+    // 4) متفرقات
     const misc: ChecklistItem[] = [];
-
     if (isInternal) {
-      // عناصر كليم الداخلية فقط
       misc.push(
         {
           key: 'configureProducts',
@@ -184,7 +220,7 @@ export class MerchantChecklistService {
         {
           key: 'banners',
           title: 'البانرات',
-          isComplete: !!storefront?.banners?.length,
+          isComplete: !!(storefront as any)?.banners?.length,
           message: 'أضف بانرات لمتجرك',
           actionPath: '/dashboard/banners',
           skippable: true,
@@ -192,27 +228,23 @@ export class MerchantChecklistService {
         {
           key: 'offers',
           title: 'العروض',
-          isComplete: false, // حسب منطقك لاحقاً
+          isComplete: false,
           message: 'أضف عرضًا ترويجيًا',
           actionPath: '/dashboard/offers',
           skippable: true,
         },
       );
     } else {
-      // مصدر خارجي → لا نُظهر "إضافة منتجات" الخ...
-      // ممكن نظهر "مزامنة المنتجات" فقط
       misc.push({
         key: 'syncExternal',
         title: 'مزامنة المنتجات الخارجية',
         isComplete: productCount > 0,
-        message:
-          productCount > 0 ? undefined : 'قم بمزامنة المنتجات من المزوّد',
+        message: productCount > 0 ? undefined : 'قم بمزامنة المنتجات من المزوّد',
         actionPath: '/onboarding/sync',
         skippable: true,
       });
     }
 
-    // سياسات (تظهر للجميع)
     misc.push(
       {
         key: 'workingHours',

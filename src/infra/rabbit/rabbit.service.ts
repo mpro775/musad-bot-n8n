@@ -16,7 +16,9 @@ export class RabbitService implements OnModuleInit, OnModuleDestroy {
   private url: string;
 
   constructor(private cfg: ConfigService) {
-    this.url = this.cfg.get<string>('RABBIT_URL') || 'amqp://kaleem:supersecret@rabbitmq:5672/kleem';
+    this.url =
+      this.cfg.get<string>('RABBIT_URL') ||
+      'amqp://kaleem:supersecret@rabbitmq:5672/kleem';
   }
 
   async onModuleInit() {
@@ -50,6 +52,7 @@ export class RabbitService implements OnModuleInit, OnModuleDestroy {
           'chat.incoming',
           'chat.reply',
           'knowledge.index',
+          'catalog.sync',
           'commerce.sync',
           'webhook.dispatch',
           'analytics.events',
@@ -74,7 +77,46 @@ export class RabbitService implements OnModuleInit, OnModuleDestroy {
   private reconnect() {
     this.conn = undefined;
     this.ch = undefined;
-    setTimeout(() => this.connect().catch(() => { }), 3000);
+    setTimeout(() => this.connect().catch(() => {}), 3000);
+  }
+  async subscribe(
+    exchange: string,
+    bindingKey: string,
+    onMessage: (msg: any) => Promise<void> | void,
+    opts: { queue?: string; prefetch?: number } = {},
+  ) {
+    if (!this.ch) throw new Error('Channel not ready');
+    // تأكد من الإكستشنج
+    await this.ch.assertExchange(exchange, 'topic', { durable: true });
+
+    // صف (queue) دائم؛ يمكنك تسميته أو تتركه يولَّد تلقائيًا
+    const q = await this.ch.assertQueue(opts.queue ?? '', { durable: true });
+
+    // اربط البايندنغ
+    await this.ch.bindQueue(q.queue, exchange, bindingKey);
+
+    // تحكّم بعدد الرسائل المتوازية
+    await this.ch.prefetch(opts.prefetch ?? 10);
+
+    // ابدأ الاستهلاك
+    await this.ch.consume(
+      q.queue,
+      async (m) => {
+        if (!m) return;
+        try {
+          const content = JSON.parse(m.content.toString('utf8'));
+          await onMessage(content);
+          this.ch!.ack(m);
+        } catch (err) {
+          // لو فيه خطأ، رجّع الرسالة للطابور بمحاولة لاحقة
+          this.ch!.nack(m, false, true);
+          this.logger.error(
+            `Consumer error: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      },
+      { noAck: false },
+    );
   }
 
   async publish(exchange: string, routingKey: string, message: any) {
