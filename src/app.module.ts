@@ -57,6 +57,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { SupportModule } from './modules/support/support.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
+import { SystemModule } from './modules/system/system.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { CatalogModule } from './modules/catalog/catalog.module';
     }),
     ThrottlerModule.forRoot([{ ttl: 60, limit: 20 }]),
     MetricsModule,
+    SystemModule,
     // فعّل Passport و JWT هنا
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({

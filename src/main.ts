@@ -49,12 +49,12 @@ async function bootstrap() {
   //   credentials: true,
   // });
   
-  app.use(
-    rateLimit({
-      windowMs: 60 * 1000,
-      max: 60,
-    }),
-  );
+  app.use(rateLimit({
+    windowMs: 60_000,
+    max: 60,
+    skip: (req) => req.path === '/metrics' || req.path === '/health' || req.path === '/api/health',
+  }));
+  
 
   app.useGlobalPipes(
     new ValidationPipe({
