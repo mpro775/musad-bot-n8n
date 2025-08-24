@@ -160,18 +160,15 @@ services:
     ports:
       - '3000:3000'
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      mongo:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    env_file:
-      - .env
+      rabbitmq: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      mongo:    { condition: service_healthy }
+      minio:    { condition: service_healthy }
+    env_file: [ .env ]
     environment:
       - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
+    volumes:
+      - /opt/kaleem/uploads:/app/uploads
     restart: unless-stopped
     healthcheck:
       test:
@@ -184,8 +181,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-    networks:
-      - backnet
+    networks: [ backnet ]
 
   extractor:
     build:
