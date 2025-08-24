@@ -1,4 +1,4 @@
-// src/main.ts
+  import './polyfills';
 import { NestFactory } from '@nestjs/core';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';

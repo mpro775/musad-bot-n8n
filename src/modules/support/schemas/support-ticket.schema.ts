@@ -1,44 +1,53 @@
-// src/modules/support/schemas/support-ticket.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { ContactTopic } from '../dto/create-contact.dto';
+import {
+  CONTACT_TOPIC_VALUES,
+  ContactTopic,
+  TICKET_STATUS_VALUES,
+  TicketStatus,
+} from '../support.enums';
 
 export type SupportTicketDocument = HydratedDocument<SupportTicket>;
 
-class AttachmentMeta {
-  @Prop() originalName!: string;
-  @Prop() filename!: string;
-  @Prop() mimeType!: string;
-  @Prop() size!: number;
-  @Prop() url?: string; // رابط الوصول (لو بتخدمها استاتيك)
-  @Prop({ default: 'disk' }) storage!: 'disk' | 'minio';
+@Schema({ _id: false })
+export class AttachmentMeta {
+  @Prop({ type: String, required: true }) originalName!: string;
+  @Prop({ type: String, required: true }) filename!: string;
+  @Prop({ type: String, required: true }) mimeType!: string;
+  @Prop({ type: Number, required: true }) size!: number;
+  @Prop({ type: String }) url?: string;
+  @Prop({ type: String, enum: ['disk', 'minio'], default: 'disk' }) storage!:
+    | 'disk'
+    | 'minio';
 }
+const AttachmentMetaSchema = SchemaFactory.createForClass(AttachmentMeta);
 
 @Schema({ timestamps: true, collection: 'support_tickets' })
 export class SupportTicket {
-  @Prop({ required: true }) name!: string;
-  @Prop({ required: true }) email!: string;
-  @Prop() phone?: string;
+  @Prop({ type: String, required: true }) name!: string;
+  @Prop({ type: String, required: true, lowercase: true, trim: true })
+  email!: string;
+  @Prop({ type: String }) phone?: string;
 
-  @Prop({ required: true, enum: Object.values(ContactTopic) })
+  // ✅ أهم سطر: type: String + enum: CONTACT_TOPIC_VALUES (runtime)
+  @Prop({ type: String, enum: CONTACT_TOPIC_VALUES, required: true })
   topic!: ContactTopic;
 
-  @Prop({ required: true }) subject!: string;
-  @Prop({ required: true }) message!: string;
+  @Prop({ type: String, required: true }) subject!: string;
+  @Prop({ type: String, required: true }) message!: string;
 
-  @Prop({ default: 'open' }) status!:
-    | 'open'
-    | 'pending'
-    | 'resolved'
-    | 'closed';
-  @Prop({ default: 'landing' }) source!: string; // landing/webchat/etc
-  @Prop() ip?: string;
-  @Prop() userAgent?: string;
+  @Prop({ type: String, enum: TICKET_STATUS_VALUES, default: 'open' })
+  status!: TicketStatus;
 
-  @Prop({ type: [AttachmentMeta], default: [] })
+  @Prop({ type: String, default: 'landing' }) source!: string;
+  @Prop({ type: String }) ip?: string;
+  @Prop({ type: String }) userAgent?: string;
+
+  @Prop({ type: [AttachmentMetaSchema], default: [] })
   attachments!: AttachmentMeta[];
 
-  @Prop({ index: true, unique: true }) ticketNumber!: string;
+  @Prop({ type: String, index: true, unique: true })
+  ticketNumber!: string;
 
   @Prop({ type: Types.ObjectId, ref: 'Merchant', index: true })
   merchantId?: Types.ObjectId;
@@ -46,8 +55,6 @@ export class SupportTicket {
   @Prop({ type: Types.ObjectId, ref: 'User', index: true })
   createdBy?: Types.ObjectId;
 }
-
 export const SupportTicketSchema = SchemaFactory.createForClass(SupportTicket);
-
 SupportTicketSchema.index({ createdAt: -1 });
 SupportTicketSchema.index({ email: 1, createdAt: -1 });

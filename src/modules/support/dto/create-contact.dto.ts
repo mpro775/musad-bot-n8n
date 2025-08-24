@@ -1,13 +1,9 @@
 // src/modules/support/dto/create-contact.dto.ts
 import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { CONTACT_TOPIC_VALUES, ContactTopic } from '../support.enums';
 
 
-export enum ContactTopic {
-SALES = 'sales',
-SUPPORT = 'support',
-BILLING = 'billing',
-PARTNERSHIP = 'partnership',
-}
+
 
 
 export class CreateContactDto {
@@ -23,7 +19,7 @@ email!: string;
 phone?: string;
 
 
-@IsEnum(ContactTopic)
+@IsEnum(Object) // workaround مع class-validator + union
 topic!: ContactTopic;
 
 

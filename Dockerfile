@@ -1,36 +1,45 @@
-FROM node:18-alpine
+# syntax=docker/dockerfile:1.7
 
-# تثبيت تبعيات النظام الضرورية (Playwright والأدوات)
-RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    libgcc \
-    libstdc++ \
-    dumb-init
-
-WORKDIR /usr/src/app
-
-# نسخ ملفات تعريف الاعتماديات أولاً للحفاظ على الكاش
+########### deps-prod: تبعيات الإنتاج فقط ###########
+FROM node:20-alpine AS deps-prod
+WORKDIR /app
+# لو عندك باكجات native (اختياري):
+RUN apk add --no-cache libc6-compat
 COPY package*.json ./
-COPY tsconfig*.json ./
-COPY nest-cli.json ./
+# تثبيت تبعيات الإنتاج فقط ثم تنظيف كاش npm
+RUN npm ci --omit=dev && npm cache clean --force
 
-# تثبيت الاعتماديات قبل نسخ الشيفرة لتجنب إعادة التثبيت عند تغيّر الكود
-RUN npm ci
-RUN npx playwright install
+########### deps-dev: تبعيات التطوير (للبناء) ###########
+FROM node:20-alpine AS deps-dev
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci && npm cache clean --force
 
-# ثم نسخ باقي الشيفرة
-COPY src/ ./src
-
-# البناء
+########### builder: يبني TypeScript إلى dist ###########
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY tsconfig*.json nest-cli.json ./
+COPY src ./src
+# ننسخ node_modules الخاصّة بالبناء
+COPY --from=deps-dev /app/node_modules ./node_modules
+# لو تستخدم Nest CLI:
 RUN npm run build -- --webpack=false
 
-# ضبط بيئة التشغيل
+########### runner: صورة التشغيل النهائية (صغيرة) ###########
+FROM node:20-alpine AS runner
+WORKDIR /app
 ENV NODE_ENV=production
 
-# نقطة الدخول للتطبيق
+# ننسخ node_modules الخاصّة بالإنتاج فقط
+COPY --from=deps-prod /app/node_modules ./node_modules
+# ننسخ مخرجات البناء
+COPY --from=builder /app/dist ./dist
+# (اختياري) لو يحتاج بعض الملفات مثل package.json لقراءة version:
+COPY package*.json ./
+
+# شغّل بتطبيق user غير root (أفضل أماناً)
+RUN addgroup -S app && adduser -S app -G app
+USER app
+
+# نقطة الدخول
 CMD ["node", "dist/main.js"]
