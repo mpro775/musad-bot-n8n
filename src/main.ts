@@ -12,6 +12,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { HttpMetricsInterceptor } from './common/interceptors/http-metrics.interceptor';
 import * as bodyParser from 'body-parser';
+import { NextFunction } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -56,13 +57,13 @@ async function bootstrap() {
   }));
   
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    transform: true,
+    transformOptions: { enableImplicitConversion: true },
+    // اختياري: لو DTO فيه حقول إضافية مثل audience
+    forbidNonWhitelisted: false,
+  }));
 
   const logger = app.get(PinoLogger);
   app.useLogger(logger);
@@ -71,6 +72,9 @@ async function bootstrap() {
     app.get(HttpMetricsInterceptor),
   );
 
+    // ✅ JSON + URL-encoded لكل المسارات
+    app.use(bodyParser.json({ limit: '5mb' }));
+    app.use(bodyParser.urlencoded({ extended: true, limit: '5mb' }));
 // ⚠️ Parse JSON عادي لكن خزّن الـ raw buffer للتحقق من توقيع Meta
 const captureRaw = (req: any, _res: any, buf: Buffer) => {
   if (buf?.length) req.rawBody = Buffer.from(buf); // للاستخدام لاحقًا في التحقق
@@ -81,7 +85,11 @@ app.use('/api/webhooks',
 app.use('/api/webhooks',
   bodyParser.urlencoded({ extended: true, limit: '2mb', verify: captureRaw }),
 );
-
+  // (اختياري) **بعد** الـ parsers: لوج تشخيصي
+  app.use('/api/merchants/:id/prompt/preview', (req, _res, next) => {
+    console.log('🔎 PREVIEW PARSED BODY:', req.headers['content-type'], req.body);
+    next();
+  });
   // Swagger
   const config = new DocumentBuilder()
     .setTitle('Kaleem API')

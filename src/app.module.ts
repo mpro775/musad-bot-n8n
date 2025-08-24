@@ -58,6 +58,7 @@ import { SupportModule } from './modules/support/support.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { SystemModule } from './modules/system/system.module';
+import { ChannelsModule } from './modules/channels/channels.module';
 
 @Module({
   imports: [
@@ -161,6 +162,7 @@ import { SystemModule } from './modules/system/system.module';
     { provide: APP_GUARD, useClass: RolesGuard },
     RedisConfig,
     OutboxDispatcher,
+    ChannelsModule,
     // 3) Interceptor لجمع المقاييس على كل طلب HTTP
   ],
   exports: [AmqpMetrics],

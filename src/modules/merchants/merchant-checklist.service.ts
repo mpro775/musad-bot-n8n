@@ -103,15 +103,7 @@ export class MerchantChecklistService {
         actionPath: '/dashboard/marchinfo',
         skippable: true,
       },
-      {
-        key: 'storeUrl',
-        title: 'رابط المتجر',
-        isComplete: !!(storefront as any)?.storefrontUrl,
-        isSkipped: skipped.includes('storeUrl'),
-        message: (storefront as any)?.storefrontUrl ? undefined : 'أضف رابط المتجر لعرضه للعملاء',
-        actionPath: '/dashboard/marchinfo',
-        skippable: true,
-      },
+
       {
         key: 'address',
         title: 'عنوان المتجر',
@@ -183,16 +175,16 @@ export class MerchantChecklistService {
         isComplete: !!m.quickConfig?.dialect,
         isSkipped: skipped.includes('quickConfig_dialect'),
         message: m.quickConfig?.dialect ? undefined : 'اختر لهجة البوت',
-        actionPath: '/onboarding/step3',
+        actionPath: '/dashboard/prompt',
         skippable: false,
       },
       {
         key: 'quickConfig_tone',
-        title: 'اختيار النغمة',
+        title: 'اختيار الاسلوب',
         isComplete: !!m.quickConfig?.tone,
         isSkipped: skipped.includes('quickConfig_tone'),
         message: m.quickConfig?.tone ? undefined : 'حدد نغمة الردود',
-        actionPath: '/onboarding/step3',
+        actionPath: '/dashboard/prompt',
         skippable: false,
       },
     ];
@@ -202,14 +194,6 @@ export class MerchantChecklistService {
     if (isInternal) {
       misc.push(
         {
-          key: 'configureProducts',
-          title: 'تهيئة المنتجات',
-          isComplete: productCount > 0,
-          message: productCount > 0 ? undefined : 'أضف منتجًا واحدًا على الأقل',
-          actionPath: '/dashboard/products/new',
-          skippable: false,
-        },
-        {
           key: 'categories',
           title: 'تصنيفات المتجر',
           isComplete: categoryCount > 0,
@@ -218,6 +202,15 @@ export class MerchantChecklistService {
           skippable: true,
         },
         {
+          key: 'configureProducts',
+          title: 'اضافة منتجات',
+          isComplete: productCount > 0,
+          message: productCount > 0 ? undefined : 'أضف منتجًا واحدًا على الأقل',
+          actionPath: '/dashboard/products/new',
+          skippable: false,
+        },
+       
+        {
           key: 'banners',
           title: 'البانرات',
           isComplete: !!(storefront as any)?.banners?.length,
@@ -225,14 +218,7 @@ export class MerchantChecklistService {
           actionPath: '/dashboard/banners',
           skippable: true,
         },
-        {
-          key: 'offers',
-          title: 'العروض',
-          isComplete: false,
-          message: 'أضف عرضًا ترويجيًا',
-          actionPath: '/dashboard/offers',
-          skippable: true,
-        },
+  
       );
     } else {
       misc.push({
@@ -253,7 +239,7 @@ export class MerchantChecklistService {
           Array.isArray(m.workingHours) &&
           m.workingHours.every((w: any) => w.openTime && w.closeTime),
         message: 'اضبط مواعيد عمل المتجر',
-        actionPath: '/settings/merchant/schedule',
+        actionPath: '/dashboard/marchinfo',
         skippable: true,
       },
       {
@@ -261,7 +247,7 @@ export class MerchantChecklistService {
         title: 'سياسة الاسترجاع',
         isComplete: !!m.returnPolicy && m.returnPolicy.trim().length > 0,
         message: 'أضف سياسة الاسترجاع',
-        actionPath: '/settings/merchant/policies',
+        actionPath: '/dashboard/marchinfo',
         skippable: true,
       },
       {
@@ -269,7 +255,7 @@ export class MerchantChecklistService {
         title: 'سياسة الاستبدال',
         isComplete: !!m.exchangePolicy && m.exchangePolicy.trim().length > 0,
         message: 'أضف سياسة الاستبدال',
-        actionPath: '/settings/merchant/policies',
+        actionPath: '/dashboard/marchinfo',
         skippable: true,
       },
       {
@@ -277,7 +263,7 @@ export class MerchantChecklistService {
         title: 'سياسة الشحن',
         isComplete: !!m.shippingPolicy && m.shippingPolicy.trim().length > 0,
         message: 'أضف سياسة الشحن',
-        actionPath: '/settings/merchant/policies',
+        actionPath: '/dashboard/marchinfos',
         skippable: true,
       },
     );

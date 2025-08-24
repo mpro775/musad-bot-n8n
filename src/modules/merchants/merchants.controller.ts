@@ -21,6 +21,7 @@ import {
   UploadedFile,
   Query,
   ParseEnumPipe,
+  Logger,
 } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
@@ -63,6 +64,7 @@ import { OutboxService } from 'src/common/outbox/outbox.service';
 @UseGuards(JwtAuthGuard)
 @Controller('merchants')
 export class MerchantsController {
+  private readonly logger = new Logger(MerchantsController.name);
   constructor(
     private readonly svc: MerchantsService,
     private readonly checklist: MerchantChecklistService,
@@ -169,6 +171,9 @@ export class MerchantsController {
       if (user.role !== 'ADMIN' && user.merchantId !== id) {
         throw new HttpException('ممنوع', HttpStatus.FORBIDDEN);
       }
+      this.logger.debug('RAW body = %o', (req as any).body);
+this.logger.debug('DTO keys = %o', Object.keys(dto as any));
+
       return this.svc.update(id, dto);
     });
   }

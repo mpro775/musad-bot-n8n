@@ -19,9 +19,9 @@ import {
 } from './kleem-ws.types';
 
 @WebSocketGateway({
-  path: '/api/kleem/ws',
+  path: '/api/kaleem/ws',
   cors: { 
-    origin: ['http://localhost:5173', 'https://kleem-ai.com'], 
+    origin: ['http://localhost:5173', 'https://app.kaleem-ai.com', 'https://kaleem-ai.com'],
     credentials: true 
   },  transports: ['websocket'],
 })
