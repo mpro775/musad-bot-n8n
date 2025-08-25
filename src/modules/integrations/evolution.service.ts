@@ -26,7 +26,7 @@ interface EvolutionWebhookResponse {
 export class EvolutionService {
   private readonly logger = new Logger(EvolutionService.name);
   private readonly baseUrl = (
-    process.env.EVOLUTION_API_URL || 'http://evolution:8080'
+    process.env.EVOLUTION_API_URL || 'http://evolution_api:8080'
   ).replace(/\/+$/, '');
   private readonly apiKey = process.env.EVOLUTION_API_KEY || '';
   private readonly http: AxiosInstance;
