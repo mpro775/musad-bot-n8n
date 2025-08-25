@@ -22,44 +22,58 @@ export class WhatsAppQrAdapter implements ChannelAdapter {
   ) {}
 
   async connect(c: ChannelDocument): Promise<ConnectResult> {
-    // نبقي اسم instance واضحًا ومحدّدًا
     const instanceName = `whatsapp_${c.merchantId}_${c.id}`;
 
-    // تنظيف أي جلسة قديمة بنفس الاسم
+    // نظّف أي جلسة قديمة بنفس الاسم (لا يضر لو ما وُجدت)
     await this.evo.deleteInstance(instanceName).catch(() => undefined);
 
-    // ✅ ولّد توكن وأرسله عند إنشاء الجلسة
+    // أنشئ جلسة جديدة + فعّل QR
     const token = uuidv4();
-    const { qr, instanceId } = await this.evo.startSession(instanceName, token);
+    const resp: any = await this.evo.startSession(instanceName, token); // يستدعي /instance/create { qrcode:true }
 
-    // اضبط Webhook على مسار القناة
-    const rawBase = this.config.get('PUBLIC_WEBHOOK_BASE') || '';
-const base = rawBase.replace(/\/+$/, '');                 // شيل السلاشات الأخيرة
-const hooksBase = /\/webhooks$/i.test(base) ? base : `${base}/webhooks`;
+    // طبع الـ QR من كل الأشكال المحتملة
+    const qr: string | null =
+      resp?.qr ??
+      resp?.qrcode?.base64 ??
+      (typeof resp?.qrcode === 'string' && resp.qrcode.startsWith('data:image/')
+        ? resp.qrcode
+        : null);
+
+    const instanceId: string | undefined =
+      resp?.instanceId || resp?.instance?.instanceId;
+
+    // وحّد مسار الـ webhook: يعتمد على PUBLIC_WEBHOOK_BASE (مثلاً: https://api.example.com/api/webhooks)
+    const rawBase = String(this.config.get('PUBLIC_WEBHOOK_BASE') || '').trim();
+    const base = rawBase.replace(/\/+$/, ''); // شيل السلاشات آخر الرابط
+    const hooksBase = /\/webhooks$/i.test(base) ? base : `${base}/webhooks`;
     const webhookUrl = `${hooksBase}/whatsapp_qr/${c.id}`;
-    await this.evo.setWebhook(
-      instanceName,
-      webhookUrl,
-      ['MESSAGES_UPSERT'],
-      true,
-      true,
-    );
 
-    // خزّن كل شيء في الوثيقة (التوكن مُشفّر)
+    await this.evo
+      .setWebhook(
+        instanceName,
+        webhookUrl,
+        ['MESSAGES_UPSERT'],
+        true, // sendHeaders
+        true, // webhook_base64
+      )
+      .catch((e) => {
+        this.logger.warn(`setWebhook failed: ${e?.message || e}`);
+      });
+
+    // خزّن الأساسيات
     c.sessionId = instanceName;
     c.instanceId = instanceId;
-    c.qr = qr;
+    if (qr) (c as any).qr = qr; // لو السكيمة ستركت، يتجاهلها بدون كسر
     c.webhookUrl = webhookUrl;
     c.accessTokenEnc = encryptSecret(token);
     c.enabled = true;
     c.status = ChannelStatus.PENDING;
     await c.save();
 
-    return { mode: 'qr', qr, webhookUrl };
+    return { mode: 'qr', qr: qr || '', webhookUrl };
   }
 
   async disconnect(c: ChannelDocument): Promise<void> {
-    // حذف جلسة Evolution
     if (c.sessionId) {
       await this.evo.deleteInstance(c.sessionId).catch(() => undefined);
     }
@@ -69,15 +83,30 @@ const hooksBase = /\/webhooks$/i.test(base) ? base : `${base}/webhooks`;
   }
 
   async refresh(c: ChannelDocument): Promise<void> {
-    // لا شيء خاص هنا، ممكن مستقبلاً إعادة تعيين webhook
+    // مستقبلاً: إعادة ضبط الـ webhook لو لزم
+    return;
   }
 
   async getStatus(c: ChannelDocument): Promise<Status> {
     if (!c.sessionId) return { status: ChannelStatus.DISCONNECTED };
+
     try {
-      const inst = await this.evo.getStatus(c.sessionId);
-      return { status: inst?.status ?? c.status, details: inst };
-    } catch {
+      const inst: any = await this.evo.getStatus(c.sessionId);
+      const raw = String(inst?.status || '').toLowerCase();
+
+      // خرّط الحالات الشائعة من Evolution إلى حالاتنا الموحدة
+      const mapped: ChannelStatus =
+        raw === 'connected' || raw === 'open' || raw === 'authenticated'
+          ? ChannelStatus.CONNECTED
+          : raw === 'disconnected' || raw === 'closed'
+            ? ChannelStatus.DISCONNECTED
+            : ChannelStatus.PENDING; // created / waiting_qr / connecting ...
+
+      return { status: mapped, details: inst };
+    } catch (e) {
+      this.logger.warn(
+        `getStatus failed: ${e instanceof Error ? e.message : e}`,
+      );
       return { status: c.status };
     }
   }

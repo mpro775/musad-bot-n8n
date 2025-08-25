@@ -11,7 +11,12 @@ services:
     volumes:
       - evolution_store:/evolution/store
       - evolution_instances:/evolution/instances
-
+    networks:
+      - musad-bot-n8n_backnet
 volumes:
   evolution_store:
   evolution_instances:
+
+networks:
+  musad-bot-n8n_backnet:
+    external: true
