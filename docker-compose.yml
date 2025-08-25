@@ -169,7 +169,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
-      - EVOLUTION_BASE=http://host.docker.internal:8080
+      - EVOLUTION_BASE=http://evolution_api:8080
       - EVOLUTION_APIKEY=any-secret-key
       - PUBLIC_WEBHOOK_BASE=https://api.kaleem-ai.com/api/webhooks
     volumes:
