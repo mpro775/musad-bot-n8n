@@ -11,6 +11,9 @@ import { AppModule } from './app.module';
 import { setupApp } from './common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { HttpMetricsInterceptor } from './common/interceptors/http-metrics.interceptor';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { ErrorLoggingInterceptor } from './common/interceptors/error-logging.interceptor';
+import { PerformanceTrackingInterceptor } from './common/interceptors/performance-tracking.interceptor';
 import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
@@ -29,6 +32,10 @@ async function bootstrap() {
   // إعداد التطبيق مع المكونات المشتركة
   setupApp(app);
 
+  // إضافة فلتر الأخطاء المحسن
+  const allExceptionsFilter = app.get(AllExceptionsFilter);
+  app.useGlobalFilters(allExceptionsFilter);
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -41,8 +48,12 @@ async function bootstrap() {
 
   const logger = app.get(PinoLogger);
   app.useLogger(logger);
+  
+  // إضافة الإنترسبتورات
   app.useGlobalInterceptors(
     app.get(HttpMetricsInterceptor),
+    app.get(ErrorLoggingInterceptor), // إضافة إنترسبتور تسجيل الأخطاء
+    app.get(PerformanceTrackingInterceptor), // إضافة إنترسبتور تتبع الأداء
   );
 
   // ✅ JSON + URL-encoded لكل المسارات

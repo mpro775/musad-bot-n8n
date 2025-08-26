@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsString,
   IsOptional,
@@ -12,6 +12,8 @@ import {
   IsPhoneNumber,
   MinLength,
   MaxLength,
+  IsBoolean,
+  Matches,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -222,4 +224,16 @@ export class CreateMerchantDto {
   @IsString({ message: 'يجب أن تكون سياسة الشحن نصية' })
   @MaxLength(2000, { message: 'يجب أن لا تزيد سياسة الشحن عن 2000 حرف' })
   shippingPolicy?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @Matches(/^[a-z](?:[a-z0-9-]{1,48}[a-z0-9])$/i, {
+    message: 'سلاج غير صالح (3–50، يبدأ بحرف، حروف/أرقام/شرطة، وبدون شرطة أخيرة)',
+  })
+  publicSlug?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  publicSlugEnabled?: boolean;
+
 }

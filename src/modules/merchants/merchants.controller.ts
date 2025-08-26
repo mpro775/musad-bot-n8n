@@ -45,8 +45,7 @@ import { Public } from 'src/common/decorators/public.decorator';
 import { 
   ApiSuccessResponse, 
   ApiCreatedResponse as CommonApiCreatedResponse, 
-  CurrentUser, 
-  PaginationDto
+
 } from '../../common';
 import { OnboardingResponseDto } from './dto/onboarding-response.dto';
 import {
@@ -57,13 +56,14 @@ import { OnboardingBasicDto } from './dto/onboarding-basic.dto';
 import { UpdateProductSourceDto } from './dto/update-product-source.dto';
 import { unlink } from 'fs/promises';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { InjectModel } from '@nestjs/mongoose';
+import { InjectModel, ParseObjectIdPipe } from '@nestjs/mongoose';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CatalogService } from '../catalog/catalog.service';
 import { OutboxService } from 'src/common/outbox/outbox.service';
+const SLUG_RE = /^[a-z](?:[a-z0-9-]{1,48}[a-z0-9])$/;
 
 @ApiTags('التجار')
 @ApiBearerAuth()
@@ -88,6 +88,21 @@ export class MerchantsController {
     return this.svc.create(dto);
   }
 
+  @Public()
+  @Get('check-public-slug') // ← ضع هذا قبل أي ':id'
+  async checkPublicSlug(@Query('slug') slug: string) {
+    if (!slug || !SLUG_RE.test(slug)) {
+      throw new BadRequestException('سلاج غير صالح');
+    }
+    const exists = await this.svc.existsByPublicSlug(slug);
+    return { available: !exists };
+  }
+  
+  @Public()
+  @Get(':id') // ← سيصل إليها فقط قيم ObjectId بعد ترتيب الراوتات
+  findOne(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.svc.findOne(id);
+  }
   @Get()
   @ApiOperation({ summary: 'جلب جميع التجار' })
   @ApiSuccessResponse(Array, 'قائمة التجار')
@@ -107,15 +122,7 @@ export class MerchantsController {
     return this.checklist.getChecklist(merchantId);
   }
 
-  @Public()
-  @Get(':id')
-  @ApiOperation({ summary: 'جلب بيانات تاجر واحد حسب المعرّف' })
-  @ApiParam({ name: 'id', description: 'معرّف التاجر (ObjectId)' })
-  @ApiOkResponse({ description: 'بيانات التاجر' })
-  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
-  findOne(@Param('id') id: string) {
-    return this.svc.findOne(id);
-  }
+ 
 
   @Get('prompt/advanced-template')
   async getAdvancedTemplate(@Param('id') id: string) {
@@ -124,6 +131,7 @@ export class MerchantsController {
     });
   }
 
+ 
   @Post(':id/logo')
   @ApiOperation({ summary: 'رفع شعار التاجر كملف (MinIO + حذف مؤقت)' })
   @ApiParam({ name: 'id', description: 'معرّف التاجر' })

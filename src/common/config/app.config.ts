@@ -15,7 +15,12 @@ export class AppConfig implements NestModule {
 export function setupApp(app: any) {
   // إعداد CORS
   app.enableCors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+    origin: [
+      'http://localhost:5173', // الواجهة الأمامية (Vite)
+      'http://127.0.0.1:5173',
+      'https://app.kaleem-ai.com',
+      'https://kaleem-ai.com',
+    ],
     credentials: true,
   });
 
@@ -27,7 +32,7 @@ export function setupApp(app: any) {
   app.use(
     rateLimit({
       windowMs: 15 * 60 * 1000, // 15 دقيقة
-      max: 100, // حد أقصى 100 طلب لكل IP
+      max: 500, // حد أقصى 100 طلب لكل IP
       message: {
         status: 429,
         code: 'RATE_LIMIT_EXCEEDED',

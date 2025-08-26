@@ -90,8 +90,16 @@ export class Merchant {
   @Prop({ required: false })
   workflowId?: string;
 
-  @Prop({ type: String, unique: true, index: true, sparse: false, required: true })
+  @Prop({
+    type: String,
+    unique: true,
+    index: true,
+    trim: true,
+    lowercase: true,
+    match: /^[a-z](?:[a-z0-9-]{1,48}[a-z0-9])$/,
+  })
   publicSlug: string;
+  
 
   @Prop({ default: true })
   publicSlugEnabled: boolean; // للتحكم لاحقًا في إيقاف روابط slug العامة من لوحة الأدمن
@@ -141,12 +149,22 @@ export class Merchant {
 export const MerchantSchema = SchemaFactory.createForClass(Merchant);
 MerchantSchema.index({ userId: 1 }, { unique: true }); // واحد-لواحد
 MerchantSchema.pre('validate', function(next) {
-  // إذا لم يضبط يدوياً، خذه من اسم التاجر أو النطاق
-  if (!(this as any).publicSlug) {
-    const base = (this as any).name || (this as any).domain || 'store';
-    (this as any).publicSlug = normalizeSlug(base);
-  } else {
-    (this as any).publicSlug = normalizeSlug((this as any).publicSlug);
+  const doc = this as any;
+
+  if (doc.isNew) {
+    const base = doc.publicSlug || doc.name || doc.domain || 'store';
+    let normalized = normalizeSlug(base);
+    // fallback إن طلع فاضي بسبب اسم عربي
+    if (!normalized) {
+      normalized = `s${(doc._id?.toString().slice(-6) || Math.random().toString(36).slice(2, 8))}`;
+    }
+    doc.publicSlug = normalized;
+  } else if (doc.isModified('publicSlug')) {
+    doc.publicSlug = normalizeSlug(doc.publicSlug || '');
+    if (!doc.publicSlug) {
+      return next(new Error('سلاج غير صالح بعد التطبيع')); // يمنع التخزين بقيمة فاضية
+    }
   }
+
   next();
 });

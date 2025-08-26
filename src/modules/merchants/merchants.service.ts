@@ -1,13 +1,14 @@
 // src/merchants/merchants.service.ts
 
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Merchant, MerchantDocument } from './schemas/merchant.schema';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
@@ -47,7 +48,17 @@ function toRecord(input: unknown): Record<string, string> {
   }
   return out;
 }
+const SLUG_RE = /^[a-z](?:[a-z0-9-]{1,48}[a-z0-9])$/;
 
+const normalizeSlug = (v: string) =>
+  v
+    ?.trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50) || '';
 const normUrl = (u?: string) =>
   u && u.trim()
     ? /^https?:\/\//i.test(u)
@@ -186,62 +197,62 @@ export class MerchantsService {
       );
     }
   }
-
+  async existsByPublicSlug(slug: string, excludeId?: string) {
+    const q: any = { publicSlug: slug };
+    if (excludeId && Types.ObjectId.isValid(excludeId)) q._id = { $ne: excludeId };
+    return !!(await this.merchantModel.exists(q));
+  }
   /** تحديث تاجر */
   async update(id: string, dto: UpdateMerchantDto): Promise<MerchantDocument> {
-    // 1) تأكد من وجود التاجر
     const existing = await this.merchantModel.findById(id).exec();
-    if (!existing) {
-      throw new NotFoundException('Merchant not found');
+    if (!existing) throw new NotFoundException('Merchant not found');
+  
+    if ('publicSlug' in dto) {
+      const raw = (dto.publicSlug ?? '').trim().toLowerCase();
+      if (!raw) {
+        delete (dto as any).publicSlug;       // ← لا تحدّثها بقيمة فاضية
+      } else {
+        const normalized = normalizeSlug(raw);
+        if (!SLUG_RE.test(normalized)) throw new BadRequestException('سلاج غير صالح');
+        const taken = await this.existsByPublicSlug(normalized, id);
+        if (taken) throw new BadRequestException('السلاج محجوز');
+        (dto as any).publicSlug = normalized;
+      }
     }
-
-    // 2) حضّر كائن التحديث بالتخلص من الحقول undefined
-    const updateData: Partial<
-      Omit<MerchantDocument, 'createdAt' | 'updatedAt'>
-    > = {};
-    for (const [key, value] of Object.entries(dto) as [
-      keyof typeof dto,
-      any,
-    ][]) {
-      if (value !== undefined) {
-        // إذا كان الاشتراك، حوّل التواريخ
-        if (key === 'subscription') {
+  
+    // حضّر updateData بدون undefined
+    const updateData: Record<string, any> = {};
+    for (const [k, v] of Object.entries(dto)) {
+      if (v !== undefined) {
+        if (k === 'subscription' && v) {
           updateData.subscription = {
-            ...value,
-            startDate: new Date(value.startDate),
-            endDate: value.endDate ? new Date(value.endDate) : undefined,
+            ...v,
+            startDate: v.startDate ? new Date(v.startDate) : undefined,
+            endDate: v.endDate ? new Date(v.endDate) : undefined,
           };
-        }
-        // خلاف ذلك انسخ القيمة كما هي
-        else {
-          (updateData as any)[key] = value;
+        } else {
+          updateData[k] = v;
         }
       }
     }
-
-    // 3) طبق التحديث عبر findByIdAndUpdate لتفعيل runValidators
-    const updated = await this.merchantModel
-      .findByIdAndUpdate(
-        id,
-        { $set: updateData },
-        { new: true, runValidators: true },
-      )
-      .exec();
-
-    if (!updated) {
-      throw new InternalServerErrorException('Failed to update merchant');
-    }
-
-    // 4) أعد بناء finalPromptTemplate بحذر
+  
+    // طبّق التحديث
+    const updated = await this.merchantModel.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true },
+    ).select('+publicSlug').exec();
+    if (!updated) throw new InternalServerErrorException('Failed to update merchant');
+  
+    // حدّث finalPromptTemplate بدون تشغيل validate (حتى لا يعبث pre('validate') بالسلاج)
     try {
-      updated.finalPromptTemplate =
-        await this.promptBuilder.compileTemplate(updated);
-      await updated.save();
-    } catch (err) {
-      this.logger.error('Error compiling prompt template after update', err);
-      // لا ترمي الاستثناء، فقط سجلّ الخطأ
+      const compiled = await this.promptBuilder.compileTemplate(updated);
+      updated.set('finalPromptTemplate', compiled);
+      await updated.save(); 
+        } catch (e) {
+      this.logger.error('Error compiling prompt template after update', e);
     }
-
+  
     return updated;
   }
 

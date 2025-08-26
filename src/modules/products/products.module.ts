@@ -29,6 +29,7 @@ import { MulterModule } from '@nestjs/platform-express';
 import * as Minio from 'minio';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ProductsCron } from './products.cron';
+import { ErrorManagementModule } from '../../common/error-management.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { ProductsCron } from './products.cron';
     forwardRef(() => AnalyticsModule),
     forwardRef(() => ZidModule),
     forwardRef(() => StorefrontModule),
+    ErrorManagementModule, // إضافة وحدة إدارة الأخطاء
   ],
   providers: [
     ProductsService,

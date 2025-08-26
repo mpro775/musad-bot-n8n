@@ -19,6 +19,12 @@ export * from './guards/auth.guard';
 // Interceptors
 export * from './interceptors/response.interceptor';
 export * from './interceptors/logging.interceptor';
+export * from './interceptors/error-logging.interceptor';
+export * from './interceptors/performance-tracking.interceptor';
+
+// Services
+export * from './services/error-management.service';
+export * from './services/sentry.service';
 
 // Decorators
 export * from './decorators/api-response.decorator';
@@ -33,3 +39,6 @@ export * from './middlewares/request-id.middleware';
 // Config
 export * from './config/common.module';
 export * from './config/app.config';
+
+// Modules
+export * from './error-management.module';

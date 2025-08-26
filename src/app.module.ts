@@ -60,7 +60,7 @@ import { CatalogModule } from './modules/catalog/catalog.module';
 import { SystemModule } from './modules/system/system.module';
 import { ChannelsModule } from './modules/channels/channels.module';
 import { OffersModule } from './modules/offers/offers.module';
-import { CommonModule, AppConfig } from './common';
+import { CommonModule, AppConfig, ErrorManagementModule } from './common';
 
 @Module({
   imports: [
@@ -74,6 +74,7 @@ import { CommonModule, AppConfig } from './common';
     MetricsModule,
     SystemModule,
     CommonModule,
+    ErrorManagementModule, // إضافة وحدة إدارة الأخطاء
 
     // فعّل Passport و JWT هنا
     PassportModule.register({ defaultStrategy: 'jwt' }),
