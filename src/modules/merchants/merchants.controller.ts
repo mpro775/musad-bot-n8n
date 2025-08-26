@@ -42,6 +42,12 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { Public } from 'src/common/decorators/public.decorator';
+import { 
+  ApiSuccessResponse, 
+  ApiCreatedResponse as CommonApiCreatedResponse, 
+  CurrentUser, 
+  PaginationDto
+} from '../../common';
 import { OnboardingResponseDto } from './dto/onboarding-response.dto';
 import {
   ChecklistGroup,
@@ -77,14 +83,14 @@ export class MerchantsController {
   @Post()
   @ApiOperation({ summary: 'إنشاء تاجر جديد مع الإعدادات الأولية' })
   @ApiBody({ type: CreateMerchantDto })
-  @ApiCreatedResponse({ description: 'تم إنشاء التاجر بنجاح' })
+  @CommonApiCreatedResponse(CreateMerchantDto, 'تم إنشاء التاجر بنجاح')
   create(@Body() dto: CreateMerchantDto) {
     return this.svc.create(dto);
   }
 
   @Get()
   @ApiOperation({ summary: 'جلب جميع التجار' })
-  @ApiOkResponse({ description: 'قائمة التجار' })
+  @ApiSuccessResponse(Array, 'قائمة التجار')
   findAll() {
     return this.svc.findAll();
   }

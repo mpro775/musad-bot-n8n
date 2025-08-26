@@ -123,15 +123,23 @@ export class Product {
 export const ProductSchema = SchemaFactory.createForClass(Product);
 
 // افتراضيات قبل الحفظ
-ProductSchema.pre('validate', function (next) {
-  // slug يجب أن يكون موجودًا؛ لو مفقود نولّده
-  if (!this.slug) {
-    const rand = Math.random().toString(16).slice(2, 8);
-    this.slug = `p-${rand}`;
+ProductSchema.virtual('publicUrl').get(function (this: any) {
+  const pid = this.slug || this._id?.toString();
+  // لو فيه دومين مخصص للمتجر، نخليه الجذر
+  if (this.storefrontDomain) {
+    return `https://${this.storefrontDomain}/p/${pid}`;
   }
-  next();
+  // وإلا نشتغل بالنمط متعدد المتاجر على نفس الدومين
+  // القاعدة العامة: /{publicSlug}/store
+  // ملاحظة: storefrontSlug = publicSlug (بحسب pre-save في StorefrontSchema)
+  const base = (process.env.STORE_PUBLIC_ORIGIN || '').replace(/\/+$/, '');
+  const shopSlug = this.storefrontSlug || ''; // هو نفس publicSlug
+  if (shopSlug) {
+    return base ? `${base}/${shopSlug}/store/p/${pid}` : `/${shopSlug}/store/p/${pid}`;
+  }
+  // fallback آمن
+  return base ? `${base}/p/${pid}` : `/p/${pid}`;
 });
-
 // مشتقات جاهزة في الاسترجاع
 function computeDerived(doc: any) {
   const now = new Date();

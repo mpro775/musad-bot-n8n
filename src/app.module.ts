@@ -59,6 +59,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { SystemModule } from './modules/system/system.module';
 import { ChannelsModule } from './modules/channels/channels.module';
+import { OffersModule } from './modules/offers/offers.module';
+import { CommonModule, AppConfig } from './common';
 
 @Module({
   imports: [
@@ -71,6 +73,8 @@ import { ChannelsModule } from './modules/channels/channels.module';
     ThrottlerModule.forRoot([{ ttl: 60, limit: 20 }]),
     MetricsModule,
     SystemModule,
+    CommonModule,
+
     // فعّل Passport و JWT هنا
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
@@ -151,6 +155,7 @@ import { ChannelsModule } from './modules/channels/channels.module';
     KleemModule,
     InstructionsModule,
     AiModule,
+    OffersModule, 
     NotificationsModule,
     CatalogModule,
   ],
@@ -167,4 +172,4 @@ import { ChannelsModule } from './modules/channels/channels.module';
   ],
   exports: [AmqpMetrics],
 })
-export class AppModule {}
+export class AppModule extends AppConfig {}

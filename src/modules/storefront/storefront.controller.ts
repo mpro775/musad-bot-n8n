@@ -11,6 +11,7 @@ import {
   BadRequestException,
   UploadedFiles,
   UseInterceptors,
+  Header,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -30,8 +31,14 @@ import {
 } from './dto/create-storefront.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
+import { 
+  ApiSuccessResponse, 
+  ApiCreatedResponse as CommonApiCreatedResponse, 
+  CurrentUser, 
+  PaginationDto
+} from '../../common';
 import { UpdateStorefrontByMerchantDto } from './dto/update-storefront-by-merchant.dto';
-import { FilesInterceptor } from '@nestjs/platform-express';  
+import { FilesInterceptor } from '@nestjs/platform-express';
 /**
  * واجهة تحكم المتجر
  * تتعامل مع عمليات إدارة واجهة المتجر وإعداداتها
@@ -47,7 +54,7 @@ export class StorefrontController {
   @Public()
   @Get('slug/check')
   @ApiOperation({ summary: 'التحقق من توفر slug' })
-  @ApiResponse({ status: 200, description: 'نتيجة التحقق' })
+  @ApiSuccessResponse(Object, 'نتيجة التحقق')
   async checkSlug(@Query('slug') slug: string) {
     if (!slug) throw new BadRequestException('slug مطلوب');
     return this.svc.checkSlugAvailable(slug);
@@ -64,10 +71,7 @@ export class StorefrontController {
     description: 'Slug أو المعرف الخاص بواجهة المتجر',
     example: 'store-slug-or-id',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'تم العثور على إعدادات واجهة المتجر',
-  })
+  @ApiSuccessResponse(Object, 'تم العثور على إعدادات واجهة المتجر')
   @ApiResponse({
     status: 404,
     description: 'لم يتم العثور على إعدادات واجهة المتجر',
@@ -80,10 +84,7 @@ export class StorefrontController {
     summary: 'إنشاء واجهة متجر جديدة',
     description: 'ينشئ إعدادات واجهة متجر جديدة مع التخصيصات المطلوبة',
   })
-  @ApiResponse({
-    status: 201,
-    description: 'تم إنشاء واجهة المتجر بنجاح',
-  })
+  @CommonApiCreatedResponse(CreateStorefrontDto, 'تم إنشاء واجهة المتجر بنجاح')
   @ApiResponse({
     status: 400,
     description: 'بيانات الطلب غير صالحة',
@@ -192,8 +193,14 @@ export class StorefrontController {
   @Get('my-orders')
   myOrders(
     @Param('merchantId') merchantId: string,
-    @Query('sessionId') sessionId: string
+    @Query('sessionId') sessionId: string,
   ) {
     return this.svc.getMyOrdersForSession(merchantId, sessionId);
+  }
+
+  @Get('/public/storefront/:slug/brand.css')
+  @Header('Content-Type', 'text/css')
+  async getBrandCss(@Param('slug') slug: string) {
+    return this.svc.getBrandCssBySlug(slug);
   }
 }

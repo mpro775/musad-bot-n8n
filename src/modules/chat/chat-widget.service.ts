@@ -117,13 +117,36 @@ export class ChatWidgetService {
   }
 
   async getEmbedSettings(merchantId: string) {
-    const settings = await this.widgetModel.findOne({ merchantId }).lean();
-    if (!settings) throw new NotFoundException('Settings not found');
-    const shareUrl = `/chat/${settings.widgetSlug}`;
+    const s = await this.widgetModel.findOne({ merchantId }).lean();
+    if (!s) throw new NotFoundException('Settings not found');
+
+    let headerBg = s.headerBgColor;
+    let brand = s.brandColor;
+
+    if ((s as any).useStorefrontBrand) {
+      const Storefront = this.widgetModel.db.model('Storefront');
+      const sf = await Storefront.findOne({ merchant: merchantId }).lean();
+      const dark = (sf as any).brandDark || '#111827';
+      headerBg = dark;
+      brand = dark;
+    }
+
+    const MerchantModel = this.widgetModel.db.model('Merchant');
+    const m = await MerchantModel.findById(merchantId)
+      .select('publicSlug')
+      .lean();
+    const shareUrl = `/${(m as any).publicSlug}/chat`;
+
     return {
-      embedMode: settings.embedMode,
+      embedMode: s.embedMode,
       availableModes: ['bubble', 'iframe', 'bar', 'conversational'],
       shareUrl,
+      // نعيد ألوان الواجهه للاستهلاك المباشر
+      colors: {
+        headerBgColor: headerBg,
+        brandColor: brand,
+        onHeader: '#FFFFFF',
+      },
     };
   }
 

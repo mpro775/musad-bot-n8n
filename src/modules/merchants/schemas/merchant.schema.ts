@@ -11,7 +11,15 @@ import {
   SubscriptionPlan,
   SubscriptionPlanSchema,
 } from './subscription-plan.schema';
-
+function normalizeSlug(input = '') {
+  return input.trim().toLowerCase()
+    .replace(/[\s_]+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50)
+    .replace(/-+$/g, '');
+}
 export interface MerchantDocument extends Merchant, Document {
   createdAt: Date;
   updatedAt: Date;
@@ -82,6 +90,11 @@ export class Merchant {
   @Prop({ required: false })
   workflowId?: string;
 
+  @Prop({ type: String, unique: true, index: true, sparse: false, required: true })
+  publicSlug: string;
+
+  @Prop({ default: true })
+  publicSlugEnabled: boolean; // للتحكم لاحقًا في إيقاف روابط slug العامة من لوحة الأدمن
   // — Prompt settings —
   @Prop({ type: QuickConfigSchema, default: () => ({}) })
   quickConfig: QuickConfig;
@@ -127,3 +140,13 @@ export class Merchant {
 
 export const MerchantSchema = SchemaFactory.createForClass(Merchant);
 MerchantSchema.index({ userId: 1 }, { unique: true }); // واحد-لواحد
+MerchantSchema.pre('validate', function(next) {
+  // إذا لم يضبط يدوياً، خذه من اسم التاجر أو النطاق
+  if (!(this as any).publicSlug) {
+    const base = (this as any).name || (this as any).domain || 'store';
+    (this as any).publicSlug = normalizeSlug(base);
+  } else {
+    (this as any).publicSlug = normalizeSlug((this as any).publicSlug);
+  }
+  next();
+});

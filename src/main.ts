@@ -1,4 +1,4 @@
-  import './polyfills';
+import './polyfills';
 import { NestFactory } from '@nestjs/core';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
@@ -8,11 +8,10 @@ import { Logger as PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
-import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { setupApp } from './common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { HttpMetricsInterceptor } from './common/interceptors/http-metrics.interceptor';
 import * as bodyParser from 'body-parser';
-import { NextFunction } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -27,67 +26,47 @@ async function bootstrap() {
 
   app.useWebSocketAdapter(new IoAdapter(app));
 
-  app.use(helmet());
-  app.enableCors({
-    origin: '*',
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true,
-  });
-  // app.enableCors({
-  //   origin: (origin, cb) => {
-  //     const allowList = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim());
-  //     if (!origin) return cb(null, true); // أدوات/بوتات بلا Origin
-  //     const ok = allowList.some(allowed => {
-  //       // دعم wildcards بسيطة *.kaleem-ai.com
-  //       if (allowed.startsWith('*.')) {
-  //         const domain = allowed.slice(2);
-  //         return origin.endsWith('.' + domain);
-  //       }
-  //       return origin === allowed;
-  //     });
-  //     cb(null, ok);
-  //   },
-  //   credentials: true,
-  // });
-  
-  app.use(rateLimit({
-    windowMs: 60_000,
-    max: 60,
-    skip: (req) => req.path === '/metrics' || req.path === '/health' || req.path === '/api/health',
-  }));
-  
+  // إعداد التطبيق مع المكونات المشتركة
+  setupApp(app);
 
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    transform: true,
-    transformOptions: { enableImplicitConversion: true },
-    // اختياري: لو DTO فيه حقول إضافية مثل audience
-    forbidNonWhitelisted: false,
-  }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+      // اختياري: لو DTO فيه حقول إضافية مثل audience
+      forbidNonWhitelisted: false,
+    }),
+  );
 
   const logger = app.get(PinoLogger);
   app.useLogger(logger);
   app.useGlobalInterceptors(
-    new LoggingInterceptor(),
     app.get(HttpMetricsInterceptor),
   );
 
-    // ✅ JSON + URL-encoded لكل المسارات
-    app.use(bodyParser.json({ limit: '5mb' }));
-    app.use(bodyParser.urlencoded({ extended: true, limit: '5mb' }));
-// ⚠️ Parse JSON عادي لكن خزّن الـ raw buffer للتحقق من توقيع Meta
-const captureRaw = (req: any, _res: any, buf: Buffer) => {
-  if (buf?.length) req.rawBody = Buffer.from(buf); // للاستخدام لاحقًا في التحقق
-};
-app.use('/api/webhooks',
-  bodyParser.json({ limit: '2mb', verify: captureRaw }),
-);
-app.use('/api/webhooks',
-  bodyParser.urlencoded({ extended: true, limit: '2mb', verify: captureRaw }),
-);
+  // ✅ JSON + URL-encoded لكل المسارات
+  app.use(bodyParser.json({ limit: '5mb' }));
+  app.use(bodyParser.urlencoded({ extended: true, limit: '5mb' }));
+  // ⚠️ Parse JSON عادي لكن خزّن الـ raw buffer للتحقق من توقيع Meta
+  const captureRaw = (req: any, _res: any, buf: Buffer) => {
+    if (buf?.length) req.rawBody = Buffer.from(buf); // للاستخدام لاحقًا في التحقق
+  };
+  app.use(
+    '/api/webhooks',
+    bodyParser.json({ limit: '2mb', verify: captureRaw }),
+  );
+  app.use(
+    '/api/webhooks',
+    bodyParser.urlencoded({ extended: true, limit: '2mb', verify: captureRaw }),
+  );
   // (اختياري) **بعد** الـ parsers: لوج تشخيصي
   app.use('/api/merchants/:id/prompt/preview', (req, _res, next) => {
-    console.log('🔎 PREVIEW PARSED BODY:', req.headers['content-type'], req.body);
+    console.log(
+      '🔎 PREVIEW PARSED BODY:',
+      req.headers['content-type'],
+      req.body,
+    );
     next();
   });
   // Swagger

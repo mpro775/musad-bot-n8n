@@ -20,6 +20,12 @@ import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { 
+  ApiSuccessResponse, 
+  ApiCreatedResponse as CommonApiCreatedResponse, 
+  CurrentUser, 
+  PaginationDto
+} from '../../common';
 
 /**
  * وحدة تحكم الطلبات
@@ -37,10 +43,7 @@ export class OrdersController {
     summary: 'إنشاء طلب جديد',
     description: 'ينشئ سجل طلب جديد في النظام مع البيانات المقدمة',
   })
-  @ApiResponse({
-    status: 201,
-    description: 'تم إنشاء الطلب بنجاح',
-  })
+  @CommonApiCreatedResponse(CreateOrderDto, 'تم إنشاء الطلب بنجاح')
   @ApiResponse({
     status: 400,
     description: 'بيانات الطلب غير صالحة',
@@ -85,10 +88,7 @@ export class OrdersController {
     summary: 'استرجاع جميع الطلبات',
     description: 'يعيد قائمة بجميع الطلبات مع تفاصيلها',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'تم استرجاع الطلبات بنجاح',
-  })
+  @ApiSuccessResponse(Array, 'تم استرجاع الطلبات بنجاح')
   @ApiResponse({
     status: 401,
     description: 'غير مصرح - يلزم تسجيل الدخول',

@@ -17,7 +17,10 @@ import { ChannelsModule } from '../channels/channels.module';
 import { TelegramWebhookController } from './telegram.webhook.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Channel, ChannelSchema } from '../channels/schemas/channel.schema';
-  
+import { WhatsappQrWebhookController } from './whatsapp-qr.webhook.controller';
+import { ChatWebhooksUnifiedController } from './chat-webhooks-unified.controller';
+import { MerchantsModule } from '../merchants/merchants.module';
+
 @Module({
   imports: [
     // فقط موديل Webhook لتخزين الأحداث الواردة
@@ -35,12 +38,18 @@ import { Channel, ChannelSchema } from '../channels/schemas/channel.schema';
     NotificationsModule,
     MessagingModule, // لحفظ الرسائل (MessageService)
     ChannelsModule,
-    ],
+    MerchantsModule, // للوصول إلى SlugResolverService
+  ],
   providers: [
     WebhooksService, // خدمة معالجة الـ webhook العامة
     WebhooksController, // لإعادة استخدامه في TelegramWebhookController
   ],
-  controllers: [WebhooksController, TelegramWebhookController],
+  controllers: [
+    WebhooksController,
+    TelegramWebhookController,
+    WhatsappQrWebhookController,
+    ChatWebhooksUnifiedController,
+  ],
   exports: [WebhooksService],
 })
 export class WebhooksModule {}

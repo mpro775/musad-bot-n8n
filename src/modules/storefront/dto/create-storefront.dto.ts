@@ -16,6 +16,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { ALLOWED_DARK_BRANDS, AllowedDarkBrand } from 'src/common/constants/brand';
 
 export class BannerDto {
   @ApiPropertyOptional({
@@ -132,6 +133,14 @@ export class CreateStorefrontDto {
   })
   slug?: string;
 
+  @ApiPropertyOptional({
+    description: 'لون الموديل الداكن للمتجر',
+    example: '#111827',
+  })
+  @IsOptional()
+  @IsString({ message: 'يجب أن يكون اللون الداكن نصيًا' })
+  @IsIn(ALLOWED_DARK_BRANDS, { message: 'يجب أن يكون اللون الداكن من القائمة' })
+  brandDark?: AllowedDarkBrand;
   @ApiPropertyOptional({
     description: 'نطاق مخصص للمتجر',
     example: 'store.example.com',

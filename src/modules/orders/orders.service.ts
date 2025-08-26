@@ -1,5 +1,6 @@
 // src/modules/orders/orders.service.ts
 import { Injectable } from '@nestjs/common';
+import { MerchantNotFoundError } from '../../common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Order, OrderDocument } from './schemas/order.schema';
@@ -77,7 +78,7 @@ export class OrdersService {
     // حدد طريقة ربط storeId → merchantId حسب تصميمك
     // مثال: استخرج merchantId من قاعدة بيانات merchants عبر storeId
     const merchant = await this.findMerchantByStoreId(storeId);
-    if (!merchant) throw new Error('Merchant not found for this store_id');
+    if (!merchant) throw new MerchantNotFoundError(storeId);
     const merchantId = merchant._id;
 
     // ابحث عن الطلب بـ externalId أو رقم الطلب من زد (غالباً zidOrder.id أو zidOrder.external_id)
@@ -150,7 +151,7 @@ export class OrdersService {
     zidOrder: any,
   ): Promise<OrderDocument | null> {
     const merchant = await this.findMerchantByStoreId(storeId);
-    if (!merchant) throw new Error('Merchant not found for this store_id');
+    if (!merchant) throw new MerchantNotFoundError(storeId);
     const merchantId = merchant._id;
 
     // ابحث عن الطلب ثم حدث حالته فقط

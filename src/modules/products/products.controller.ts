@@ -26,7 +26,6 @@ import {
   ApiParam,
   ApiBody,
   ApiOkResponse,
-  ApiCreatedResponse,
   ApiResponse,
   ApiUnauthorizedResponse,
   ApiForbiddenResponse,
@@ -41,6 +40,14 @@ import { ProductResponseDto } from './dto/product-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
 import { Public } from '../../common/decorators/public.decorator';
+import { 
+  ApiSuccessResponse, 
+  ApiCreatedResponse as CommonApiCreatedResponse, 
+  CurrentUser, 
+  PaginationDto,
+  ProductNotFoundError,
+  OutOfStockError
+} from '../../common';
 import { ProductSetupConfigDto } from './dto/product-setup-config.dto';
 import { ProductSetupConfigService } from './product-setup-config.service';
 import { FilesInterceptor } from '@nestjs/platform-express';
@@ -59,28 +66,7 @@ export class ProductsController {
   @Post()
   @ApiOperation({ summary: 'إنشاء منتج جديد (للتاجر)' })
   @ApiBody({ type: CreateProductDto, description: 'بيانات إنشاء المنتج' })
-  @ApiCreatedResponse({
-    description: 'تم إنشاء المنتج ووضعه في قائمة الانتظار للمعالجة',
-    type: ProductResponseDto,
-    schema: {
-      example: {
-        _id: '60f8f0e5e1d3c42f88a7b9a1',
-        merchantId: '5f7e1a3b4c9d0e2f1a2b3c4d',
-        originalUrl: 'https://example.com/product/123',
-        name: 'منتج تجريبي',
-        price: 99.99,
-        isAvailable: true,
-        keywords: ['test', 'demo'],
-        platform: 'ExampleShop',
-        description: 'هذا وصف تفصيلي للمنتج.',
-        images: ['https://.../img1.jpg', 'https://.../img2.jpg'],
-        category: 'إلكترونيات',
-        errorState: 'queued',
-        createdAt: '2025-06-09T13:45:00.000Z',
-        updatedAt: '2025-06-09T13:45:00.000Z',
-      },
-    },
-  })
+  @CommonApiCreatedResponse(ProductResponseDto, 'تم إنشاء المنتج ووضعه في قائمة الانتظار للمعالجة')
   @ApiUnauthorizedResponse({
     description: 'غير مصرح: توكن JWT غير صالح أو مفقود',
   })
@@ -394,4 +380,5 @@ export class ProductsController {
     }
     return this.productsService.remove(id);
   }
+
 }

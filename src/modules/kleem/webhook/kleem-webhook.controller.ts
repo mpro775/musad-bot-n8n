@@ -194,6 +194,7 @@ export class KleemWebhookController {
     const wsMsg: KleemWsMessage = { role: 'bot', text, msgIdx };
     this.events.emit('kleem.bot_reply', { sessionId, message: wsMsg });
     this.events.emit('kleem.admin_new_message', { sessionId, message: wsMsg });
+    this.events.emit('kleem.typing', { sessionId, role: 'bot' });
 
     return { sessionId, msgIdx };
   }

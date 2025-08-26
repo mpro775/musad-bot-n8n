@@ -2,9 +2,9 @@
 import {
   BadRequestException,
   Injectable,
-  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { ProductNotFoundError, OutOfStockError } from '../../common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, set, Types } from 'mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
@@ -119,6 +119,14 @@ export class ProductsService {
   private genStoreSlugFallback(merchantId: Types.ObjectId) {
     return this.normalizeSlug(`store-${merchantId.toString().slice(-8)}`);
   }
+  private isOfferActive(ofr?: { enabled?: boolean; startAt?: Date; endAt?: Date; newPrice?: number }) {
+    if (!ofr?.enabled || ofr.newPrice == null) return false;
+    const now = new Date();
+    const startOk = ofr.startAt ? now >= new Date(ofr.startAt) : true;
+    const endOk = ofr.endAt ? now <= new Date(ofr.endAt) : true;
+    return startOk && endOk;
+  }
+  
   private async ensureUniqueSlug(merchantId: Types.ObjectId, base: string) {
     // لو base فاضي استخدم fallback
     let s = base && base.trim() ? base : this.genStoreSlugFallback(merchantId);
@@ -225,7 +233,7 @@ export class ProductsService {
       _id: productId,
       merchantId: new Types.ObjectId(merchantId),
     });
-    if (!p) throw new NotFoundException('المنتج غير موجود لهذا التاجر');
+    if (!p) throw new ProductNotFoundError(productId);
 
     const bucket = process.env.MINIO_BUCKET!;
     await this.ensureBucket(bucket);
@@ -465,7 +473,7 @@ export class ProductsService {
       { new: true, runValidators: true },
     );
 
-    if (!doc) throw new NotFoundException('Product not found');
+    if (!doc) throw new ProductNotFoundError(id);
 
     // (اختياري) تحدّث المتجهات لو يلزم
     try {
@@ -675,7 +683,7 @@ export class ProductsService {
   // **هنا**: نجد أنّ return type هو ProductDocument
   async findOne(id: string): Promise<ProductDocument> {
     const prod = await this.productModel.findById(id).exec();
-    if (!prod) throw new NotFoundException('Product not found');
+    if (!prod) throw new ProductNotFoundError(id);
     return prod;
   }
   async getProductByIdList(ids: string[], merchantId: string): Promise<any[]> {
@@ -709,7 +717,7 @@ export class ProductsService {
 
   async remove(id: string): Promise<{ message: string }> {
     const removed = await this.productModel.findByIdAndDelete(id).exec();
-    if (!removed) throw new NotFoundException('Product not found');
+    if (!removed) throw new ProductNotFoundError(id);
     return { message: 'Product deleted successfully' };
   }
 
@@ -783,7 +791,7 @@ export class ProductsService {
     }
 
     if (!productDoc) {
-      throw new NotFoundException('فشل إضافة أو تحديث المنتج القادم من زد');
+      throw new ProductNotFoundError(zidProduct.id);
     }
 
     // حدّث المتجهات مع URL عام بالـ ID (publicUrl virtual)
@@ -817,4 +825,6 @@ export class ProductsService {
     // (اختياري) احذف من الفيكتور أيضا
     // await this.vectorService.removeProductEmbedding(externalId);
   }
+
+
 }

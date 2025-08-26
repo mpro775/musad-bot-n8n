@@ -29,6 +29,12 @@ import {
   ApiNotFoundResponse,
 } from '@nestjs/swagger';
 import { ConfirmPasswordDto } from 'src/common/dto/confirm-password.dto';
+import { 
+  ApiSuccessResponse, 
+  ApiCreatedResponse as CommonApiCreatedResponse, 
+  CurrentUser, 
+  PaginationDto
+} from '../../common';
 import { NotificationsPrefsDto } from './dto/notifications-prefs.dto';
 import * as bcrypt from 'bcrypt';
 import { User, UserDocument } from './schemas/user.schema';
@@ -47,11 +53,7 @@ export class UsersController {
 
   @Get()
   @ApiOperation({ summary: 'جلب جميع المستخدمين' })
-  @ApiOkResponse({
-    description: 'تم إرجاع قائمة المستخدمين بنجاح',
-    type: CreateUserDto,
-    isArray: true,
-  })
+  @ApiSuccessResponse(Array, 'تم إرجاع قائمة المستخدمين بنجاح')
   @ApiUnauthorizedResponse({
     description: 'غير مصرح: توكن JWT غير صالح أو مفقود',
   })
@@ -64,10 +66,7 @@ export class UsersController {
   @Get(':id')
   @ApiParam({ name: 'id', type: 'string', description: 'معرّف المستخدم' })
   @ApiOperation({ summary: 'جلب مستخدم واحد حسب المعرّف' })
-  @ApiOkResponse({
-    description: 'تم إرجاع بيانات المستخدم بنجاح',
-    type: CreateUserDto,
-  })
+  @ApiSuccessResponse(CreateUserDto, 'تم إرجاع بيانات المستخدم بنجاح')
   @ApiNotFoundResponse({ description: 'المستخدم غير موجود' })
   @ApiUnauthorizedResponse({
     description: 'غير مصرح: توكن JWT غير صالح أو مفقود',
@@ -83,10 +82,7 @@ export class UsersController {
     description:
       'بيانات إنشاء المستخدم: البريد الإلكتروني، الاسم، الدور (اختياري)',
   })
-  @ApiCreatedResponse({
-    description: 'تم إنشاء المستخدم بنجاح',
-    type: CreateUserDto,
-  })
+  @CommonApiCreatedResponse(CreateUserDto, 'تم إنشاء المستخدم بنجاح')
   @ApiBadRequestResponse({
     description: 'طلب غير صالح: بيانات مفقودة أو تنسيق خاطئ',
   })

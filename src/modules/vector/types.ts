@@ -7,10 +7,19 @@ export interface EmbeddableProduct {
   category?: string;
   specsBlock?: string[];
   keywords?: string[];
-  url?: string;      // 👈 جديد
-  price?: number;    // 👈 جديد
+  url?: string;
+  price?: number;
+  currency?: string;
+  attributes?: Record<string, string[]>;
+  // عروض:
+  hasActiveOffer?: boolean;
+  priceOld?: number;
+  priceNew?: number;
+  priceEffective?: number;
+  offerStart?: string; // ISO
+  offerEnd?: string;   // ISO
+  discountPct?: number;
 }
-
 export type FAQData = {
   question?: string;
   answer?: string;

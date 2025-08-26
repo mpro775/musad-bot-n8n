@@ -1,5 +1,6 @@
 // src/modules/users/users.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { UserNotFoundError } from '../../common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User, UserDocument } from './schemas/user.schema';
@@ -22,7 +23,7 @@ export class UsersService {
 
   async findOne(id: string): Promise<CreateUserDto> {
     const user = await this.userModel.findById(id).lean();
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new UserNotFoundError(id);
 
     // امكانيّة 1: استخدام toHexString() على ObjectId
     const objectId = user._id as Types.ObjectId;
@@ -44,13 +45,13 @@ export class UsersService {
     const user = await this.userModel.findByIdAndUpdate(id, updateDto, {
       new: true,
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new UserNotFoundError(id);
     return user;
   }
 
   async remove(id: string) {
     const user = await this.userModel.findByIdAndDelete(id).exec();
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new UserNotFoundError(id);
     return { message: 'User deleted successfully' };
   }
   async setFirstLoginFalse(userId: string): Promise<void> {
@@ -60,7 +61,7 @@ export class UsersService {
       { new: true },
     );
     if (!updated) {
-      throw new NotFoundException(`User with id ${userId} not found`);
+      throw new UserNotFoundError(userId);
     }
   }
   async getNotificationsPrefs(id: string) {

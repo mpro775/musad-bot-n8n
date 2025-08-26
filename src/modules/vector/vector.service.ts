@@ -224,10 +224,14 @@ export class VectorService implements OnModuleInit {
     return this.qdrant.delete(this.botFaqCollection, { points: [pointId] });
   }
   public async upsertProducts(products: EmbeddableProduct[]) {
-    const points = await Promise.all(
-      products.map(async (p) => ({
-        id: uuidv5(p.id, PRODUCT_NAMESPACE), // UUID ثابت
-        vector: await this.embed(this.buildTextForEmbedding(p)),
+    const points = await Promise.all(products.map(async (p) => {
+      const discountPct = (p.priceOld && p.priceNew && p.priceOld > 0)
+        ? Math.max(0, Math.round(((p.priceOld - p.priceNew) / p.priceOld) * 100))
+        : undefined;
+  
+      return {
+        id: uuidv5(p.id, PRODUCT_NAMESPACE),
+        vector: await this.embed(this.buildTextForEmbedding({ ...p, discountPct })),
         payload: {
           mongoId: p.id,
           merchantId: p.merchantId,
@@ -236,16 +240,22 @@ export class VectorService implements OnModuleInit {
           category: p.category ?? '',
           specsBlock: p.specsBlock ?? [],
           keywords: p.keywords ?? [],
-          // 👇 إضافات مهمة للبوت/الاسترجاع
           url: p.url ?? null,
-          // خزّن رقمياً (ليس string) لتسهيل الفلاتر لاحقاً
-          price: Number.isFinite(p.price as number)
-            ? (p.price as number)
-            : null,
+          price: Number.isFinite(p.price as number) ? (p.price as number) : null,
+          currency: p.currency || null,
+          attributes: p.attributes || null,
+          // عروض:
+          hasOffer: !!p.hasActiveOffer,
+          priceOld: p.priceOld ?? null,
+          priceNew: p.priceNew ?? null,
+          priceEffective: p.priceEffective ?? (Number.isFinite(p.price as number) ? Number(p.price) : null),
+          offerStart: p.offerStart || null,
+          offerEnd: p.offerEnd || null,
+          discountPct: discountPct ?? null,
         },
-      })),
-    );
-
+      };
+    }));
+  
     return this.qdrant.upsert(this.collection, { wait: true, points });
   }
 
@@ -462,10 +472,18 @@ export class VectorService implements OnModuleInit {
     if (product.name) parts.push(`Name: ${product.name}`);
     if (product.description) parts.push(`Description: ${product.description}`);
     if (product.category) parts.push(`Category: ${product.category}`);
-    if (product.specsBlock?.length)
-      parts.push(`Specs: ${product.specsBlock.join(', ')}`);
-    if (product.keywords?.length)
-      parts.push(`Keywords: ${product.keywords.join(', ')}`);
+    if (product.specsBlock?.length) parts.push(`Specs: ${product.specsBlock.join(', ')}`);
+    if (product.attributes) {
+      const attrs = Object.entries(product.attributes)
+        .map(([k, v]) => `${k}: ${(v||[]).join('/')}`);
+      if (attrs.length) parts.push(`Attributes: ${attrs.join('; ')}`);
+    }
+    if (product.keywords?.length) parts.push(`Keywords: ${product.keywords.join(', ')}`);
+    if (product.hasActiveOffer && product.priceOld != null && product.priceNew != null) {
+      parts.push(`Offer: from ${product.priceOld} to ${product.priceNew}`);
+    }
+    if (product.price != null) parts.push(`Price: ${product.price} ${product.currency || ''}`);
     return parts.join('. ');
   }
+  
 }

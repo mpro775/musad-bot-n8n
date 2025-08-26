@@ -101,7 +101,6 @@ export class MerchantsService {
       businessType: createDto.businessType,
       businessDescription: createDto.businessDescription,
       workingHours: createDto.workingHours ?? [],
-      // ❌ لا تنشئ channels هنا بعد الآن
       returnPolicy: createDto.returnPolicy ?? '',
       exchangePolicy: createDto.exchangePolicy ?? '',
       shippingPolicy: createDto.shippingPolicy ?? '',

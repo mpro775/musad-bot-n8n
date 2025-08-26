@@ -11,6 +11,7 @@ import {
 import { ChannelDocument, ChannelStatus } from '../schemas/channel.schema';
 import { EvolutionService } from '../../integrations/evolution.service';
 import { encryptSecret } from '../utils/secrets.util';
+import { mapEvoStatus } from '../utils/evo-status.util';
 
 @Injectable()
 export class WhatsAppQrAdapter implements ChannelAdapter {
@@ -23,54 +24,40 @@ export class WhatsAppQrAdapter implements ChannelAdapter {
 
   async connect(c: ChannelDocument): Promise<ConnectResult> {
     const instanceName = `whatsapp_${c.merchantId}_${c.id}`;
-
-    // نظّف أي جلسة قديمة بنفس الاسم (لا يضر لو ما وُجدت)
     await this.evo.deleteInstance(instanceName).catch(() => undefined);
-
-    // أنشئ جلسة جديدة + فعّل QR
+  
     const token = uuidv4();
-    const resp: any = await this.evo.startSession(instanceName, token); // يستدعي /instance/create { qrcode:true }
-
-    // طبع الـ QR من كل الأشكال المحتملة
-    const qr: string | null =
-      resp?.qr ??
-      resp?.qrcode?.base64 ??
-      (typeof resp?.qrcode === 'string' && resp.qrcode.startsWith('data:image/')
-        ? resp.qrcode
-        : null);
-
-    const instanceId: string | undefined =
-      resp?.instanceId || resp?.instance?.instanceId;
-
-    // وحّد مسار الـ webhook: يعتمد على PUBLIC_WEBHOOK_BASE (مثلاً: https://api.example.com/api/webhooks)
-    const rawBase = String(this.config.get('PUBLIC_WEBHOOK_BASE') || '').trim();
-    const base = rawBase.replace(/\/+$/, ''); // شيل السلاشات آخر الرابط
+    const { qr, instanceId } = await this.evo.startSession(instanceName, token);
+  
+    // اضبط Webhook لواتساب QR على مسارنا
+    const rawBase = this.config.get('PUBLIC_WEBHOOK_BASE') || '';
+    const base = rawBase.replace(/\/+$/, '');
     const hooksBase = /\/webhooks$/i.test(base) ? base : `${base}/webhooks`;
     const webhookUrl = `${hooksBase}/whatsapp_qr/${c.id}`;
-
-    await this.evo
-      .setWebhook(
-        instanceName,
-        webhookUrl,
-        ['MESSAGES_UPSERT'],
-        true, // sendHeaders
-        true, // webhook_base64
-      )
-      .catch((e) => {
-        this.logger.warn(`setWebhook failed: ${e?.message || e}`);
-      });
-
-    // خزّن الأساسيات
+    await this.evo.setWebhook(instanceName, webhookUrl, ['MESSAGES_UPSERT'], true, true);
+  
+    // خزّن
     c.sessionId = instanceName;
     c.instanceId = instanceId;
-    if (qr) (c as any).qr = qr; // لو السكيمة ستركت، يتجاهلها بدون كسر
+    c.qr = qr;
     c.webhookUrl = webhookUrl;
     c.accessTokenEnc = encryptSecret(token);
     c.enabled = true;
     c.status = ChannelStatus.PENDING;
     await c.save();
-
-    return { mode: 'qr', qr: qr || '', webhookUrl };
+  
+    // محاولة فورية لقراءة الحالة وتحديثها
+    try {
+      const inst = await this.evo.getStatus(instanceName);
+      const mapped = mapEvoStatus(inst);
+      if (mapped && mapped !== c.status) {
+        c.status = mapped;
+        if (mapped === ChannelStatus.CONNECTED) c.qr = undefined;
+        await c.save();
+      }
+    } catch {}
+  
+    return { mode: 'qr', qr, webhookUrl };
   }
 
   async disconnect(c: ChannelDocument): Promise<void> {
@@ -89,24 +76,17 @@ export class WhatsAppQrAdapter implements ChannelAdapter {
 
   async getStatus(c: ChannelDocument): Promise<Status> {
     if (!c.sessionId) return { status: ChannelStatus.DISCONNECTED };
-
     try {
-      const inst: any = await this.evo.getStatus(c.sessionId);
-      const raw = String(inst?.status || '').toLowerCase();
-
-      // خرّط الحالات الشائعة من Evolution إلى حالاتنا الموحدة
-      const mapped: ChannelStatus =
-        raw === 'connected' || raw === 'open' || raw === 'authenticated'
-          ? ChannelStatus.CONNECTED
-          : raw === 'disconnected' || raw === 'closed'
-            ? ChannelStatus.DISCONNECTED
-            : ChannelStatus.PENDING; // created / waiting_qr / connecting ...
-
-      return { status: mapped, details: inst };
-    } catch (e) {
-      this.logger.warn(
-        `getStatus failed: ${e instanceof Error ? e.message : e}`,
-      );
+      const inst = await this.evo.getStatus(c.sessionId);
+      const mapped = mapEvoStatus(inst);
+      // لو تغيّرت الحالة، خزّنها وامسح الـ QR عند الاتصال
+      if (mapped && mapped !== c.status) {
+        c.status = mapped;
+        if (mapped === ChannelStatus.CONNECTED) c.qr = undefined;
+        await c.save();
+      }
+      return { status: mapped ?? c.status, details: inst };
+    } catch {
       return { status: c.status };
     }
   }

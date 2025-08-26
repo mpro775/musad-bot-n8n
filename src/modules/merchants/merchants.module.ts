@@ -27,6 +27,10 @@ import { Channel, ChannelSchema } from '../channels/schemas/channel.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CatalogModule } from '../catalog/catalog.module';
 import { OutboxModule } from '../../common/outbox/outbox.module';
+import { SlugResolverService } from './slug-resolver.service';
+import { PublicRouterController } from './public-router.controller';
+import { ChatWidgetSettings, ChatWidgetSettingsSchema } from '../chat/schema/chat-widget.schema';
+import { Storefront, StorefrontSchema } from '../storefront/schemas/storefront.schema';
 
 @Module({
   imports: [
@@ -36,6 +40,8 @@ import { OutboxModule } from '../../common/outbox/outbox.module';
       { name: Category.name, schema: CategorySchema },
       { name: User.name, schema: UserSchema },
       { name: Channel.name, schema: ChannelSchema },
+      { name: ChatWidgetSettings.name, schema: ChatWidgetSettingsSchema },
+      { name: Storefront.name, schema: StorefrontSchema },
     ]),
     StorefrontModule,
     forwardRef(() => AuthModule),
@@ -54,14 +60,16 @@ import { OutboxModule } from '../../common/outbox/outbox.module';
     PromptVersionService,
     PromptPreviewService,
     MerchantChecklistService,
+    SlugResolverService,
   ],
-  controllers: [MerchantsController, MerchantPromptController],
+  controllers: [MerchantsController, MerchantPromptController, PublicRouterController],
   exports: [
     MerchantsService,
     PromptVersionService,
     PromptPreviewService,
     PromptBuilderService,
     MerchantChecklistService,
+    SlugResolverService,
   ],
 })
 export class MerchantsModule {}

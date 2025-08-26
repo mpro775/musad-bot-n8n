@@ -26,6 +26,12 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { 
+  ApiSuccessResponse, 
+  ApiCreatedResponse as CommonApiCreatedResponse, 
+  CurrentUser, 
+  PaginationDto
+} from '../../common';
 
 @ApiTags('الفئات')
 @Controller('categories')
@@ -34,6 +40,7 @@ export class CategoriesController {
 
   @Post()
   @ApiOperation({ summary: 'إضافة فئة' })
+  @CommonApiCreatedResponse(CreateCategoryDto, 'تم إنشاء الفئة بنجاح')
   create(@Body() dto: CreateCategoryDto) {
     return this.categories.create(dto);
   }
@@ -42,6 +49,7 @@ export class CategoriesController {
   @ApiOperation({ summary: 'جلب فئات (flat أو tree)' })
   @ApiQuery({ name: 'merchantId', required: true })
   @ApiQuery({ name: 'tree', required: false, type: 'boolean' })
+  @ApiSuccessResponse(Array, 'تم جلب الفئات بنجاح')
   findAll(
     @Query('merchantId') merchantId: string,
     @Query('tree') tree?: string,

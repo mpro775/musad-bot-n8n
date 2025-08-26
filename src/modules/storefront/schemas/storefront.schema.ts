@@ -2,6 +2,7 @@
 
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { ALLOWED_DARK_BRANDS, AllowedDarkBrand } from '../../../common/constants/brand';
 
 export type StorefrontDocument = Storefront & Document;
 
@@ -19,6 +20,8 @@ export class Storefront {
   @Prop({ default: '#2575fc' })
   secondaryColor: string;
   // بانرات/سلايدر
+  @Prop({ enum: ALLOWED_DARK_BRANDS, default: '#111827' })
+  brandDark: AllowedDarkBrand;
   @Prop({
     type: [
       {
@@ -42,15 +45,8 @@ export class Storefront {
     order?: number;
   }[];
 
-  @Prop({
-    type: String,
-    unique: true,
-    index: true,
-    lowercase: true,
-    trim: true,
-    required: true,
-  })
-  slug: string;
+  @Prop({ type: String, index: true }) 
+  slug?: string;
 
   @Prop({ required: false })
   storefrontUrl?: string;
@@ -81,4 +77,16 @@ StorefrontSchema.pre('validate', function (next) {
     (this as any).slug = normalizeSlug((this as any).slug);
   }
   next();
+});
+StorefrontSchema.pre('save', async function(next) {
+  try {
+    // اجلب publicSlug من merchant وحدث الـ slug
+    const mId = (this as any).merchant;
+    if (mId) {
+      const MerchantModel = this.model('Merchant');
+      const m = await MerchantModel.findById(mId).select('publicSlug') as any;
+      if (m?.publicSlug) (this as any).slug = m.publicSlug;
+    }
+    next();
+  } catch (e) { next(e as any); }
 });

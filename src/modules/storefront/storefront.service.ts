@@ -26,6 +26,8 @@ import { unlink } from 'node:fs/promises';
 import sharp from 'sharp';
 import { LeadsService } from '../leads/leads.service';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
+import { ALLOWED_DARK_BRANDS, AllowedDarkBrand } from '../../common/constants/brand';
+
 export interface StorefrontResult {
   merchant: any;
   products: any[];
@@ -63,7 +65,43 @@ export class StorefrontService {
     const buffer = await pipeline.webp({ quality: 80 }).toBuffer();
     return { buffer, mime: 'image/webp', ext: 'webp' };
   }
-
+  private coerceBrandDark(input?: string): string {
+    if (!input) return '#111827';
+    const i = ALLOWED_DARK_BRANDS.indexOf(input.toUpperCase() as any);
+    return i >= 0 ? ALLOWED_DARK_BRANDS[i] : '#111827';
+  }
+  private toCssVars(brandDark: string) {
+    // تفتيح بسيط للهوفر (8%)
+    const hover = this.lighten(brandDark, 8);
+    return `
+  :root{
+    --brand: ${brandDark};
+    --on-brand: #FFFFFF;
+    --brand-hover: ${hover};
+  }
+  /* أسطح داكنة موحّدة */
+  .sf-dark, .navbar, footer {
+    background: var(--brand);
+    color: var(--on-brand);
+  }
+  /* أزرار أساسية */
+  .btn-primary, .MuiButton-containedPrimary {
+    background: var(--brand);
+    color: #FFFFFF;
+  }
+  .btn-primary:hover, .MuiButton-containedPrimary:hover {
+    background: var(--brand-hover);
+  }
+  `.trim();
+  }
+  
+  private lighten(hex: string, percent: number) {
+    const p = Math.max(-100, Math.min(100, percent)) / 100;
+    const n = (x: number) => Math.round(x + (255 - x) * p);
+    const [r,g,b] = hex.replace('#','').match(/.{2}/g)!.map(h=>parseInt(h,16));
+    return '#' + [n(r), n(g), n(b)].map(v=>v.toString(16).padStart(2,'0')).join('');
+  }
+  
   // ====== رفع صور البنرات (≤5 إجماليًا) ======
   async uploadBannerImagesToMinio(
     merchantId: string,
@@ -264,6 +302,7 @@ export class StorefrontService {
     let sf = await this.storefrontModel.findOne(
       this.merchantFilter(merchantId),
     );
+ 
     if (!sf) {
       // إنشاء افتراضي إن لم توجد (علشان ما ترجع 404 للتجّار القدامى)
       const base: Partial<Storefront> = {
@@ -302,6 +341,11 @@ export class StorefrontService {
     const update: Partial<Storefront> = { ...(dto as any) };
     delete (update as any).merchant;
 
+    if (dto.brandDark) {
+      update.brandDark = this.coerceBrandDark(dto.brandDark) as AllowedDarkBrand;
+    }
+
+    
     if (dto.slug) {
       const n = this.normalizeSlug(dto.slug);
       const conflict = await this.storefrontModel.exists({
@@ -313,8 +357,8 @@ export class StorefrontService {
     }
 
     Object.assign(sf, update);
-    await sf.save();
-    return sf;
+  await sf.save();
+  return sf;
   }
   async getMyOrdersForSession(merchantId: string, sessionId: string) {
     const phone = await this.leads.getPhoneBySession(merchantId, sessionId);
@@ -324,5 +368,11 @@ export class StorefrontService {
 
     const orders = await this.orderModel.find(filter).sort({ createdAt: -1 }).lean();
     return { orders };
+  }
+  async getBrandCssBySlug(slug: string) {
+    const sf = await this.storefrontModel.findOne({ slug }).lean();
+    if (!sf) throw new NotFoundException('Storefront not found');
+    const brand = (sf as any).brandDark || '#111827';
+    return this.toCssVars(brand);
   }
 }

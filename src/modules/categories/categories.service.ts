@@ -7,6 +7,7 @@ import {
   Logger,
   Inject,
 } from '@nestjs/common';
+import { CategoryNotFoundError } from '../../common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, ClientSession } from 'mongoose';
 import * as Minio from 'minio';
@@ -120,7 +121,7 @@ export class CategoriesService {
     const doc = await this.categoryModel
       .findOne({ _id: id, merchantId })
       .lean();
-    if (!doc) throw new NotFoundException('Category not found');
+    if (!doc) throw new CategoryNotFoundError(id);
     const ids = [...doc.ancestors, doc._id];
     const crumbs = await this.categoryModel
       .find({ _id: { $in: ids } }, { name: 1, slug: 1, path: 1, depth: 1 })
@@ -134,7 +135,7 @@ export class CategoriesService {
     const root = await this.categoryModel
       .findOne({ _id: id, merchantId })
       .lean();
-    if (!root) throw new NotFoundException('Category not found');
+    if (!root) throw new CategoryNotFoundError(id);
     const all = await this.categoryModel
       .find({ merchantId, $or: [{ _id: id }, { ancestors: root._id }] })
       .lean();
@@ -151,7 +152,7 @@ export class CategoriesService {
 
   async findOne(id: string, merchantId: string) {
     const cat = await this.categoryModel.findOne({ _id: id, merchantId });
-    if (!cat) throw new NotFoundException('Category not found');
+    if (!cat) throw new CategoryNotFoundError(id);
     return cat;
   }
 
@@ -164,7 +165,7 @@ export class CategoriesService {
 
     // ابحث أولًا لتتأكد أنها تخص التاجر
     const cat = await this.categoryModel.findOne({ _id: id, merchantId: mId });
-    if (!cat) throw new NotFoundException('Category not found');
+    if (!cat) throw new CategoryNotFoundError(id);
 
     // امنع تعديل merchantId من الـ DTO لو وُجد بالخطأ
     if ('merchantId' in dto) delete (dto as any).merchantId;
@@ -271,7 +272,7 @@ export class CategoriesService {
   // --- نقل/ترتيب العقدة ---
   async move(id: string, merchantId: string, dto: MoveCategoryDto) {
     const current = await this.categoryModel.findOne({ _id: id, merchantId });
-    if (!current) throw new NotFoundException('Category not found');
+    if (!current) throw new CategoryNotFoundError(id);
 
     const newParentId = dto.hasOwnProperty('parent')
       ? dto.parent
@@ -338,7 +339,7 @@ export class CategoriesService {
     const node = await this.categoryModel
       .findOne({ _id: id, merchantId: mId })
       .lean();
-    if (!node) throw new NotFoundException('Category not found');
+    if (!node) throw new CategoryNotFoundError(id);
 
     const allIds = await this.categoryModel
       .find(
@@ -410,7 +411,7 @@ export class CategoriesService {
       _id: categoryId,
       merchantId: new Types.ObjectId(merchantId),
     });
-    if (!cat) throw new NotFoundException('الفئة غير موجودة لهذا التاجر');
+    if (!cat) throw new CategoryNotFoundError(categoryId);
 
     const allowed = ['image/png', 'image/jpeg', 'image/webp'];
     const maxBytes = 2 * 1024 * 1024;

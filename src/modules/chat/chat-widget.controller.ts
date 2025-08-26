@@ -14,6 +14,12 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { HandoffDto } from './dto/handoff.dto';
 import { Public } from 'src/common/decorators/public.decorator';
+import { 
+  ApiSuccessResponse, 
+  ApiCreatedResponse as CommonApiCreatedResponse, 
+  CurrentUser, 
+  PaginationDto
+} from '../../common';
 
 @ApiTags('ودجة الدردشة')
 @UseGuards(JwtAuthGuard, RolesGuard) // تأكد من أنك عدلت الـ Guards ليتحققوا من الصلاحيات
@@ -25,7 +31,7 @@ export class ChatWidgetController {
   @Get()
   @Public()
   @ApiOperation({ summary: 'الحصول على إعدادات ودجة التاجر' })
-  @ApiResponse({ status: 200, description: 'تم العثور على الإعدادات.' })
+  @ApiSuccessResponse(Object, 'تم العثور على الإعدادات.')
   @ApiResponse({ status: 404, description: 'لم يتم العثور على التاجر.' })
   getSettings(@Param('merchantId') merchantId: string) {
     return this.svc.getSettings(merchantId);
@@ -35,7 +41,7 @@ export class ChatWidgetController {
   @Public()
   @ApiOperation({ summary: 'تحديث إعدادات ودجة التاجر' })
   @ApiBody({ type: UpdateWidgetSettingsDto })
-  @ApiResponse({ status: 200, description: 'تم تحديث الإعدادات بنجاح.' })
+  @ApiSuccessResponse(UpdateWidgetSettingsDto, 'تم تحديث الإعدادات بنجاح.')
   @ApiResponse({ status: 404, description: 'لم يتم العثور على التاجر.' })
   updateSettings(
     @Param('merchantId') merchantId: string,
@@ -47,7 +53,7 @@ export class ChatWidgetController {
   @Post('handoff')
   @ApiOperation({ summary: 'بدء محادثة مع موظف بشري' })
   @ApiBody({ type: HandoffDto })
-  @ApiResponse({ status: 201, description: 'تم بدء المحادثة البشرية بنجاح.' })
+  @CommonApiCreatedResponse(HandoffDto, 'تم بدء المحادثة البشرية بنجاح.')
   async handoff(
     @Param('merchantId') merchantId: string,
     @Body() dto: HandoffDto,

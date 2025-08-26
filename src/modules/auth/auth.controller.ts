@@ -23,6 +23,12 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Public } from 'src/common/decorators/public.decorator';
+import { 
+  ApiSuccessResponse, 
+  ApiCreatedResponse as CommonApiCreatedResponse, 
+  CurrentUser, 
+  PaginationDto
+} from '../../common';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { Throttle } from '@nestjs/throttler';
@@ -42,7 +48,7 @@ export class AuthController {
     summary: 'تسجيل مستخدم جديد (الحقول: اسم، إيميل، كلمة المرور)',
   })
   @ApiBody({ type: RegisterDto })
-  @ApiCreatedResponse({ description: 'تم التسجيل بنجاح' })
+  @CommonApiCreatedResponse(RegisterDto, 'تم التسجيل بنجاح')
   @ApiBadRequestResponse({ description: 'خطأ في البيانات أو الإيميل موجود' })
   @HttpCode(HttpStatus.CREATED)
   register(@Body() registerDto: RegisterDto) {
@@ -54,7 +60,7 @@ export class AuthController {
   @Throttle({ default: { ttl: 60, limit: 5 } }) // 5 requests per minute
   @ApiOperation({ summary: 'تسجيل الدخول وإرجاع توكن JWT' })
   @ApiBody({ type: LoginDto })
-  @ApiOkResponse({ description: 'تم تسجيل الدخول بنجاح' })
+  @ApiSuccessResponse(Object, 'تم تسجيل الدخول بنجاح')
   @ApiUnauthorizedResponse({ description: 'بيانات الاعتماد غير صحيحة' })
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
