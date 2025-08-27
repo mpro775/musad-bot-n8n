@@ -28,7 +28,6 @@ import { Client as MinioClient } from 'minio';
 import { unlink } from 'fs/promises';
 import { buildHbsContext, stripGuardSections } from './services/prompt-utils';
 import { PreviewPromptDto } from './dto/preview-prompt.dto';
-import { ChannelsService } from '../channels/channels.service';
 import { StorefrontService } from '../storefront/storefront.service';
 
 function toRecord(input: unknown): Record<string, string> {
@@ -199,27 +198,29 @@ export class MerchantsService {
   }
   async existsByPublicSlug(slug: string, excludeId?: string) {
     const q: any = { publicSlug: slug };
-    if (excludeId && Types.ObjectId.isValid(excludeId)) q._id = { $ne: excludeId };
+    if (excludeId && Types.ObjectId.isValid(excludeId))
+      q._id = { $ne: excludeId };
     return !!(await this.merchantModel.exists(q));
   }
   /** تحديث تاجر */
   async update(id: string, dto: UpdateMerchantDto): Promise<MerchantDocument> {
     const existing = await this.merchantModel.findById(id).exec();
     if (!existing) throw new NotFoundException('Merchant not found');
-  
+
     if ('publicSlug' in dto) {
       const raw = (dto.publicSlug ?? '').trim().toLowerCase();
       if (!raw) {
-        delete (dto as any).publicSlug;       // ← لا تحدّثها بقيمة فاضية
+        delete (dto as any).publicSlug; // ← لا تحدّثها بقيمة فاضية
       } else {
         const normalized = normalizeSlug(raw);
-        if (!SLUG_RE.test(normalized)) throw new BadRequestException('سلاج غير صالح');
+        if (!SLUG_RE.test(normalized))
+          throw new BadRequestException('سلاج غير صالح');
         const taken = await this.existsByPublicSlug(normalized, id);
         if (taken) throw new BadRequestException('السلاج محجوز');
         (dto as any).publicSlug = normalized;
       }
     }
-  
+
     // حضّر updateData بدون undefined
     const updateData: Record<string, any> = {};
     for (const [k, v] of Object.entries(dto)) {
@@ -235,25 +236,50 @@ export class MerchantsService {
         }
       }
     }
-  
+
     // طبّق التحديث
-    const updated = await this.merchantModel.findByIdAndUpdate(
-      id,
-      { $set: updateData },
-      { new: true, runValidators: true },
-    ).select('+publicSlug').exec();
-    if (!updated) throw new InternalServerErrorException('Failed to update merchant');
-  
+    const updated = await this.merchantModel
+      .findByIdAndUpdate(
+        id,
+        { $set: updateData },
+        { new: true, runValidators: true },
+      )
+      .select('+publicSlug')
+      .exec();
+    if (!updated)
+      throw new InternalServerErrorException('Failed to update merchant');
+
     // حدّث finalPromptTemplate بدون تشغيل validate (حتى لا يعبث pre('validate') بالسلاج)
     try {
       const compiled = await this.promptBuilder.compileTemplate(updated);
       updated.set('finalPromptTemplate', compiled);
-      await updated.save(); 
-        } catch (e) {
+      await updated.save();
+    } catch (e) {
       this.logger.error('Error compiling prompt template after update', e);
     }
-  
+
     return updated;
+  }
+  private async buildLogoUrl(key?: string): Promise<string | undefined> {
+    if (!key) return undefined;
+
+    const bucket = process.env.MINIO_BUCKET!;
+    const cdnBase = (process.env.ASSETS_CDN_BASE_URL || '').replace(/\/+$/, '');
+    const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(
+      /\/+$/,
+      '',
+    );
+
+    // أولوية 1: CDN ثابت (ملفات عامة أو بروكسي أمام MinIO)
+    if (cdnBase) return `${cdnBase}/${bucket}/${key}`;
+
+    // أولوية 2: نطاق MinIO العام (ملفات عامة أو بروكسي)
+    if (minioPublic) return `${minioPublic}/${bucket}/${key}`;
+
+    // أولوية 3: رابط موقّع قصير الأجل (خاص)
+    // ملاحظة: minio-js يملك presignedGetObject
+    const url = await this.minio.presignedGetObject(bucket, key, 3600); // 1h
+    return url;
   }
 
   private async ensureBucket(bucket: string) {
@@ -306,55 +332,34 @@ export class MerchantsService {
 
     const ext = this.extFromMime(file.mimetype);
     const key = `merchants/${merchantId}/logo-${Date.now()}.${ext}`;
+
     this.logger.log(`Uploading merchant logo to MinIO: ${bucket}/${key}`);
 
     try {
-      // نرفع من المسار المؤقت الذي وضعه Multer (dest: ./uploads)
+      // الأفضل مع Multer memoryStorage: file.buffer
+      // لكن بما أنك تستخدم fPutObject مع file.path فهو يعمل أيضًا:
       await this.minio.fPutObject(bucket, key, file.path, {
         'Content-Type': file.mimetype,
       });
 
-      const cdnBase = (process.env.ASSETS_CDN_BASE_URL || '').replace(
-        /\/+$/,
-        '',
-      );
-      const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(
-        /\/+$/,
-        '',
-      );
-      let url: string;
-
-      if (cdnBase) {
-        url = `${cdnBase}/${bucket}/${key}`;
-      } else if (minioPublic) {
-        url = `${minioPublic}/${bucket}/${key}`;
-      } else {
-        // آخر حل: رابط موقّت (يفضل عدم استخدامه للشعار في الإنتاج)
-        url = await this.minio.presignedUrl(
-          'GET',
-          bucket,
-          key,
-          7 * 24 * 60 * 60,
-        );
-      }
-
-      merchant.logoUrl = url;
+      // خزّن المفتاح فقط
+      merchant.logoKey = key;
       await merchant.save();
 
-      this.logger.log(`Logo uploaded and merchant updated. URL=${url}`);
-      return url;
-    } catch (e: any) {
+      // ارجع URL للفرونت (يُولّد الآن حسب بيئتك)
+      const url = await this.buildLogoUrl(key);
+      this.logger.log(`Logo uploaded. key=${key} url=${url}`);
+      return url!;
+    } catch (e) {
       this.logger.error('MinIO upload failed', e);
-      // لو كانت مشكلة اتصال/إعدادات
       throw new InternalServerErrorException('STORAGE_UPLOAD_FAILED');
     } finally {
       try {
         await unlink(file.path);
-      } catch {
-        // تجاهل
-      }
+      } catch {}
     }
   }
+
   /** جلب كل التجار */
   async findAll(): Promise<MerchantDocument[]> {
     return this.merchantModel.find().exec();
@@ -389,14 +394,21 @@ export class MerchantsService {
     return m;
   }
   /** جلب تاجر واحد */
-  async findOne(id: string): Promise<MerchantDocument> {
+  async findOne(id: string): Promise<MerchantDocument & { logoUrl?: string }> {
     const merchant = await this.merchantModel.findById(id).exec();
     if (!merchant) throw new NotFoundException('Merchant not found');
-    // تأكد من تحديث الـ finalPromptTemplate
+
     merchant.finalPromptTemplate =
       await this.promptBuilder.compileTemplate(merchant);
-    return merchant;
+
+    // توليد رابط الشعار من logoKey
+    const url = await this.buildLogoUrl(merchant.logoKey);
+    // نُضيف حقلًا عابرًا (لن يُحفظ بالـ DB)
+    (merchant as any).logoUrl = url;
+
+    return merchant as any;
   }
+
   private extFromMime(m: string): string {
     if (m === 'image/png') return 'png';
     if (m === 'image/jpeg') return 'jpg';
@@ -542,16 +554,24 @@ export class MerchantsService {
         'storefront',
       ])
       .lean();
-  
+
     if (!m) throw new NotFoundException('Merchant not found');
-  
+
     const raw = toRecord((m as any).socialLinks);
     const socials: Record<string, string> = {};
-    const SIMPLE = ['facebook','twitter','instagram','linkedin','youtube','website'];
+    const SIMPLE = [
+      'facebook',
+      'twitter',
+      'instagram',
+      'linkedin',
+      'youtube',
+      'website',
+    ];
     for (const key of SIMPLE) {
-      const v = normUrl(raw[key]); if (v) socials[key] = v;
+      const v = normUrl(raw[key]);
+      if (v) socials[key] = v;
     }
-  
+
     // ❌ تيليجرام من القنوات — احذفه هنا
     // ✅ واتساب من رقم التاجر كـ fallback
     const waNum = m?.phone ? String(m.phone) : '';
@@ -559,12 +579,12 @@ export class MerchantsService {
       const digits = waNum.replace(/\D/g, '');
       if (digits) socials.whatsapp = `https://wa.me/${digits}`;
     }
-  
+
     if (!socials.website && m?.productSourceConfig?.salla?.storeUrl) {
       const u = normUrl(m.productSourceConfig.salla.storeUrl);
       if (u) socials.website = u;
     }
-  
+
     let website: string | undefined = socials.website;
     try {
       if (!website && m.storefront) {
@@ -573,13 +593,14 @@ export class MerchantsService {
         if (fromDoc) website = normUrl(fromDoc);
         if (!website && (sf as any)?.slug) {
           const base = this.config.get<string>('PUBLIC_STOREFRONT_BASE');
-          if (base) website = `${base.replace(/\/+$/, '')}/s/${(sf as any).slug}`;
+          if (base)
+            website = `${base.replace(/\/+$/, '')}/s/${(sf as any).slug}`;
         }
       }
     } catch {}
-  
+
     if (website && !socials.website) socials.website = website;
-  
+
     return {
       merchantId,
       addresses: m.addresses ?? [],
@@ -593,7 +614,7 @@ export class MerchantsService {
       socials,
     };
   }
-  
+
   /** معاينة برومبت */
   async previewPrompt(
     id: string,
@@ -670,11 +691,11 @@ export class MerchantsService {
   async getStatus(id: string): Promise<MerchantStatusResponse> {
     const merchant = await this.merchantModel.findById(id).exec();
     if (!merchant) throw new NotFoundException('Merchant not found');
-  
+
     const isSubscriptionActive = merchant.subscription.endDate
       ? merchant.subscription.endDate > new Date()
       : true;
-  
+
     return {
       status: merchant.status as 'active' | 'inactive' | 'suspended',
       subscription: {
@@ -690,7 +711,6 @@ export class MerchantsService {
       },
     };
   }
-  
 
   async getAdvancedTemplateForEditor(
     id: string,

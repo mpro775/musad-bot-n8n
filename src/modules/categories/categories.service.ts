@@ -351,7 +351,7 @@ export class CategoriesService {
 
     const hasProducts = await this.productModel.exists({
       merchantId: mId,
-      categoryId: { $in: ids },
+      category: { $in: ids },
     });
     if (hasProducts) {
       throw new BadRequestException('لا يمكن حذف فئة مرتبطة بمنتجات');
@@ -435,6 +435,7 @@ export class CategoriesService {
     try {
       await this.minio.fPutObject(bucket, key, processedPath, {
         'Content-Type': 'image/webp',
+        'Cache-Control': 'public, max-age=31536000, immutable',
       });
       const url = await this.publicUrlFor(bucket as any, key);
       cat.image = url;
@@ -452,7 +453,7 @@ export class CategoriesService {
   private async ensureBucket(bucket: string) {
     const exists = await this.minio.bucketExists(bucket).catch(() => false);
     if (!exists) {
-      await this.minio.makeBucket(bucket, '');
+      await this.minio.makeBucket(bucket, process.env.MINIO_REGION || 'us-east-1');
     }
   }
 
@@ -473,5 +474,17 @@ export class CategoriesService {
     if (minioPublic) return `${minioPublic}/${bucket}/${key}`;
     // آخر حل: رابط موقّت
     return this.minio.presignedUrl('GET', bucket, key, 7 * 24 * 60 * 60);
+  }
+  async getDescendantIds(
+    merchantId: string | Types.ObjectId,
+    rootId: string | Types.ObjectId,
+  ): Promise<Types.ObjectId[]> {
+    const mId = new Types.ObjectId(merchantId);
+    const rId = new Types.ObjectId(rootId);
+    const all = await this.categoryModel
+      .find({ merchantId: mId, $or: [{ _id: rId }, { ancestors: rId }] })
+      .select('_id')
+      .lean();
+    return all.map((d) => d._id as Types.ObjectId);
   }
 }

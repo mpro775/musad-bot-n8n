@@ -142,17 +142,17 @@ export class ProductsService {
   // ====== Helpers للتخزين ======
   private async ensureBucket(bucket: string) {
     const exists = await this.minio.bucketExists(bucket).catch(() => false);
-    if (!exists) await this.minio.makeBucket(bucket, '');
+    if (!exists) await this.minio.makeBucket(bucket, process.env.MINIO_REGION || 'us-east-1');
   }
   private async publicUrlFor(bucket: string, key: string): Promise<string> {
     const cdnBase = (process.env.ASSETS_CDN_BASE_URL || '').replace(/\/+$/, '');
-    const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(
-      /\/+$/,
-      '',
-    );
+    const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(/\/+$/, '');
+
     if (cdnBase) return `${cdnBase}/${bucket}/${key}`;
     if (minioPublic) return `${minioPublic}/${bucket}/${key}`;
-    return this.minio.presignedUrl('GET', bucket, key, 7 * 24 * 60 * 60);
+
+    // كان لديك minio.presignedUrl(..., 7d) — غيّرناه لساعة وبـ presignedGetObject
+    return await this.minio.presignedGetObject(bucket, key, 3600);
   }
 
   // ====== التحقق من الفئة Leaf ======
@@ -177,42 +177,38 @@ export class ProductsService {
   }
 
   // ====== معالجة الصورة (مربع ≤2MB) ======
-  private async processToSquareUnder2MB(
+  private async processPreserveAspectUnder2MB(
     inputPath: string,
+    maxMP = 5, // حد أقصى ~5 ميجا بكسل
   ): Promise<{ buffer: Buffer; mime: string; ext: string }> {
-    const MAX_SIDE = 1024; // بإمكانك تعديله
-    const MAX_BYTES = 2 * 1024 * 1024;
-
-    // نقرأ الأبعاد مبدئياً عبر sharp
-    const img = sharp(inputPath);
+    const MAX_PIXELS = Math.floor(maxMP * 1_000_000);
+    const img = sharp(inputPath, { failOn: 'none' });
     const meta = await img.metadata();
-    if (!meta.width || !meta.height)
-      throw new BadRequestException('لا يمكن قراءة أبعاد الصورة');
-
-    // نجعلها مربعة (cover) ثم نُصغّر للـ 1024x1024
-    let pipeline = img.resize(MAX_SIDE, MAX_SIDE, {
-      fit: 'cover',
-      position: 'attention',
-    });
-
-    // نجرّب WEBP جودات متدرجة لضمان ≤2MB
-    const qualities = [85, 75, 65, 50];
-    for (const q of qualities) {
-      const buf = await pipeline.webp({ quality: q }).toBuffer();
-      if (buf.length <= MAX_BYTES) {
-        return { buffer: buf, mime: 'image/webp', ext: 'webp' };
-      }
+    const w = meta.width ?? 0, h = meta.height ?? 0;
+    if (w <= 0 || h <= 0) throw new BadRequestException('لا يمكن قراءة أبعاد الصورة');
+  
+    let pipeline = img;
+  
+    // لو عدد البكسلات كبير، صغّر مع الحفاظ على النسبة (بدون قصّ)
+    const total = w * h;
+    if (total > MAX_PIXELS) {
+      const scale = Math.sqrt(MAX_PIXELS / total);
+      const newW = Math.max(1, Math.floor(w * scale));
+      const newH = Math.max(1, Math.floor(h * scale));
+      pipeline = pipeline.resize(newW, newH, { fit: 'inside', withoutEnlargement: true });
     }
-
-    // آخر محاولة: JPEG بجودة منخفضة
+  
+    // جرّب WEBP بجودات متدرجة لتصل ≤ 2MB
+    for (const q of [85, 80, 70, 60, 50]) {
+      const buf = await pipeline.webp({ quality: q }).toBuffer();
+      if (buf.length <= 2 * 1024 * 1024) return { buffer: buf, mime: 'image/webp', ext: 'webp' };
+    }
+    // محاولة أخيرة JPEG
     for (const q of [80, 70, 60, 50]) {
       const buf = await pipeline.jpeg({ quality: q }).toBuffer();
-      if (buf.length <= MAX_BYTES) {
-        return { buffer: buf, mime: 'image/jpeg', ext: 'jpg' };
-      }
+      if (buf.length <= 2 * 1024 * 1024) return { buffer: buf, mime: 'image/jpeg', ext: 'jpg' };
     }
-
-    throw new BadRequestException('تعذر ضغط الصورة تحت 2MB، جرّب صورة أصغر.');
+    throw new BadRequestException('تعذر ضغط الصورة تحت 2MB؛ استخدم صورة أصغر.');
   }
 
   // ====== رفع صور المنتج المتعددة ======
@@ -262,7 +258,7 @@ export class ProductsService {
       }
 
       // حول للصيغة/الحجم المطلوبين
-      const out = await this.processToSquareUnder2MB(file.path); // { buffer, mime, ext }
+      const out = await this.processPreserveAspectUnder2MB(file.path); // { buffer, mime, ext }
       const key = `merchants/${merchantId}/products/${productId}/image-${Date.now()}-${i++}.${out.ext}`;
 
       try {

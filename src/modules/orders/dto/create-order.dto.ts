@@ -1,4 +1,5 @@
-﻿import {
+﻿// src/modules/orders/dto/create-order.dto.ts
+import {
   IsString,
   IsArray,
   IsObject,
@@ -13,323 +14,239 @@
   Min,
   IsBoolean,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type, Transform } from 'class-transformer';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  ApiHideProperty,
+} from '@nestjs/swagger';
 
-class OrderItemDto {
-  @ApiProperty({
-    description: 'ظ…ط¹ط±ظپ ط§ظ„ظ…ظ†طھط¬',
-    example: 'prod-123',
-    required: true,
-  })
-  @IsString({
-    message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ظ…ط¹ط±ظپ ط§ظ„ظ…ظ†طھط¬ ظ†طµظٹظ‹ط§',
-  })
-  @IsNotEmpty({ message: 'ظ…ط¹ط±ظپ ط§ظ„ظ…ظ†طھط¬ ظ…ط·ظ„ظˆط¨' })
+class OrderItemInput {
+  @ApiProperty({ description: 'معرّف المنتج', example: '66bdcf0b8f2e12...' })
+  @IsString({ message: 'يجب أن يكون معرّف المنتج نصيًا' })
+  @IsNotEmpty({ message: 'معرّف المنتج مطلوب' })
   productId: string;
 
-  @ApiProperty({
-    description: 'ظƒظ…ظٹط© ط§ظ„ظ…ظ†طھط¬',
-    minimum: 1,
-    example: 2,
-    required: true,
-  })
-  @IsNumber({}, { message: 'ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط§ظ„ظƒظ…ظٹط© ط±ظ‚ظ…ظٹط©' })
-  @Min(1, { message: 'ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط§ظ„ظƒظ…ظٹط© ط¹ظ„ظ‰ ط§ظ„ط£ظ‚ظ„ 1' })
+  @ApiProperty({ description: 'الكمية', minimum: 1, example: 2 })
+  @IsNumber({}, { message: 'يجب أن تكون الكمية رقمية' })
+  @Min(1, { message: 'الحد الأدنى للكمية هو 1' })
   quantity: number;
 
-  @ApiProperty({
-    description: 'ط³ط¹ط± ط§ظ„ظˆط­ط¯ط©',
-    minimum: 0,
-    example: 100,
-    required: true,
-  })
-  @IsNumber({}, { message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ط§ظ„ط³ط¹ط± ط±ظ‚ظ…ظٹظ‹ط§' })
-  @Min(0, {
-    message:
-      'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ط§ظ„ط³ط¹ط± ط£ظƒط¨ط± ظ…ظ† ط£ظˆ ظٹط³ط§ظˆظٹ طµظپط±',
-  })
+  @ApiProperty({ description: 'السعر', minimum: 0, example: 100 })
+  @IsNumber({}, { message: 'يجب أن يكون السعر رقمياً' })
+  @Min(0, { message: 'السعر يجب أن يكون أكبر من أو يساوي صفر' })
   price: number;
 
-  @ApiProperty({
-    description: 'ط§ط³ظ… ط§ظ„ظ…ظ†طھط¬',
-    example: 'ظ…ظ†طھط¬ ظ…ظ…ظٹط²',
-    required: true,
-  })
-  @IsString({ message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ط§ط³ظ… ط§ظ„ظ…ظ†طھط¬ ظ†طµظٹظ‹ط§' })
-  @IsNotEmpty({ message: 'ط§ط³ظ… ط§ظ„ظ…ظ†طھط¬ ظ…ط·ظ„ظˆط¨' })
+  @ApiProperty({ description: 'اسم المنتج', example: 'منتج مميز' })
+  @IsString({ message: 'يجب أن يكون اسم المنتج نصيًا' })
+  @IsNotEmpty({ message: 'اسم المنتج مطلوب' })
   name: string;
 
   @ApiPropertyOptional({
-    description: 'ظ…ظ„ط§ط­ط¸ط§طھ ط¥ط¶ط§ظپظٹط© ط¹ظ„ظ‰ ط§ظ„ظ…ظ†طھط¬',
-    example: 'ط§ظ„ظ„ظˆظ†: ط£ط­ط¬ط§ظ…',
-    required: false,
+    description: 'ملاحظات إضافية',
+    example: 'اللون: أحمر',
   })
-  @IsString({ message: 'ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط§ظ„ظ…ظ„ط§ط­ط¸ط§طھ ظ†طµظٹط©' })
+  @IsString({ message: 'يجب أن تكون الملاحظات نصية' })
   @IsOptional()
   notes?: string;
 }
 
-class CustomerDto {
-  @ApiProperty({
-    description: 'ط§ط³ظ… ط§ظ„ط¹ظ…ظٹظ„',
-    example: 'ظ…ط­ظ…ط¯ ط£ط­ظ…ط¯',
-    required: true,
-  })
-  @IsString({ message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ط§ط³ظ… ط§ظ„ط¹ظ…ظٹظ„ ظ†طµظٹظ‹ط§' })
-  @IsNotEmpty({ message: 'ط§ط³ظ… ط§ظ„ط¹ظ…ظٹظ„ ظ…ط·ظ„ظˆط¨' })
+class OrderProductDto {
+  @ApiPropertyOptional({ description: 'معرّف المنتج (اختياري)' })
+  @IsString({ message: 'يجب أن يكون معرّف المنتج نصيًا' })
+  @IsOptional()
+  product?: string; // ← يتوافق مع schema (Types.ObjectId)
+
+  @ApiProperty({ description: 'اسم المنتج', example: 'منتج مميز' })
+  @IsString({ message: 'يجب أن يكون اسم المنتج نصيًا' })
+  @IsNotEmpty({ message: 'اسم المنتج مطلوب' })
   name: string;
 
-  @ApiProperty({
-    description: 'ط±ظ‚ظ… ظ‡ط§طھظپ ط§ظ„ط¹ظ…ظٹظ„',
-    example: '+966501234567',
-    required: true,
-  })
-  @IsPhoneNumber('SA', {
-    message:
-      'ط±ظ‚ظ… ط§ظ„ظ‡ط§طھظپ ط؛ظٹط± طµط§ظ„ط­. ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ط±ظ‚ظ… ظ‡ط§طھظپ ط³ط¹ظˆط¯ظٹ طµط§ظ„ط­',
-  })
-  @IsNotEmpty({ message: 'ط±ظ‚ظ… ط§ظ„ظ‡ط§طھظپ ظ…ط·ظ„ظˆط¨' })
+  @ApiProperty({ description: 'السعر', minimum: 0, example: 100 })
+  @IsNumber({}, { message: 'يجب أن يكون السعر رقمياً' })
+  @Min(0, { message: 'السعر يجب أن يكون أكبر من أو يساوي صفر' })
+  price: number;
+
+  @ApiProperty({ description: 'الكمية', minimum: 1, example: 2 })
+  @IsNumber({}, { message: 'يجب أن تكون الكمية رقمية' })
+  @Min(1, { message: 'الحد الأدنى للكمية هو 1' })
+  quantity: number;
+}
+
+class CustomerDto {
+  @ApiProperty({ description: 'اسم العميل', example: 'محمد أحمد' })
+  @IsString({ message: 'يجب أن يكون اسم العميل نصيًا' })
+  @IsNotEmpty({ message: 'اسم العميل مطلوب' })
+  name: string;
+
+  @ApiProperty({ description: 'رقم هاتف العميل', example: '+966501234567' })
+  @IsNotEmpty({ message: 'رقم الهاتف مطلوب' })
   phone: string;
 
   @ApiPropertyOptional({
     description: 'رقم الهاتف الموحّد بدون رموز',
     example: '966501234567',
-    required: false,
   })
   @IsString({ message: 'يجب أن يكون رقم الهاتف الموحّد نصيًا' })
   @IsOptional()
   phoneNormalized?: string;
 
   @ApiPropertyOptional({
-    description: 'ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ ظ„ظ„ط¹ظ…ظٹظ„',
-    example: 'customer@example.com',
-    required: false,
+    description: 'عنوان العميل',
+    example: { line1: 'شارع الملك فهد', city: 'الرياض', postalCode: '12345' },
   })
-  @IsEmail({}, { message: 'ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ ط؛ظٹط± طµط§ظ„ط­' })
+  @IsObject({ message: 'يجب أن يكون العنوان كائنًا' })
   @IsOptional()
-  email?: string;
+  @Transform(({ value }) => {
+    // دعم تمرير العنوان كنص: "حي كذا، شارع كذا"
+    if (typeof value === 'string') return { line1: value };
+    return value;
+  })
+  address?: Record<string, any>;
 
   @ApiPropertyOptional({
-    description: 'ط¹ظ†ظˆط§ظ† ط§ظ„ط¹ظ…ظٹظ„',
-    type: Object,
-    required: false,
-    example: {
-      street: 'ط´ط§ط±ط¹ ط§ظ„ظ…ظ„ظƒ ظپظ‡ط¯',
-      city: 'ط§ظ„ط±ظٹط§ط¶',
-      country: 'ط§ظ„ظ…ظ…ظ„ظƒط© ط§ظ„ط¹ط±ط¨ظٹط© ط§ظ„ط³ط¹ظˆط¯ظٹط©',
-    },
+    description: 'البريد الإلكتروني',
+    example: 'customer@example.com',
   })
-  @IsObject({ message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ط§ظ„ط¹ظ†ظˆط§ظ† ظƒط§ط¦ظ†ظ‹ط§' })
+  @IsEmail({}, { message: 'البريد الإلكتروني غير صالح' })
   @IsOptional()
-  address?: Record<string, any>;
+  email?: string;
 }
 
 /**
- * ظ†ظ…ظˆط°ط¬ ط¥ظ†ط´ط§ط، ط·ظ„ط¨ ط¬ط¯ظٹط¯
- * ظٹط­طھظˆظٹ ط¹ظ„ظ‰ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط·ظ„ط¨ ط§ظ„ط£ط³ط§ط³ظٹط© ط§ظ„ظ…ط·ظ„ظˆط¨ط© ظ„ط¥ظ†ط´ط§ط، ط·ظ„ط¨ ط¬ط¯ظٹط¯
+ * DTO موحّد لإنشاء الطلبات
+ * - يدعم body يحتوي "products"
+ * - ويدعم body قديم يحتوي "items"؛ سيتم تحويلها تلقائيًا إلى "products"
  */
 export class CreateOrderDto {
   @ApiProperty({
-    description: 'ظ…ط¹ط±ظپ ط§ظ„طھط§ط¬ط±',
-    example: 'merchant-123',
-    required: true,
+    description: 'معرّف التاجر',
+    example: '68a3addee395b1a94f9fcf87',
   })
-  @IsString({
-    message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ظ…ط¹ط±ظپ ط§ظ„طھط§ط¬ط± ظ†طµظٹظ‹ط§',
-  })
-  @IsNotEmpty({ message: 'ظ…ط¹ط±ظپ ط§ظ„طھط§ط¬ط± ظ…ط·ظ„ظˆط¨' })
+  @IsString({ message: 'يجب أن يكون معرّف التاجر نصيًا' })
+  @IsNotEmpty({ message: 'معرّف التاجر مطلوب' })
   merchantId: string;
 
-  @ApiProperty({
-    description: 'ظ…ط¹ط±ظپ ط§ظ„ط¬ظ„ط³ط©',
-    example: 'session-456',
-    required: true,
-  })
-  @IsString({
-    message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ظ…ط¹ط±ظپ ط§ظ„ط¬ظ„ط³ط© ظ†طµظٹظ‹ط§',
-  })
-  @IsNotEmpty({ message: 'ظ…ط¹ط±ظپ ط§ظ„ط¬ظ„ط³ط© ظ…ط·ظ„ظˆط¨' })
+  @ApiProperty({ description: 'معرّف الجلسة', example: 'sess-xyz' })
+  @IsString({ message: 'يجب أن يكون معرّف الجلسة نصيًا' })
+  @IsNotEmpty({ message: 'معرّف الجلسة مطلوب' })
   sessionId: string;
 
   @ApiPropertyOptional({
-    description: 'ظ…ط¹ط±ظپ ط§ظ„ط·ظ„ط¨',
-    example: 'order-123',
-    required: false,
+    description: 'المصدر',
+    example: 'mini-store',
+    default: 'manual',
   })
-  @IsString({ message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ظ…ط¹ط±ظپ ط§ظ„ط·ظ„ط¨ ظ†طµظٹظ‹ط§' })
+  @IsString({ message: 'يجب أن يكون المصدر نصيًا' })
   @IsOptional()
-  source: string;
+  source?: string;
 
   @ApiPropertyOptional({
-    description:
-      'طھط§ط±ظٹط® ط¥ظ†ط´ط§ط، ط§ظ„ط·ظ„ط¨ (ط§ط®طھظٹط§ط±ظٹ - ط³ظٹطھظ… طھط¹ظٹظٹظ†ظ‡ طھظ„ظ‚ط§ط¦ظٹظ‹ط§ ط¥ط°ط§ ظ„ظ… ظٹطھظ… طھظˆظپظٹط±ظ‡)',
-    type: Date,
-    example: '2023-01-01T12:00:00.000Z',
+    description: 'تاريخ الإنشاء (اختياري)',
+    example: '2025-08-27T12:00:00.000Z',
   })
-  @IsDateString(
-    {},
-    { message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† طھط§ط±ظٹط®ظ‹ط§ طµط§ظ„ط­ظ‹ط§' },
-  )
+  @IsDateString({}, { message: 'تاريخ غير صالح' })
   @IsOptional()
   createdAt?: Date;
 
-  @ApiProperty({
-    description: 'ط¨ظٹط§ظ†ط§طھ ط§ظ„ط¹ظ…ظٹظ„',
-    type: CustomerDto,
-    required: true,
-  })
+  @ApiProperty({ description: 'بيانات العميل', type: CustomerDto })
   @ValidateNested()
   @Type(() => CustomerDto)
   customer: CustomerDto;
 
+  // ← هذا الحقل مخفي فقط للدعم الخلفي وتحويله إلى products
+  @ApiHideProperty()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemInput)
+  @IsOptional()
+  items?: OrderItemInput[];
+
   @ApiProperty({
-    description: 'ط¹ظ†ط§طµط± ط§ظ„ط·ظ„ط¨',
-    type: [OrderItemDto],
-    required: true,
+    description: 'عناصر الطلب (معتمدة)',
+    type: [OrderProductDto],
     minItems: 1,
   })
-  @IsArray({ message: 'ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط§ظ„ط¹ظ†ط§طµط± ظ…طµظپظˆظپط©' })
-  @ArrayMinSize(1, {
-    message:
-      'ظٹط¬ط¨ ط£ظ† ظٹط­طھظˆظٹ ط§ظ„ط·ظ„ط¨ ط¹ظ„ظ‰ ط¹ظ†طµط± ظˆط§ط­ط¯ ط¹ظ„ظ‰ ط§ظ„ط£ظ‚ظ„',
-  })
+  @IsArray({ message: 'يجب أن تكون العناصر مصفوفة' })
+  @ArrayMinSize(1, { message: 'يجب إدخال عنصر واحد على الأقل' })
   @ValidateNested({ each: true })
-  @Type(() => OrderItemDto)
-  items: OrderItemDto[];
+  @Type(() => OrderProductDto)
+  @Transform(({ value, obj }) => {
+    // إذا أُرسلت products مباشرة، اتركها كما هي
+    if (Array.isArray(value)) return value;
+    // إن أُرسلت items (النسخة القديمة من الفرونت)، حوّلها:
+    if (Array.isArray(obj?.items)) {
+      return obj.items.map((i: OrderItemInput) => ({
+        product: i.productId,
+        name: i.name,
+        price: i.price,
+        quantity: i.quantity,
+      }));
+    }
+    return value;
+  })
+  products: OrderProductDto[];
 
   @ApiPropertyOptional({
-    description: 'ط¨ظٹط§ظ†ط§طھ ط¥ط¶ط§ظپظٹط© ظ„ظ„ط·ظ„ط¨',
-    type: Object,
-    required: false,
+    description: 'بيانات إضافية',
     example: {
       source: 'website',
       ip: '192.168.1.1',
       userAgent: 'Mozilla/5.0...',
     },
   })
-  @IsObject({
-    message:
-      'ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ظˆطµظپظٹط© ظƒط§ط¦ظ†ظ‹ط§',
-  })
+  @IsObject({ message: 'يجب أن تكون البيانات الإضافية كائنًا' })
   @IsOptional()
   metadata?: Record<string, any>;
 
-  @ApiPropertyOptional({
-    description: 'ظ…ط¹ط±ظپ ط§ظ„ط·ظ„ط¨',
-    example: 'order-123',
-    required: false,
-  })
-  @IsString({ message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ظ…ط¹ط±ظپ ط§ظ„ط·ظ„ط¨ ظ†طµظٹظ‹ط§' })
+  @ApiPropertyOptional({ description: 'مُعرّف خارجي', example: 'INV-2025-001' })
+  @IsString({ message: 'يجب أن يكون المعرّف الخارجي نصيًا' })
   @IsOptional()
   externalId?: string;
 
-  @ApiPropertyOptional({
-    description: 'ط­ط§ظ„ط© ط§ظ„ط³ط¯ط§ط¯ (ط§ظپطھط±ط§ط¶ظٹ: false)',
-    type: Boolean,
-    default: false,
-    required: false,
-  })
-  @IsBoolean({
-    message:
-      'ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط­ط§ظ„ط© ط§ظ„ط³ط¯ط§ط¯ ظ‚ظٹظ…ط© ظ…ظ†ط·ظ‚ظٹط©',
-  })
+  @ApiPropertyOptional({ description: 'تم الدفع؟', default: false })
+  @IsBoolean({ message: 'حقل تم الدفع يجب أن يكون منطقيًا' })
   @IsOptional()
-  isPaid?: boolean = false;
+  isPaid?: boolean;
 
   @ApiPropertyOptional({
-    description:
-      'ط¥ط¬ظ…ط§ظ„ظٹ ظ…ط¨ظ„ط؛ ط§ظ„ط·ظ„ط¨ (ط³ظٹطھظ… ط­ط³ط§ط¨ظ‡ طھظ„ظ‚ط§ط¦ظٹظ‹ط§ ط¥ط°ط§ ظ„ظ… ظٹطھظ… طھظˆظپظٹط±ظ‡)',
-    type: Number,
-    minimum: 0,
+    description: 'الإجمالي (اختياري إذا يحسبه السيرفر)',
     example: 200,
-    required: false,
   })
-  @IsNumber(
-    {},
-    { message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ط§ظ„ط¥ط¬ظ…ط§ظ„ظٹ ط±ظ‚ظ…ظٹظ‹ط§' },
-  )
-  @Min(0, {
-    message:
-      'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ط§ظ„ط¥ط¬ظ…ط§ظ„ظٹ ط£ظƒط¨ط± ظ…ظ† ط£ظˆ ظٹط³ط§ظˆظٹ طµظپط±',
-  })
+  @IsNumber({}, { message: 'الإجمالي يجب أن يكون رقمياً' })
+  @Min(0, { message: 'الإجمالي يجب أن يكون ≥ 0' })
   @IsOptional()
   totalAmount?: number;
 
   @ApiPropertyOptional({
-    description:
-      'ط­ط§ظ„ط© ط§ظ„ط·ظ„ط¨ (ظ…ط«ظ„: pending, processing, completed, cancelled)',
+    description: 'حالة الطلب',
     example: 'pending',
     default: 'pending',
-    required: false,
   })
-  @IsString({ message: 'ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط§ظ„ط­ط§ظ„ط© ظ†طµظٹط©' })
+  @IsString({ message: 'الحالة يجب أن تكون نصية' })
   @IsOptional()
-  status?: string = 'pending';
+  status?: string;
 
-  @ApiPropertyOptional({
-    description: 'ط·ط±ظٹظ‚ط© ط§ظ„ط¯ظپط¹',
-    example: 'credit_card',
-    required: false,
-  })
-  @IsString({
-    message: 'ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط·ط±ظٹظ‚ط© ط§ظ„ط¯ظپط¹ ظ†طµظٹط©',
-  })
+  @ApiPropertyOptional({ description: 'طريقة الدفع', example: 'credit_card' })
+  @IsString({ message: 'طريقة الدفع يجب أن تكون نصية' })
   @IsOptional()
   paymentMethod?: string;
 
   @ApiPropertyOptional({
-    description: 'طھط§ط±ظٹط® ظˆظˆظ‚طھ ط§ظ„ط³ط¯ط§ط¯',
-    type: Date,
-    example: '2023-01-01T12:30:00.000Z',
-    required: false,
+    description: 'تاريخ وقت السداد',
+    example: '2025-08-27T12:30:00.000Z',
   })
-  @IsDateString(
-    {},
-    { message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† طھط§ط±ظٹط® ط§ظ„ط³ط¯ط§ط¯ طµط§ظ„ط­ظ‹ط§' },
-  )
+  @IsDateString({}, { message: 'تاريخ السداد غير صالح' })
   @IsOptional()
   paidAt?: Date;
 
   @ApiPropertyOptional({
-    description: 'ظ…ظ„ط§ط­ط¸ط§طھ ط¥ط¶ط§ظپظٹط© ط¹ظ„ظ‰ ط§ظ„ط·ظ„ط¨',
-    example: 'ط§ظ„طھظˆطµظٹظ„ ط¨ط¹ط¯ ط§ظ„ط³ط§ط¹ط© 5 ظ…ط³ط§ط،ظ‹',
-    required: false,
+    description: 'ملاحظات',
+    example: 'التوصيل بعد الساعة 5 مساءً',
   })
-  @IsString({ message: 'ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط§ظ„ظ…ظ„ط§ط­ط¸ط§طھ ظ†طµظٹط©' })
+  @IsString({ message: 'الملاحظات يجب أن تكون نصية' })
   @IsOptional()
   notes?: string;
 
-  @ApiPropertyOptional({
-    description: 'ط±ظ‚ظ… ط§ظ„ظپط§طھظˆط±ط© (ط¥ط°ط§ ظƒط§ظ† ظ…طھط§ط­ظ‹ط§)',
-    example: 'INV-2023-001',
-    required: false,
-  })
-  @IsString({
-    message: 'ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ط±ظ‚ظ… ط§ظ„ظپط§طھظˆط±ط© ظ†طµظٹظ‹ط§',
-  })
-  @IsOptional()
-  invoiceNumber?: string;
-
-  @ApiPropertyOptional({
-    description: 'ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ظ†طھط¬ط§طھ',
-    type: Object,
-    required: false,
-    example: {
-      productId: 'prod-123',
-      name: 'ظ…ظ†طھط¬ ظ…ظ…ظٹط²',
-      quantity: 2,
-      price: 100,
-    },
-  })
-  @IsObject({
-    message: 'ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ظ†طھط¬ط§طھ ظƒط§ط¦ظ†ظ‹ط§',
-  })
-  @IsOptional()
-  products?: Array<{
-    productId?: string;
-    name: string;
-    quantity: number;
-    price: number;
-  }>;
+  // ⚠️ احذف التعريف القديم للـ products كـ Object[] داخل dto (كان مكرر ومربك)
 }

@@ -210,6 +210,7 @@ services:
       - '--web.enable-lifecycle'
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts:/etc/prometheus/alerts:ro
       - prom_data:/prometheus
     ports:
       - '9090:9090'
@@ -217,6 +218,19 @@ services:
     restart: unless-stopped
     depends_on:
       - rabbitmq
+
+  # === Alertmanager ===
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: kaleem-alertmanager
+    command: --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    networks: [ backnet ]
+    restart: unless-stopped
+
     # === Grafana ===
   grafana:
     image: grafana/grafana:10.4.5
@@ -275,6 +289,34 @@ services:
     restart: unless-stopped
     depends_on:
       - mongo
+
+  # === Loki ===
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: kaleem-loki
+    command: -config.file=/etc/loki/config.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki/config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    networks: [ backnet ]
+    restart: unless-stopped
+
+  # === Promtail ===
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: kaleem-promtail
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./observability/promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [ backnet ]
+    depends_on:
+      - loki
+    restart: unless-stopped
 
   # === RabbitMQ (تفعيل الـ Prometheus plugin وفتح 15692) ===
   rabbitmq:
@@ -386,6 +428,7 @@ volumes:
   grafana_data:
   prom_data:
   hf_cache:
+  loki_data:
 
 
 networks:

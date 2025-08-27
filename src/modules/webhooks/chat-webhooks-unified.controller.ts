@@ -2,7 +2,7 @@
 import { Body, Controller, Param, Post, Req } from '@nestjs/common';
 import { Public } from 'src/common/decorators/public.decorator';
 import { ApiTags, ApiOperation, ApiParam, ApiBody } from '@nestjs/swagger';
-import { SlugResolverService } from '../merchants/slug-resolver.service';
+import { SlugResolverService } from '../public/slug-resolver.service';
 import { WebhooksController } from './webhooks.controller';
 
 @ApiTags('Webhooks (Unified Slug)')

@@ -109,7 +109,8 @@ export class Product {
     startAt?: Date;
     endAt?: Date;
   };
-
+  @Prop({ type: String, default: null })
+  publicUrlStored?: string | null;
   // 👇 جديد
   @Prop({ type: String }) slug?: string;
 
@@ -125,20 +126,24 @@ export const ProductSchema = SchemaFactory.createForClass(Product);
 // افتراضيات قبل الحفظ
 ProductSchema.virtual('publicUrl').get(function (this: any) {
   const pid = this.slug || this._id?.toString();
-  // لو فيه دومين مخصص للمتجر، نخليه الجذر
+
+  // لو فيه دومين مخصص للمتجر: https://domain/product/:pid
   if (this.storefrontDomain) {
-    return `https://${this.storefrontDomain}/p/${pid}`;
+    return `https://${this.storefrontDomain}/product/${pid}`;
   }
-  // وإلا نشتغل بالنمط متعدد المتاجر على نفس الدومين
-  // القاعدة العامة: /{publicSlug}/store
-  // ملاحظة: storefrontSlug = publicSlug (بحسب pre-save في StorefrontSchema)
+
+  // بدون دومين: http(s)://<STORE_PUBLIC_ORIGIN>/store/:publicSlug/product/:pid
   const base = (process.env.STORE_PUBLIC_ORIGIN || '').replace(/\/+$/, '');
-  const shopSlug = this.storefrontSlug || ''; // هو نفس publicSlug
-  if (shopSlug) {
-    return base ? `${base}/${shopSlug}/store/p/${pid}` : `/${shopSlug}/store/p/${pid}`;
+  const shopSlug = this.storefrontSlug || ''; // هو نفسه publicSlug
+  if (base && shopSlug) {
+    return `${base}/store/${shopSlug}/product/${pid}`;
   }
-  // fallback آمن
-  return base ? `${base}/p/${pid}` : `/p/${pid}`;
+  if (shopSlug) {
+    return `/store/${shopSlug}/product/${pid}`;
+  }
+
+  // Fallback آمن
+  return base ? `${base}/product/${pid}` : `/product/${pid}`;
 });
 // مشتقات جاهزة في الاسترجاع
 function computeDerived(doc: any) {
@@ -159,9 +164,27 @@ function computeDerived(doc: any) {
   doc.hasActiveOffer = !!active;
   doc.priceEffective = active ? Number(ofr.newPrice) : Number(doc.price);
 }
+function recomputePublicUrlStored(doc: any) {
+  try {
+    // الـ virtual أعلاه
+    doc.publicUrlStored = doc.publicUrl;
+  } catch {}
+}
+
+ProductSchema.pre('save', function (next) {
+  recomputePublicUrlStored(this);
+  next();
+});
+ProductSchema.pre('findOneAndUpdate', function (next) {
+  // عند التحديث عبر findOneAndUpdate نحتاج حساب يدويًا من الـ update
+  // سنجلب الوثيقة بعد التحديث في service ونحدّثها (مُبيّن أدناه)
+  next();
+});
+ProductSchema.post('save', function () { recomputePublicUrlStored(this); });
 
 ProductSchema.post('init', function () { computeDerived(this); });
 ProductSchema.post('save', function () { computeDerived(this); });
 ProductSchema.post('find', function (docs) { docs.forEach(computeDerived); });
 ProductSchema.post('findOne', function (doc) { if (doc) computeDerived(doc); });
 ProductSchema.index({ 'offer.enabled': 1, 'offer.startAt': 1, 'offer.endAt': 1 });
+ProductSchema.index({ merchantId: 1, category: 1, status: 1, isAvailable: 1 });

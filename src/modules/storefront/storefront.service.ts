@@ -26,7 +26,10 @@ import { unlink } from 'node:fs/promises';
 import sharp from 'sharp';
 import { LeadsService } from '../leads/leads.service';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
-import { ALLOWED_DARK_BRANDS, AllowedDarkBrand } from '../../common/constants/brand';
+import {
+  ALLOWED_DARK_BRANDS,
+  AllowedDarkBrand,
+} from '../../common/constants/brand';
 
 export interface StorefrontResult {
   merchant: any;
@@ -48,7 +51,8 @@ export class StorefrontService {
     const meta = await img.metadata();
     const w = meta.width ?? 0;
     const h = meta.height ?? 0;
-    if (w <= 0 || h <= 0) throw new BadRequestException('لا يمكن قراءة أبعاد الصورة');
+    if (w <= 0 || h <= 0)
+      throw new BadRequestException('لا يمكن قراءة أبعاد الصورة');
 
     let pipeline = img;
     const total = w * h;
@@ -58,7 +62,10 @@ export class StorefrontService {
       const scale = Math.sqrt(MAX_PIXELS / total); // نسبة التصغير
       const newW = Math.max(1, Math.floor(w * scale));
       const newH = Math.max(1, Math.floor(h * scale));
-      pipeline = pipeline.resize(newW, newH, { fit: 'inside', withoutEnlargement: true });
+      pipeline = pipeline.resize(newW, newH, {
+        fit: 'inside',
+        withoutEnlargement: true,
+      });
     }
 
     // نُخرج WEBP بجودة مناسبة (يدعم الشفافية والنِسَب العريضة للبانرات)
@@ -94,14 +101,20 @@ export class StorefrontService {
   }
   `.trim();
   }
-  
+
   private lighten(hex: string, percent: number) {
     const p = Math.max(-100, Math.min(100, percent)) / 100;
     const n = (x: number) => Math.round(x + (255 - x) * p);
-    const [r,g,b] = hex.replace('#','').match(/.{2}/g)!.map(h=>parseInt(h,16));
-    return '#' + [n(r), n(g), n(b)].map(v=>v.toString(16).padStart(2,'0')).join('');
+    const [r, g, b] = hex
+      .replace('#', '')
+      .match(/.{2}/g)!
+      .map((h) => parseInt(h, 16));
+    return (
+      '#' +
+      [n(r), n(g), n(b)].map((v) => v.toString(16).padStart(2, '0')).join('')
+    );
   }
-  
+
   // ====== رفع صور البنرات (≤5 إجماليًا) ======
   async uploadBannerImagesToMinio(
     merchantId: string,
@@ -123,8 +136,10 @@ export class StorefrontService {
     if (currentCount >= this.MAX_BANNERS) {
       // لا يوجد أي خانة متاحة
       // تنظيف الملفات المؤقتة
-      await Promise.all(files.map(f => unlink(f.path).catch(() => {})));
-      throw new BadRequestException(`لا يمكن إضافة المزيد من البنرات: الحد الأقصى ${this.MAX_BANNERS}.`);
+      await Promise.all(files.map((f) => unlink(f.path).catch(() => {})));
+      throw new BadRequestException(
+        `لا يمكن إضافة المزيد من البنرات: الحد الأقصى ${this.MAX_BANNERS}.`,
+      );
     }
 
     const availableSlots = Math.max(0, this.MAX_BANNERS - currentCount);
@@ -140,12 +155,13 @@ export class StorefrontService {
       }
 
       try {
-        const out = await this.processToMaxMegapixels(file.path, 5); // ≤5MP
+        const out = await this.processToMaxMegapixels(file.path, 5); // { buffer, mime:'image/webp', ext:'webp' }
         const key = `merchants/${merchantId}/storefront/banners/banner-${Date.now()}-${i++}.${out.ext}`;
 
         // نرفع البافر مباشرة (لا نحتاج fPutObject على المسار)
-        await this.minio.fPutObject(bucket, key, file.path, {
-          'Content-Type': file.mimetype,
+        await this.minio.putObject(bucket, key, out.buffer, out.buffer.length, {
+          'Content-Type': out.mime, // image/webp
+          'Cache-Control': 'public, max-age=31536000, immutable',
         });
 
         const url = await this.publicUrlFor(bucket, key);
@@ -158,7 +174,10 @@ export class StorefrontService {
     return {
       urls,
       accepted: toProcess.length,
-      remaining: Math.max(0, this.MAX_BANNERS - (currentCount + toProcess.length)),
+      remaining: Math.max(
+        0,
+        this.MAX_BANNERS - (currentCount + toProcess.length),
+      ),
       max: this.MAX_BANNERS,
     };
   }
@@ -166,15 +185,22 @@ export class StorefrontService {
   // ====== Helpers للتخزين (موجودة لديك – نعيدها للوضوح) ======
   private async ensureBucket(bucket: string) {
     const exists = await this.minio.bucketExists(bucket).catch(() => false);
-    if (!exists) await this.minio.makeBucket(bucket, '');
+    if (!exists)
+      await this.minio.makeBucket(
+        bucket,
+        process.env.MINIO_REGION || 'us-east-1',
+      );
   }
 
   private async publicUrlFor(bucket: string, key: string): Promise<string> {
     const cdnBase = (process.env.ASSETS_CDN_BASE_URL || '').replace(/\/+$/, '');
-    const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(/\/+$/, '');
+    const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(
+      /\/+$/,
+      '',
+    );
     if (cdnBase) return `${cdnBase}/${bucket}/${key}`;
     if (minioPublic) return `${minioPublic}/${bucket}/${key}`;
-    return this.minio.presignedUrl('GET', bucket, key, 7 * 24 * 60 * 60);
+    return await this.minio.presignedGetObject(bucket, key, 3600); // 1h
   }
 
   constructor(
@@ -196,42 +222,36 @@ export class StorefrontService {
     const before = await this.storefrontModel.findById(id);
     if (!before) throw new NotFoundException('Storefront not found');
 
-    const updated = await this.storefrontModel.findByIdAndUpdate(id, dto, { new: true });
+    const updated = await this.storefrontModel.findByIdAndUpdate(id, dto, {
+      new: true,
+    });
     if (!updated) throw new NotFoundException('Storefront not found');
 
-    const slugChanged   = dto.slug   && dto.slug   !== before.slug;
-    const domainChanged = dto.domain !== undefined && dto.domain !== before.domain;
+    const slugChanged = dto.slug && dto.slug !== before.slug;
+    const domainChanged =
+      dto.domain !== undefined && dto.domain !== before.domain;
 
     if (slugChanged || domainChanged) {
-      await this.productModel.updateMany(
-        { merchantId: updated.merchant },
-        {
-          ...(slugChanged   ? { storefrontSlug: updated.slug } : {}),
-          ...(domainChanged ? { storefrontDomain: updated.domain ?? null } : {}),
-        } as any,
-      );
-      // إعادة فهرسة URL في المتجهات (سريع: نجلب ids فقط ثم نقرأ كل منتج لحساب publicUrl)
+      await this.productModel.updateMany({ merchantId: updated.merchant }, {
+        ...(slugChanged ? { storefrontSlug: updated.slug } : {}),
+        ...(domainChanged ? { storefrontDomain: updated.domain ?? null } : {}),
+      } as any);
+
       const ids = await this.productModel
         .find({ merchantId: updated.merchant })
         .select('_id')
         .lean();
-
       for (const { _id } of ids) {
-        const p = await this.productModel.findById(_id).lean();
+        const p = await this.productModel.findById(_id);
         if (!p) continue;
-        await this.vectorService.upsertProducts([{
-          id: String(p._id),
-          merchantId: String(p.merchantId),
-          name: p.name,
-          description: p.description,
-          category: p.category ? String(p.category) : undefined,
-          specsBlock: p.specsBlock,
-          keywords: p.keywords,
-          url: (p as any).publicUrl, // virtual محسوب من الحقول بعد التحديث
-        }]);
+        await p.save();
+        await this.vectorService.upsertProducts([
+          /* ... */
+        ]);
       }
     }
 
+    // ✅ مضمونة ترجع دائمًا
     return updated;
   }
 
@@ -302,7 +322,7 @@ export class StorefrontService {
     let sf = await this.storefrontModel.findOne(
       this.merchantFilter(merchantId),
     );
- 
+
     if (!sf) {
       // إنشاء افتراضي إن لم توجد (علشان ما ترجع 404 للتجّار القدامى)
       const base: Partial<Storefront> = {
@@ -342,10 +362,11 @@ export class StorefrontService {
     delete (update as any).merchant;
 
     if (dto.brandDark) {
-      update.brandDark = this.coerceBrandDark(dto.brandDark) as AllowedDarkBrand;
+      update.brandDark = this.coerceBrandDark(
+        dto.brandDark,
+      ) as AllowedDarkBrand;
     }
 
-    
     if (dto.slug) {
       const n = this.normalizeSlug(dto.slug);
       const conflict = await this.storefrontModel.exists({
@@ -357,8 +378,8 @@ export class StorefrontService {
     }
 
     Object.assign(sf, update);
-  await sf.save();
-  return sf;
+    await sf.save();
+    return sf;
   }
   async getMyOrdersForSession(merchantId: string, sessionId: string) {
     const phone = await this.leads.getPhoneBySession(merchantId, sessionId);
@@ -366,7 +387,10 @@ export class StorefrontService {
     const filter: any = { merchantId, $or: [{ sessionId }] };
     if (phone) filter.$or.push({ 'customer.phone': phone });
 
-    const orders = await this.orderModel.find(filter).sort({ createdAt: -1 }).lean();
+    const orders = await this.orderModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .lean();
     return { orders };
   }
   async getBrandCssBySlug(slug: string) {

@@ -100,7 +100,8 @@ export class Merchant {
   })
   publicSlug: string;
   
-
+  @Prop({ type: String, trim: true })
+  logoKey?: string;
   @Prop({ default: true })
   publicSlugEnabled: boolean; // للتحكم لاحقًا في إيقاف روابط slug العامة من لوحة الأدمن
   // — Prompt settings —

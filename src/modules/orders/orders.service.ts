@@ -48,7 +48,8 @@ export class OrdersService {
     const phoneNormalized = normalizePhone(dto.customer?.phone);
     const created = await this.orderModel.create({
       ...dto,
-      customer: { ...dto.customer, phoneNormalized }, // ← مهم
+      customer: { ...dto.customer, phoneNormalized },
+      // dto.products جاهزة بعد الـTransform
     });
   
     await this.leadsService.create(dto.merchantId, {
@@ -75,53 +76,40 @@ export class OrdersService {
     return this.orderModel.findByIdAndUpdate(id, { status }, { new: true });
   }
   async upsertFromZid(storeId: string, zidOrder: any): Promise<OrderDocument> {
-    // حدد طريقة ربط storeId → merchantId حسب تصميمك
-    // مثال: استخرج merchantId من قاعدة بيانات merchants عبر storeId
     const merchant = await this.findMerchantByStoreId(storeId);
     if (!merchant) throw new MerchantNotFoundError(storeId);
-    const merchantId = merchant._id;
-
-    // ابحث عن الطلب بـ externalId أو رقم الطلب من زد (غالباً zidOrder.id أو zidOrder.external_id)
+    const merchantId = merchant.id.toString();
+  
     let order = await this.orderModel.findOne({
       merchantId,
       externalId: zidOrder.id,
       source: 'api',
     });
+  
     const phoneNormalized = normalizePhone(zidOrder.customer?.phone);
-
+    const products = (zidOrder.products ?? []).map((p: any) => ({
+      product: p.id || p.productId || undefined,
+      name: p.name,
+      price: Number(p.price) || 0,
+      quantity: Number(p.quantity) || 1,
+    }));
+  
     const orderData = {
-      merchantId: merchant.id.toString(),
-      sessionId: zidOrder.session_id,
+      merchantId,
+      sessionId: zidOrder.session_id ?? `zid:${zidOrder.id}`,
       source: 'api',
       externalId: zidOrder.id,
-      // أضف باقي الحقول التي تحتاجها من zidOrder
-      status: zidOrder.status,
+      status: zidOrder.status ?? 'pending',
       customer: {
         name: zidOrder.customer?.name ?? '',
         phone: zidOrder.customer?.phone ?? '',
         address: zidOrder.customer?.address ?? '',
-        phoneNormalized, 
-
+        phoneNormalized,
       },
-      items:
-        zidOrder.products?.map((p: any) => ({
-          productId: p.id || p.productId || '',
-          name: p.name,
-          price: p.price,
-          quantity: p.quantity,
-        })) ?? [],
-      products:
-        zidOrder.products?.map((p: any) => ({
-          name: p.name,
-          price: p.price,
-          quantity: p.quantity,
-        })) ?? [],
-      createdAt: zidOrder.created_at
-        ? new Date(zidOrder.created_at)
-        : new Date(),
-      // أضف باقي الحقول حسب الحاجة
+      products, // ✅ نفس حقل الـSchema
+      createdAt: zidOrder.created_at ? new Date(zidOrder.created_at) : new Date(),
     };
-
+  
     if (order) {
       await order.set(orderData).save();
     } else {

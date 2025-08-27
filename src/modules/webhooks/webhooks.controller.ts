@@ -366,7 +366,7 @@ export class WebhooksController {
       if (!originalName) originalName = 'file';
       if (!tmpPath) throw new Error('File path missing');
 
-      const { presignedUrl } = await this.chatMediaService.uploadChatMedia(
+      const { url: presignedUrl } = await this.chatMediaService.uploadChatMedia(
         merchantId,
         tmpPath,
         originalName,

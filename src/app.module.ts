@@ -61,6 +61,7 @@ import { SystemModule } from './modules/system/system.module';
 import { ChannelsModule } from './modules/channels/channels.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { CommonModule, AppConfig, ErrorManagementModule } from './common';
+import { PublicModule } from './modules/public/public.module';
 
 @Module({
   imports: [
@@ -155,10 +156,13 @@ import { CommonModule, AppConfig, ErrorManagementModule } from './common';
     ScraperModule,
     KleemModule,
     InstructionsModule,
+    OffersModule,
     AiModule,
-    OffersModule, 
+    ChannelsModule,
     NotificationsModule,
     CatalogModule,
+    OffersModule, 
+    PublicModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
@@ -168,7 +172,6 @@ import { CommonModule, AppConfig, ErrorManagementModule } from './common';
     { provide: APP_GUARD, useClass: RolesGuard },
     RedisConfig,
     OutboxDispatcher,
-    ChannelsModule,
     // 3) Interceptor لجمع المقاييس على كل طلب HTTP
   ],
   exports: [AmqpMetrics],
