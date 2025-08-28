@@ -31,6 +31,7 @@ import { SlugResolverService } from '../public/slug-resolver.service';
 import { PublicRouterController } from '../public/public-router.controller';
 import { ChatWidgetSettings, ChatWidgetSettingsSchema } from '../chat/schema/chat-widget.schema';
 import { Storefront, StorefrontSchema } from '../storefront/schemas/storefront.schema';
+import { ChatModule } from '../chat/chat.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { Storefront, StorefrontSchema } from '../storefront/schemas/storefront.s
     MetricsModule,
     NotificationsModule,
     CatalogModule,
+    forwardRef(() => ChatModule),
     OutboxModule,
   ],
   providers: [

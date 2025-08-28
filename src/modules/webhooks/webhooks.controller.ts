@@ -12,6 +12,7 @@ import {
   ForbiddenException,
   Get,
   Res,
+  HttpCode,
 } from '@nestjs/common';
 import { MessageService } from '../messaging/message.service';
 import { Public } from 'src/common/decorators/public.decorator';
@@ -19,7 +20,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { normalizeIncomingMessage } from './schemas/utils/normalize-incoming';
 import axios from 'axios';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model, Types } from 'mongoose';
+import { ClientSession, Connection, Model, Types } from 'mongoose';
 import {
   Merchant,
   MerchantDocument,
@@ -88,7 +89,24 @@ function verifyMetaSig(appSecret: string, raw: Buffer, sig?: string) {
   const ours = createHmac('sha256', appSecret).update(raw).digest();
   return theirs.length === ours.length && timingSafeEqual(theirs, ours);
 }
-
+async function tryWithTx<T>(
+  conn: Connection,
+  work: (session?: ClientSession) => Promise<T>
+): Promise<T> {
+  let session: ClientSession | undefined;
+  try {
+    session = await conn.startSession();
+    return await session.withTransaction(() => work(session));
+  } catch (e: any) {
+    if (e?.code === 20 || /Transaction numbers are only allowed/i.test(e?.message)) {
+      // Mongo بدون Replica Set → كمل بدون Transaction
+      return await work(undefined);
+    }
+    throw e;
+  } finally {
+    try { await session?.endSession(); } catch {}
+  }
+}
 @ApiTags('Webhooks')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -300,6 +318,8 @@ export class WebhooksController {
 
   @Public()
   @Post('incoming/:merchantId')
+  @HttpCode(200)
+
   @ApiOperation({ summary: 'معالجة الرسائل الواردة من القنوات' })
   @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
   @ApiBody({
@@ -424,7 +444,24 @@ export class WebhooksController {
             session,
           );
         });
-
+        const uiMsg = {
+          _id: undefined,                 // لو تقدر استرجع الـ _id من service أفضل (انظر ملاحظة 2 بالأسفل)
+          role: 'customer' as const,
+          text: normalized.text || '[تم استقبال ملف]',
+          timestamp: normalized.timestamp,
+          rating: null,
+          feedback: null,
+          merchantId,                     // مفيد للبث لغرفة التاجر إن أردت
+          metadata: {
+            ...normalized.metadata,
+            mediaUrl: presignedUrl,
+            mediaType: normalized.mediaType,
+            fileName: originalName,
+            mimeType,
+          },
+        };
+        // بث للغرفة الخاصة بالجلسة
+        this.chatGateway.sendMessageToSession(normalized.sessionId, uiMsg);
         return { status: 'ok', sessionId: normalized.sessionId };
       } finally {
         await session.endSession();
@@ -445,8 +482,8 @@ export class WebhooksController {
     const tx = await this.conn.startSession();
     try {
       let sessionDoc: any;
-      await tx.withTransaction(async () => {
-        sessionDoc = await this.messageService.createOrAppend(
+      sessionDoc = await tryWithTx(this.conn, async (tx) => {
+        const doc = await this.messageService.createOrAppend(
           {
             merchantId: normalized.merchantId,
             sessionId: normalized.sessionId,
@@ -460,9 +497,9 @@ export class WebhooksController {
               },
             ],
           },
-          tx,
+          tx
         );
-
+      
         await this.outbox.enqueueEvent(
           {
             aggregateType: 'conversation',
@@ -478,10 +515,12 @@ export class WebhooksController {
             exchange: 'chat.incoming',
             routingKey: normalized.channel,
           },
-          tx,
+          tx as any
         );
+      
+        return doc;
       });
-
+      
       // 6) Intents (كما هو)
       const intent = detectOrderIntent(normalized.text);
 
@@ -613,7 +652,32 @@ export class WebhooksController {
           role: normalized.role,
         };
       }
-
+      const last = Array.isArray(sessionDoc?.messages) && sessionDoc.messages.length
+      ? sessionDoc.messages[sessionDoc.messages.length - 1]
+      : null;
+    
+    const uiMsg = last ? {
+      _id: String(last._id),
+      role: last.role,
+      text: last.text,
+      timestamp: last.timestamp,
+      rating: last.rating ?? null,
+      feedback: last.feedback ?? null,
+      merchantId: normalized.merchantId,
+      metadata: last.metadata ?? normalized.metadata,
+    } : {
+      _id: undefined,
+      role: 'customer' as const,
+      text: normalized.text,
+      timestamp: normalized.timestamp,
+      rating: null,
+      feedback: null,
+      merchantId: normalized.merchantId,
+      metadata: normalized.metadata,
+    };
+    
+    // ✅ بث فوري للموظفين في لوحة التحكم
+    this.chatGateway.sendMessageToSession(normalized.sessionId, uiMsg);
       // 7) handover
       const messages = sessionDoc.messages;
       const lastRole = messages.length
@@ -640,8 +704,17 @@ export class WebhooksController {
         botEnabled &&
         process.env.N8N_DIRECT_CALL_FALLBACK === 'true'
       ) {
-        const base = this.config.get<string>('N8N_BASE')!.replace(/\/+$/, '');
-        const url = `${base}/webhook/ai-agent`;
+        const base =
+          this.config.get<string>('N8N_BASE_URL')?.replace(/\/+$/, '') ||
+          this.config.get<string>('N8N_BASE')?.replace(/\/+$/, '') ||
+          '';
+      
+        const pathTpl =
+          this.config.get<string>('N8N_INCOMING_PATH') ||
+          '/webhook/ai-agent-{merchantId}';
+      
+        const url = base + pathTpl.replace('{merchantId}', normalized.merchantId);
+      
         await axios.post(url, {
           merchantId: normalized.merchantId,
           sessionId: normalized.sessionId,
@@ -649,6 +722,7 @@ export class WebhooksController {
           text: normalized.text,
         });
       }
+      
 
       return {
         sessionId: normalized.sessionId,
@@ -864,7 +938,17 @@ export class WebhooksController {
         },
       ],
     });
-
+    const uiMsg = {
+      _id: undefined, // أو احصل عليه مثل أعلاه
+      role: 'agent' as const,
+      text,
+      timestamp: new Date(),
+      rating: null,
+      feedback: null,
+      merchantId,
+      metadata: { ...metadata, agentId },
+    };
+    this.chatGateway.sendMessageToSession(sessionId, uiMsg);
     if (process.env.DIRECT_SEND_FALLBACK === 'true') {
       await this.sendReplyToChannel({ sessionId, text, channel, merchantId });
     } else {

@@ -1,4 +1,5 @@
 // src/features/chat/chat.gateway.ts (أو حيث تضعه)
+import { OnModuleInit } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -9,22 +10,28 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { createClient } from 'redis';
 
 @WebSocketGateway({
   path: '/api/chat',
   cors: {
-    origin: [
-      'http://localhost:5173',
-      'https://app.kaleem-ai.com',
-      'https://kaleem-ai.com',
-    ],
+    origin: ['http://localhost:5173','https://app.kaleem-ai.com','https://kaleem-ai.com'],
     credentials: true,
   },
-  transports: ['websocket', 'polling'],
+  transports: ['websocket','polling'],
 })
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
   @WebSocketServer() server: Server;
 
+  async onModuleInit() {
+    const url = process.env.REDIS_URL || 'redis://redis:6379'; // اسم خدمة redis في docker-compose
+    const pub = createClient({ url });
+    const sub = pub.duplicate();
+    await Promise.all([pub.connect(), sub.connect()]);
+    this.server.adapter(createAdapter(pub, sub));
+    // console.log('[WS] Redis adapter ready');
+  }
   handleConnection(client: Socket) {
     const q = client.handshake.query as Record<string, string | undefined>;
     const sessionId = q.sessionId;

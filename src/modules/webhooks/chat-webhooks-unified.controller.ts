@@ -1,5 +1,5 @@
 // src/modules/webhooks/chat-webhooks-unified.controller.ts
-import { Body, Controller, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, HttpCode, Param, Post, Req } from '@nestjs/common';
 import { Public } from 'src/common/decorators/public.decorator';
 import { ApiTags, ApiOperation, ApiParam, ApiBody } from '@nestjs/swagger';
 import { SlugResolverService } from '../public/slug-resolver.service';
@@ -16,6 +16,8 @@ export class ChatWebhooksUnifiedController {
 
   /** استقبال رسائل الويب-شات عبر slug واحد لكل الأوضاع (bubble/iframe/bar/conversational) */
   @Post('incoming/:slug')
+  @HttpCode(200)
+
   @ApiOperation({ summary: 'Inbound via public slug (all webchat modes)' })
   @ApiParam({ name: 'slug', example: 'acme-store' })
   @ApiBody({
@@ -37,11 +39,14 @@ export class ChatWebhooksUnifiedController {
     @Req() req: any,
   ) {
     const { merchantId } = await this.slugResolver.resolve(slug);
-
-    // نجبر القناة = webchat، ونمرّر embedMode كـ metadata للحفظ والتحليلات
+  
+    const channel = body?.channel ?? 'webchat'; // ✅ مهم جداً
+  
     const patched = {
+      merchantId,
+      channel,                 // ✅ أضفناها
       provider: 'webchat',
-      channelId: 'slug:' + slug, // معلومة فقط
+      channelId: 'slug:' + slug,
       sessionId: body?.sessionId,
       user: body?.user,
       text: body?.text,
@@ -52,8 +57,10 @@ export class ChatWebhooksUnifiedController {
         source: 'slug-endpoint',
       },
     };
-
-    return this.webhooks.handleIncoming(merchantId, patched, req);
+  
+    // مرّر نفس الـ merchantId المستخرج من السلاج كـ param،
+    // والـ patched كـ body:
+    return this.webhooks.handleIncoming(patched.merchantId, patched, req);
   }
 
   /** ردود البوت/النظام عبر slug موحّد */

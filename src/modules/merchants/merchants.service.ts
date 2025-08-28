@@ -29,6 +29,7 @@ import { unlink } from 'fs/promises';
 import { buildHbsContext, stripGuardSections } from './services/prompt-utils';
 import { PreviewPromptDto } from './dto/preview-prompt.dto';
 import { StorefrontService } from '../storefront/storefront.service';
+import { ChatWidgetService } from '../chat/chat-widget.service';
 
 function toRecord(input: unknown): Record<string, string> {
   const out: Record<string, string> = {};
@@ -80,6 +81,7 @@ export class MerchantsService {
     private readonly previewSvc: PromptPreviewService,
     private readonly n8n: N8nWorkflowService,
     private readonly businessMetrics: BusinessMetrics,
+    private readonly chatWidgetService: ChatWidgetService,
   ) {
     this.minio = new MinioClient({
       endPoint: process.env.MINIO_ENDPOINT!,
@@ -248,7 +250,12 @@ export class MerchantsService {
       .exec();
     if (!updated)
       throw new InternalServerErrorException('Failed to update merchant');
-
+    if (updateData.publicSlug) {
+      await this.chatWidgetService.syncWidgetSlug(id, updateData.publicSlug);
+    }
+    
+    
+    
     // حدّث finalPromptTemplate بدون تشغيل validate (حتى لا يعبث pre('validate') بالسلاج)
     try {
       const compiled = await this.promptBuilder.compileTemplate(updated);
@@ -260,27 +267,25 @@ export class MerchantsService {
 
     return updated;
   }
-  private async buildLogoUrl(key?: string): Promise<string | undefined> {
-    if (!key) return undefined;
-
-    const bucket = process.env.MINIO_BUCKET!;
-    const cdnBase = (process.env.ASSETS_CDN_BASE_URL || '').replace(/\/+$/, '');
-    const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(
-      /\/+$/,
-      '',
+  private async buildLogoUrl(key: string): Promise<string> {
+    const cdn = (
+      process.env.ASSETS_CDN_BASE_URL ||
+      process.env.MINIO_PUBLIC_URL ||
+      ""
+    ).replace(/\/+$/, "");
+  
+    if (cdn) {
+      return `${cdn}/${process.env.MINIO_BUCKET}/${key}`;
+    }
+  
+    // fallback: presigned URL
+    return await this.minio.presignedGetObject(
+      process.env.MINIO_BUCKET!,
+      key,
+      3600,
     );
-
-    // أولوية 1: CDN ثابت (ملفات عامة أو بروكسي أمام MinIO)
-    if (cdnBase) return `${cdnBase}/${bucket}/${key}`;
-
-    // أولوية 2: نطاق MinIO العام (ملفات عامة أو بروكسي)
-    if (minioPublic) return `${minioPublic}/${bucket}/${key}`;
-
-    // أولوية 3: رابط موقّع قصير الأجل (خاص)
-    // ملاحظة: minio-js يملك presignedGetObject
-    const url = await this.minio.presignedGetObject(bucket, key, 3600); // 1h
-    return url;
   }
+  
 
   private async ensureBucket(bucket: string) {
     try {
@@ -326,40 +331,52 @@ export class MerchantsService {
   ): Promise<string> {
     const merchant = await this.merchantModel.findById(merchantId).exec();
     if (!merchant) throw new NotFoundException('التاجر غير موجود');
-
+  
     const bucket = process.env.MINIO_BUCKET!;
     await this.ensureBucket(bucket);
-
+  
     const ext = this.extFromMime(file.mimetype);
     const key = `merchants/${merchantId}/logo-${Date.now()}.${ext}`;
-
+  
     this.logger.log(`Uploading merchant logo to MinIO: ${bucket}/${key}`);
-
+  
     try {
-      // الأفضل مع Multer memoryStorage: file.buffer
-      // لكن بما أنك تستخدم fPutObject مع file.path فهو يعمل أيضًا:
-      await this.minio.fPutObject(bucket, key, file.path, {
-        'Content-Type': file.mimetype,
-      });
-
-      // خزّن المفتاح فقط
+      // لو multer memoryStorage:
+      if (file.buffer) {
+        await this.minio.putObject(bucket, key, file.buffer, file.size, {
+          "Content-Type": file.mimetype,
+        });
+      } else if (file.path) {
+        await this.minio.fPutObject(bucket, key, file.path, {
+          "Content-Type": file.mimetype,
+        });
+      } else {
+        throw new Error("Empty file");
+      }
+  
+      // خزّن المفتاح في قاعدة البيانات
       merchant.logoKey = key;
+      merchant.logoUrl = await this.buildLogoUrl(key); // 👈 خزّنه كمان للعرض
       await merchant.save();
-
-      // ارجع URL للفرونت (يُولّد الآن حسب بيئتك)
-      const url = await this.buildLogoUrl(key);
-      this.logger.log(`Logo uploaded. key=${key} url=${url}`);
-      return url!;
+  
+      this.logger.log(
+        `Logo uploaded. key=${key} url=${merchant.logoUrl}`,
+      );
+  
+      return merchant.logoUrl!;
     } catch (e) {
-      this.logger.error('MinIO upload failed', e);
-      throw new InternalServerErrorException('STORAGE_UPLOAD_FAILED');
+      this.logger.error("MinIO upload failed", e);
+      throw new InternalServerErrorException("STORAGE_UPLOAD_FAILED");
     } finally {
-      try {
-        await unlink(file.path);
-      } catch {}
+      // احذف الملف لو multer diskStorage
+      if (file.path) {
+        try {
+          await unlink(file.path);
+        } catch {}
+      }
     }
   }
-
+  
   /** جلب كل التجار */
   async findAll(): Promise<MerchantDocument[]> {
     return this.merchantModel.find().exec();
@@ -402,7 +419,7 @@ export class MerchantsService {
       await this.promptBuilder.compileTemplate(merchant);
 
     // توليد رابط الشعار من logoKey
-    const url = await this.buildLogoUrl(merchant.logoKey);
+    const url = await this.buildLogoUrl(merchant.logoKey ?? '');
     // نُضيف حقلًا عابرًا (لن يُحفظ بالـ DB)
     (merchant as any).logoUrl = url;
 

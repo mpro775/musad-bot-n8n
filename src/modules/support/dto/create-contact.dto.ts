@@ -1,42 +1,53 @@
 // src/modules/support/dto/create-contact.dto.ts
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { CONTACT_TOPIC_VALUES, ContactTopic } from '../support.enums';
-
-
-
-
+import { Transform } from 'class-transformer';
 
 export class CreateContactDto {
-@IsString() @MinLength(2)
-name!: string;
+  @IsString()
+  @MinLength(2)
+  name!: string;
 
+  @IsEmail()
+  email!: string;
 
-@IsEmail()
-email!: string;
+  @IsOptional()
+  @IsString()
+  phone?: string;
 
+  // حوّل الإدخال إلى lowercase أولًا ثم تحقق ضمن القائمة
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.toLowerCase() : value,
+  )
+  @IsIn(CONTACT_TOPIC_VALUES, {
+    message:
+      'topic must be one of the following values: sales, support, billing, partnership',
+  })
+  topic!: ContactTopic;
 
-@IsOptional() @IsString()
-phone?: string;
+  @IsString()
+  @MinLength(5)
+  @MaxLength(200)
+  subject!: string;
 
+  @IsString()
+  @MinLength(20)
+  @MaxLength(5000)
+  message!: string;
 
-@IsEnum(Object) // workaround مع class-validator + union
-topic!: ContactTopic;
+  @IsOptional()
+  @IsString()
+  website?: string;
 
-
-@IsString() @MinLength(5) @MaxLength(200)
-subject!: string;
-
-
-@IsString() @MinLength(20) @MaxLength(5000)
-message!: string;
-
-
-// Honeypot لمكافحة السبام — يجب أن تُترك فارغة
-@IsOptional() @IsString()
-website?: string;
-
-
-// reCAPTCHA v2/v3 (اختياري)
-@IsOptional() @IsString()
-recaptchaToken?: string;
+  @IsOptional()
+  @IsString()
+  recaptchaToken?: string;
 }

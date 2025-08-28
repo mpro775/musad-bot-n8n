@@ -21,7 +21,15 @@ export class ChatWidgetService {
     private readonly widgetModel: Model<ChatWidgetSettingsDocument>,
     private readonly http: HttpService,
   ) {}
-
+  async syncWidgetSlug(merchantId: string, slug: string) {
+    await this.widgetModel.findOneAndUpdate(
+      { merchantId },
+      { widgetSlug: slug },
+      { new: true, upsert: true },
+    );
+    return slug;
+  }
+  
   async getSettings(merchantId: string): Promise<ChatWidgetSettings> {
     const settings = await this.widgetModel.findOne({ merchantId }).lean();
     if (!settings) {
@@ -65,11 +73,12 @@ export class ChatWidgetService {
     return widgetSlug;
   }
 
-  async getSettingsByWidgetSlug(widgetSlug: string) {
-    const settings = await this.widgetModel.findOne({ widgetSlug }).lean();
-    if (!settings) throw new NotFoundException('Widget not found');
-    return settings;
+  async getSettingsBySlugOrPublicSlug(slug: string) {
+    return this.widgetModel.findOne({
+      $or: [{ widgetSlug: slug }, { publicSlug: slug }]
+    });
   }
+  
   async handleHandoff(
     merchantId: string,
     dto: { sessionId: string; note?: string },

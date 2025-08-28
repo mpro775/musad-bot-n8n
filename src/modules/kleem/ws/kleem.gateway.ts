@@ -90,7 +90,7 @@ export class KleemGateway
   @SubscribeMessage('admin:subscribe')
   onAdminSubscribe(@ConnectedSocket() client: Socket) {
     client.join('kleem_admin');
-    client.emit('admin:notification', { type: 'joined', title: 'subscribed' });
+    client.emit('admin:notification', { type: 'joined', title: 'مرحباً بك' });
   }
 
   // -------- بث أحداث قادمة من الخدمات --------
@@ -126,6 +126,15 @@ export class KleemGateway
   onBotTyping(p: { sessionId: string; role: 'bot' }) {
     this.server.to(p.sessionId).emit('typing', p);
   }
+
+  @OnEvent('kleem.bot_chunk')
+onBotChunk(p: { sessionId: string; delta: string }) {
+  this.server.to(p.sessionId).emit('bot_chunk', p);
+}
+@OnEvent('kleem.bot_done')
+onBotDone(p: { sessionId: string }) {
+  this.server.to(p.sessionId).emit('bot_done', p);
+}
 
   // -------- استقبال رسائل العميل عبر WS وتمريرها للخدمة --------
   @SubscribeMessage('user_message')

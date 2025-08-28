@@ -25,14 +25,13 @@ export class AiIncomingConsumer implements OnModuleInit {
     if (!m) return;
     try {
       const payload = JSON.parse(m.content.toString());
+      const base = (process.env.N8N_BASE_URL || process.env.N8N_BASE || '').replace(/\/+$/, '');
+const pathTpl = process.env.N8N_INCOMING_PATH || '/webhook/ai-agent-{merchantId}';
+const url = base + pathTpl.replace('{merchantId}', payload.merchantId);
       // payload = { merchantId, sessionId, channel, text, metadata, transport? }
-      await axios.post(
-        process.env.N8N_BASE!.replace(/\/+$/, '') + '/webhook/ai-agent',
-        payload,
-        {
-          headers: { 'X-Worker-Token': process.env.WORKER_TOKEN! },
-        },
-      );
+      await axios.post(url, payload, {
+        headers: { 'X-Worker-Token': process.env.WORKER_TOKEN! },
+      });
       this.ch.ack(m);
     } catch (e) {
       this.logger.error('AI bridge failed', (e as any)?.message);

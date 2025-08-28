@@ -17,8 +17,7 @@ import { Public } from 'src/common/decorators/public.decorator';
 import { 
   ApiSuccessResponse, 
   ApiCreatedResponse as CommonApiCreatedResponse, 
-  CurrentUser, 
-  PaginationDto
+
 } from '../../common';
 
 @ApiTags('ودجة الدردشة')

@@ -62,6 +62,7 @@ import { ChannelsModule } from './modules/channels/channels.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { CommonModule, AppConfig, ErrorManagementModule } from './common';
 import { PublicModule } from './modules/public/public.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 @Module({
   imports: [
@@ -76,7 +77,15 @@ import { PublicModule } from './modules/public/public.module';
     SystemModule,
     CommonModule,
     ErrorManagementModule, // إضافة وحدة إدارة الأخطاء
-
+    EventEmitterModule.forRoot({
+      wildcard: false,
+      delimiter: '.',
+      newListener: false,
+      removeListener: false,
+      maxListeners: 10,
+      verboseMemoryLeak: false,
+      ignoreErrors: false,
+    }),
     // فعّل Passport و JWT هنا
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
