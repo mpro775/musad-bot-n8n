@@ -4,9 +4,10 @@ import { HydratedDocument, Types } from 'mongoose';
 
 export type MessageSessionDocument = HydratedDocument<MessageSession>;
 
-@Schema()
+@Schema({ _id: false }) // هذا كـ "class schema", سنعرّف _id للحقل نفسه
 export class SingleMessage {
-  @Prop() _id?: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, default: () => new Types.ObjectId() })
+  _id!: Types.ObjectId;
 
   @Prop({ type: String, enum: ['customer', 'bot', 'agent'], required: true })
   role: 'customer' | 'bot' | 'agent';
@@ -24,7 +25,7 @@ export class SingleMessage {
   keywords?: string[];
 
   @Prop({ type: Number, enum: [1, 0, null], default: null })
-  rating?: number | null;
+  rating?: 1 | 0 | null;
 
   @Prop({ type: String, default: null })
   feedback?: string | null;
@@ -35,6 +36,8 @@ export class SingleMessage {
   @Prop({ type: Date, default: null })
   ratedAt?: Date | null;
 }
+
+export const SingleMessageSchema = SchemaFactory.createForClass(SingleMessage);
 
 @Schema({ timestamps: true })
 export class MessageSession {
@@ -53,13 +56,12 @@ export class MessageSession {
   @Prop({ type: Boolean, default: false })
   handoverToAgent: boolean;
 
-  @Prop({ type: [SingleMessage], default: [] })
+  // IMPORTANT: استخدم السكيمة الفرعية هنا
+  @Prop({ type: [SingleMessageSchema], default: [] })
   messages: SingleMessage[];
 }
 
 export const MessageSessionSchema =
   SchemaFactory.createForClass(MessageSession);
-
-// فهارس مفيدة:
 MessageSessionSchema.index({ merchantId: 1, sessionId: 1, channel: 1 });
 MessageSessionSchema.index({ createdAt: -1 });

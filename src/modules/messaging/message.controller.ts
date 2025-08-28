@@ -27,6 +27,8 @@ import {
 import { Public } from 'src/common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GeminiService } from '../ai/gemini.service';
+import { RateMessageDto } from './dto/rate-message.dto';  // ✅
+
 interface InstructionResult {
   badReply: string;
   instruction: string;
@@ -212,27 +214,8 @@ export class MessageController {
     description: 'معرف الرسالة المراد تقييمها',
     example: '60d0fe4f5311236168a109ca',
   })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        rating: {
-          type: 'number',
-          description: 'تقييم الرسالة (عادةً من 1 إلى 5)',
-          minimum: 1,
-          maximum: 5,
-          example: 4,
-        },
-        feedback: {
-          type: 'string',
-          description: 'تعليق أو ملاحظات إضافية حول التقييم',
-          example: 'الرد كان مفيداً لكنه يحتوي على بعض المعلومات غير الدقيقة',
-          nullable: true,
-        },
-      },
-      required: ['rating'],
-    },
-  })
+  @ApiBody({ type: RateMessageDto })
+
   @ApiOkResponse({
     description: 'تم تقييم الرسالة بنجاح',
     schema: {
@@ -262,17 +245,17 @@ export class MessageController {
   async rateMessage(
     @Param('sessionId') sessionId: string,
     @Param('messageId') messageId: string,
-    @Body() body: { rating: number; feedback?: string },
+    @Body() body: RateMessageDto,
     @Req() req,
   ) {
-    const userId = req.user._id;
-    const { rating, feedback } = body;
+    const userId = req.user?._id?.toString?.() ?? 'system';
     await this.messageService.rateMessage(
       sessionId,
       messageId,
       userId,
-      rating,
-      feedback,
+      body.rating,
+      body.feedback,
+      req.user?.merchantId, // إن متوفر
     );
     return { status: 'ok' };
   }

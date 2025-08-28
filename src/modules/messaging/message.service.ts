@@ -42,6 +42,7 @@ export class MessageService {
       const tokens = m.text.split(/\s+/);
       const keywords = removeStopwords(tokens, [...ara, ...eng]);
       return {
+        _id: new Types.ObjectId(),
         role: m.role,
         text: m.text,
         metadata: m.metadata || {},
@@ -56,20 +57,20 @@ export class MessageService {
     if (existing) {
       existing.messages.push(...toInsert);
       existing.markModified('messages');
-      await existing.save({ session }); // ✅
+      await existing.save({ session });            // ✅ احفظ أولًا
+      if (lastMsg) this.chatGateway.sendMessageToSession(dto.sessionId, lastMsg); // ✅ ثم أرسل
       return existing;
     } else {
       const [created] = await this.messageModel.create(
-        [
-          {
-            merchantId: mId,
-            sessionId: dto.sessionId,
-            channel: dto.channel,
-            messages: toInsert,
-          },
-        ],
-        { session }, // ✅
+        [{
+          merchantId: mId,
+          sessionId: dto.sessionId,
+          channel: dto.channel,
+          messages: toInsert,
+        }],
+        { session },
       );
+      if (lastMsg) this.chatGateway.sendMessageToSession(dto.sessionId, lastMsg); // ✅ بعد الإنشاء
       return created;
     }
   }
@@ -77,39 +78,44 @@ export class MessageService {
     sessionId: string,
     messageId: string,
     userId: string,
-    rating: number,
+    rating: 0 | 1,
     feedback?: string,
     merchantId?: string,
   ) {
-    // حدّث الرسالة (نفس ما تعمل الآن)
-    await this.messageModel.updateOne(
-      { sessionId, 'messages._id': messageId },
+    const res = await this.messageModel.updateOne(
+      { sessionId, 'messages._id': new Types.ObjectId(messageId) },
       {
         $set: {
           'messages.$.rating': rating,
-          'messages.$.feedback': feedback,
-          'messages.$.ratedBy': userId,
+          'messages.$.feedback': feedback ?? null,
+          'messages.$.ratedBy': new Types.ObjectId(userId),
           'messages.$.ratedAt': new Date(),
         },
       },
     );
-
-    // إذا التقييم سلبي، استخرج نص الرسالة وولّد التوجيه واحفظه
+  
+    if (res.matchedCount === 0) {
+      throw new Error('لم يتم العثور على الرسالة للتقييم'); // أو BadRequestException
+    }
+  
     if (rating === 0) {
-      const session = await this.messageModel.findOne({ sessionId });
-      const msg = session?.messages.find(
-        (m) => m._id?.toString() === messageId,
-      );
-      if (msg) {
+      const session = await this.messageModel.findOne(
+        { sessionId },
+        { messages: { $elemMatch: { _id: new Types.ObjectId(messageId) } } }
+      ).lean();
+  
+      const msg = session?.messages?.[0];
+      if (msg?.text) {
         await this.geminiService.generateAndSaveInstructionFromBadReply(
           msg.text,
           merchantId,
         );
       }
     }
-
+  
     return { status: 'ok' };
   }
+  
   async findBySession(
     sessionId: string,
   ): Promise<MessageSessionDocument | null> {
