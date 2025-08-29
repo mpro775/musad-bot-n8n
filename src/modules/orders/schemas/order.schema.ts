@@ -45,7 +45,11 @@ export class Order {
   @Prop()
   externalId?: string;
 
-  @Prop({ default: 'manual', enum: ['manual', 'api', 'imported', 'mini-store', 'widget', 'storefront'] })  source?: string;
+  @Prop({
+    default: 'storefront',
+    enum: ['manual', 'api', 'imported', 'mini-store', 'widget', 'storefront'],
+  })
+  source?: string;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

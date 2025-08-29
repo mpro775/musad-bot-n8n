@@ -22,10 +22,6 @@ import { Product, ProductDocument } from '../products/schemas/product.schema';
 
 const unlink = fs.unlink;
 
-function escapeRegExp(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 @Injectable()
 export class CategoriesService {
   private readonly logger = new Logger(CategoriesService.name);
@@ -63,7 +59,18 @@ export class CategoriesService {
     const path = basePath ? `${basePath}/${slug}` : slug;
     return { ancestors, depth, path };
   }
+  private getPublicFileUrl(bucket: string, key: string) {
+    // الأفضل تعرّف دومين عام من البيئة لتجنّب Mixed Content
+    const base =
+      process.env.MINIO_PUBLIC_BASEURL || // مثل: https://files.kaleem-ai.com
+      process.env.MINIO_ENDPOINT || // كملاذ أخير
+      '';
+    if (!base) return `/${bucket}/${key}`;
 
+    // لو endpoint يبدأ بـ http فحوّله https (تجنّب الحجب في الموقع https)
+    const httpsBase = base.replace(/^http:\/\//i, 'https://');
+    return `${httpsBase.replace(/\/+$/, '')}/${bucket}/${key}`;
+  }
   async create(dto: CreateCategoryDto) {
     const merchantId = new Types.ObjectId(dto.merchantId);
     const slug =
@@ -118,28 +125,29 @@ export class CategoriesService {
   }
 
   async breadcrumbs(id: string, merchantId: string): Promise<any[]> {
+    const mId = new Types.ObjectId(merchantId);
     const doc = await this.categoryModel
-      .findOne({ _id: id, merchantId })
+      .findOne({ _id: id, merchantId: mId })
       .lean();
     if (!doc) throw new CategoryNotFoundError(id);
     const ids = [...doc.ancestors, doc._id];
-    const crumbs = await this.categoryModel
+    return this.categoryModel
       .find({ _id: { $in: ids } }, { name: 1, slug: 1, path: 1, depth: 1 })
       .sort({ depth: 1 })
       .lean();
-    return crumbs;
   }
 
   async subtree(id: string, merchantId: string) {
-    // جميع الأحفاد عبر ancestors
+    const mId = new Types.ObjectId(merchantId);
     const root = await this.categoryModel
-      .findOne({ _id: id, merchantId })
+      .findOne({ _id: id, merchantId: mId })
       .lean();
     if (!root) throw new CategoryNotFoundError(id);
+
     const all = await this.categoryModel
-      .find({ merchantId, $or: [{ _id: id }, { ancestors: root._id }] })
+      .find({ merchantId: mId, $or: [{ _id: id }, { ancestors: root._id }] })
       .lean();
-    // ابنِ شجرة انطلاقًا من root فقط
+
     const map = new Map<string, any>();
     all.forEach((c) => map.set(c._id.toString(), { ...c, children: [] }));
     all.forEach((c) => {
@@ -149,9 +157,9 @@ export class CategoriesService {
     });
     return map.get(root._id.toString());
   }
-
   async findOne(id: string, merchantId: string) {
-    const cat = await this.categoryModel.findOne({ _id: id, merchantId });
+    const mId = new Types.ObjectId(merchantId);
+    const cat = await this.categoryModel.findOne({ _id: id, merchantId: mId });
     if (!cat) throw new CategoryNotFoundError(id);
     return cat;
   }
@@ -271,7 +279,12 @@ export class CategoriesService {
 
   // --- نقل/ترتيب العقدة ---
   async move(id: string, merchantId: string, dto: MoveCategoryDto) {
-    const current = await this.categoryModel.findOne({ _id: id, merchantId });
+    const mId = new Types.ObjectId(merchantId);
+
+    const current = await this.categoryModel.findOne({
+      _id: id,
+      merchantId: mId,
+    });
     if (!current) throw new CategoryNotFoundError(id);
 
     const newParentId = dto.hasOwnProperty('parent')
@@ -283,7 +296,7 @@ export class CategoriesService {
     if (newParentId) {
       const isDescendant = await this.categoryModel.exists({
         _id: newParentId,
-        merchantId,
+        merchantId: mId, // ← هنا
         ancestors: current._id,
       });
       if (isDescendant)
@@ -292,14 +305,13 @@ export class CategoriesService {
 
     const session = await this.categoryModel.db.startSession();
     await session.withTransaction(async () => {
-      // حدّد الموضع الجديد بين الإخوة
-      const newOrder = await this.calcNewOrder(merchantId, newParentId, {
+      const newOrder = await this.calcNewOrder(mId, newParentId, {
+        // ← هنا مرّر mId
         afterId: dto.afterId ?? null,
         beforeId: dto.beforeId ?? null,
         position: dto.position ?? null,
       });
 
-      // استعمل update الموجودة لديك لحساب ancestors/path/depth عند تغيير parent
       const parentChanged =
         (newParentId ?? null)?.toString() !==
         (current.parent ?? null)?.toString();
@@ -307,25 +319,15 @@ export class CategoriesService {
         await this.update(id, merchantId, { parent: newParentId as any });
       }
 
-      // ضع order حسب الموضع الجديد
       await this.categoryModel.updateOne(
         { _id: current._id },
         { $set: { order: newOrder } },
         { session },
       );
 
-      // أعد ترقيم الإخوة للجديد والقديم (لو تغيّر الأب)
-      await this.normalizeSiblingsOrders(
-        new Types.ObjectId(merchantId),
-        newParentId,
-        session,
-      );
+      await this.normalizeSiblingsOrders(mId, newParentId, session);
       if (parentChanged) {
-        await this.normalizeSiblingsOrders(
-          new Types.ObjectId(merchantId),
-          current.parent as any,
-          session,
-        );
+        await this.normalizeSiblingsOrders(mId, current.parent as any, session);
       }
     });
     session.endSession();
@@ -453,15 +455,11 @@ export class CategoriesService {
   private async ensureBucket(bucket: string) {
     const exists = await this.minio.bucketExists(bucket).catch(() => false);
     if (!exists) {
-      await this.minio.makeBucket(bucket, process.env.MINIO_REGION || 'us-east-1');
+      await this.minio.makeBucket(
+        bucket,
+        process.env.MINIO_REGION || 'us-east-1',
+      );
     }
-  }
-
-  private extFromMime(mime: string) {
-    if (mime === 'image/png') return 'png';
-    if (mime === 'image/jpeg') return 'jpg';
-    if (mime === 'image/webp') return 'webp';
-    return 'bin';
   }
 
   private async publicUrlFor(bucket: string, key: string): Promise<string> {

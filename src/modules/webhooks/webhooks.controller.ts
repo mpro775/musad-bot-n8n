@@ -144,46 +144,7 @@ export class WebhooksController {
     });
   }
 
-  /** تحقق توقيع Meta/Telegram لو توفرت المؤشرات */
-  private async verifyIfPossible(merchantId: string, req: any): Promise<void> {
-    const rawBody: Buffer =
-      (req as any).rawBody || Buffer.from(JSON.stringify(req.body || {}));
-
-    // Telegram header
-    const tgHeader =
-      req.headers?.['x-telegram-bot-api-secret-token'] ||
-      req.headers?.['X-Telegram-Bot-Api-Secret-Token'];
-    if (tgHeader) {
-      const expected = process.env.TELEGRAM_WEBHOOK_SECRET || '';
-      const ok =
-        expected &&
-        (() => {
-          try {
-            return timingSafeEqual(
-              Buffer.from(String(tgHeader)),
-              Buffer.from(expected),
-            );
-          } catch {
-            return false;
-          }
-        })();
-      if (!ok) throw new ForbiddenException('Invalid Telegram signature');
-      return; // تم التحقق
-    }
-
-    // Meta (WhatsApp Cloud) header
-    const metaSig =
-      req.headers?.['x-hub-signature-256'] || req.headers?.['x-hub-signature'];
-    if (metaSig) {
-      // احصل على appSecret من قناة whatsapp_cloud الافتراضية
-      const c = await this.getDefaultChannel(merchantId, 'whatsapp_cloud');
-      const appSecretEnc = c?.appSecretEnc;
-      if (!appSecretEnc) throw new ForbiddenException('App secret missing');
-      const appSecret = decryptSecret(appSecretEnc);
-      const ok = verifyMetaSig(appSecret, rawBody, String(metaSig));
-      if (!ok) throw new ForbiddenException('Invalid Meta signature');
-    }
-  }
+ 
 
   /** تحقّق إذا البوت مفعّل على القناة الافتراضية للمزوّد */
   private async isBotEnabled(

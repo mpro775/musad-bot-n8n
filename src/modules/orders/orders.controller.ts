@@ -23,8 +23,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { 
   ApiSuccessResponse, 
   ApiCreatedResponse as CommonApiCreatedResponse, 
-  CurrentUser, 
-  PaginationDto
+
 } from '../../common';
 
 /**

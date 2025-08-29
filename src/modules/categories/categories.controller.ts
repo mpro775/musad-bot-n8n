@@ -24,6 +24,7 @@ import {
   ApiParam,
   ApiBody,
   ApiResponse,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { 
@@ -32,6 +33,8 @@ import {
   CurrentUser, 
   PaginationDto
 } from '../../common';
+import multer from 'multer';
+import os from 'os';
 
 @ApiTags('الفئات')
 @Controller('categories')
@@ -105,20 +108,40 @@ export class CategoriesController {
   }
 
   @Post(':id/image')
-  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'رفع صورة الفئة (≤ 2MB، تُحوَّل إلى webp مربّعة)' })
+  @ApiQuery({ name: 'merchantId', required: true })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(FileInterceptor('file', {
+    storage: multer.diskStorage({
+      destination: os.tmpdir(), // تخزين مؤقت على القرص
+      filename: (_req, file, cb) => {
+        const ext = (file.originalname.split('.').pop() || 'img').toLowerCase();
+        cb(null, `cat-${Date.now()}.${ext}`);
+      },
+    }),
+    limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+    fileFilter: (_req, file, cb) => {
+      const ok = /^(image\/png|image\/jpe?g|image\/webp)$/i.test(file.mimetype);
+      cb(ok ? null : new BadRequestException('صيغة الصورة غير مدعومة (png/jpg/webp فقط)'), ok);
+    },
+  }))
   async uploadImage(
     @Param('id') id: string,
     @Query('merchantId') merchantId: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('لم يتم إرفاق ملف');
-    return {
-      url: await this.categories.uploadCategoryImageToMinio(
-        id,
-        merchantId,
-        file,
-      ),
-    };
+    const url = await this.categories.uploadCategoryImageToMinio(id, merchantId, file);
+    return { url };
   }
 
   @Put(':id')

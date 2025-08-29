@@ -248,15 +248,16 @@ export class MessageController {
     @Body() body: RateMessageDto,
     @Req() req,
   ) {
-    const userId = req.user?._id?.toString?.() ?? 'system';
-    await this.messageService.rateMessage(
-      sessionId,
-      messageId,
-      userId,
-      body.rating,
-      body.feedback,
-      req.user?.merchantId, // إن متوفر
-    );
+    const userId = req.user?.userId ?? req.user?._id ?? null;
+
+await this.messageService.rateMessage(
+  sessionId,
+  messageId,
+  userId,              // ← الآن يحمل 24-hex فعلاً
+  body.rating,
+  body.feedback,
+  req.user?.merchantId // مرّره للخدمة لفلترة متعددة المستأجرين
+);
     return { status: 'ok' };
   }
   @Post('generate-instructions-from-bad-replies')

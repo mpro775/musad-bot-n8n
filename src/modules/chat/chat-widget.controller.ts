@@ -7,22 +7,31 @@ import {
   Body,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiParam, ApiResponse, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiBody,
+} from '@nestjs/swagger';
 import { ChatWidgetService } from './chat-widget.service';
 import { UpdateWidgetSettingsDto } from './dto/update-widget-settings.dto';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { HandoffDto } from './dto/handoff.dto';
 import { Public } from 'src/common/decorators/public.decorator';
-import { 
-  ApiSuccessResponse, 
-  ApiCreatedResponse as CommonApiCreatedResponse, 
-
+import {
+  ApiSuccessResponse,
+  ApiCreatedResponse as CommonApiCreatedResponse,
 } from '../../common';
 
 @ApiTags('ودجة الدردشة')
 @UseGuards(JwtAuthGuard, RolesGuard) // تأكد من أنك عدلت الـ Guards ليتحققوا من الصلاحيات
-@ApiParam({ name: 'merchantId', description: 'معرف التاجر', example: 'm_12345' })
+@ApiParam({
+  name: 'merchantId',
+  description: 'معرف التاجر',
+  example: 'm_12345',
+})
 @Controller('merchants/:merchantId/widget-settings')
 export class ChatWidgetController {
   constructor(private readonly svc: ChatWidgetService) {}
@@ -61,7 +70,9 @@ export class ChatWidgetController {
   }
   @Get('embed-settings')
   @Public()
-  @ApiOperation({ summary: 'الحصول على إعدادات التضمين (الوضع + رابط المشاركة)' })
+  @ApiOperation({
+    summary: 'الحصول على إعدادات التضمين (الوضع + رابط المشاركة)',
+  })
   @ApiResponse({ status: 200, description: 'تم العثور على إعدادات التضمين.' })
   async getEmbedSettings(@Param('merchantId') merchantId: string) {
     return this.svc.getEmbedSettings(merchantId);
@@ -84,7 +95,10 @@ export class ChatWidgetController {
 
   @Put('embed-settings')
   @ApiOperation({ summary: 'تحديث وضع التضمين الافتراضي' })
-  @ApiBody({ type: UpdateWidgetSettingsDto, description: 'يتم قبول حقل embedMode فقط' })
+  @ApiBody({
+    type: UpdateWidgetSettingsDto,
+    description: 'يتم قبول حقل embedMode فقط',
+  })
   @ApiResponse({ status: 200, description: 'تم تحديث وضع التضمين بنجاح.' })
   async updateEmbedSettings(
     @Param('merchantId') merchantId: string,

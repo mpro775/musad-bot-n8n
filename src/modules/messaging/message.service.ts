@@ -23,10 +23,7 @@ export class MessageService {
     private readonly geminiService: GeminiService,
   ) {}
 
-  async createOrAppend(
-    dto: CreateMessageDto,
-    session?: ClientSession,
-  ): Promise<MessageSessionDocument> {
+  async createOrAppend(dto: CreateMessageDto, session?: ClientSession) {
     const mId = new Types.ObjectId(dto.merchantId);
 
     const existing = await this.messageModel
@@ -35,45 +32,53 @@ export class MessageService {
         sessionId: dto.sessionId,
         channel: dto.channel,
       })
-      .session(session ?? null) // ✅
+      .session(session ?? null)
       .exec();
 
-    const toInsert = dto.messages.map((m) => {
-      const tokens = m.text.split(/\s+/);
-      const keywords = removeStopwords(tokens, [...ara, ...eng]);
-      return {
-        _id: new Types.ObjectId(),
-        role: m.role,
-        text: m.text,
-        metadata: m.metadata || {},
-        timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
-        keywords,
-      };
-    });
+    const toInsert = dto.messages.map((m) => ({
+      _id: new Types.ObjectId(),
+      role: m.role,
+      text: m.text,
+      metadata: m.metadata || {},
+      timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+      keywords: removeStopwords(m.text.split(/\s+/), [...ara, ...eng]),
+    }));
 
     const lastMsg = toInsert[toInsert.length - 1];
-    if (lastMsg) this.chatGateway.sendMessageToSession(dto.sessionId, lastMsg);
 
     if (existing) {
       existing.messages.push(...toInsert);
       existing.markModified('messages');
-      await existing.save({ session });            // ✅ احفظ أولًا
-      if (lastMsg) this.chatGateway.sendMessageToSession(dto.sessionId, lastMsg); // ✅ ثم أرسل
-      return existing;
+      await existing.save({ session });
     } else {
-      const [created] = await this.messageModel.create(
-        [{
+      await this.messageModel.create(
+        [
+          {
+            merchantId: mId,
+            sessionId: dto.sessionId,
+            channel: dto.channel,
+            messages: toInsert,
+          },
+        ],
+        { session },
+      );
+    }
+
+    // ✅ إرسال واحد فقط بعد تأكيد الكتابة
+    if (lastMsg) this.chatGateway.sendMessageToSession(dto.sessionId, lastMsg);
+
+    return (
+      existing ??
+      (await this.messageModel
+        .findOne({
           merchantId: mId,
           sessionId: dto.sessionId,
           channel: dto.channel,
-          messages: toInsert,
-        }],
-        { session },
-      );
-      if (lastMsg) this.chatGateway.sendMessageToSession(dto.sessionId, lastMsg); // ✅ بعد الإنشاء
-      return created;
-    }
+        })
+        .exec())
+    );
   }
+
   async rateMessage(
     sessionId: string,
     messageId: string,
@@ -93,17 +98,19 @@ export class MessageService {
         },
       },
     );
-  
+
     if (res.matchedCount === 0) {
       throw new Error('لم يتم العثور على الرسالة للتقييم'); // أو BadRequestException
     }
-  
+
     if (rating === 0) {
-      const session = await this.messageModel.findOne(
-        { sessionId },
-        { messages: { $elemMatch: { _id: new Types.ObjectId(messageId) } } }
-      ).lean();
-  
+      const session = await this.messageModel
+        .findOne(
+          { sessionId },
+          { messages: { $elemMatch: { _id: new Types.ObjectId(messageId) } } },
+        )
+        .lean();
+
       const msg = session?.messages?.[0];
       if (msg?.text) {
         await this.geminiService.generateAndSaveInstructionFromBadReply(
@@ -112,10 +119,10 @@ export class MessageService {
         );
       }
     }
-  
+
     return { status: 'ok' };
   }
-  
+
   async findBySession(
     sessionId: string,
   ): Promise<MessageSessionDocument | null> {
