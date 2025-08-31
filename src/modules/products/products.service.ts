@@ -119,14 +119,19 @@ export class ProductsService {
   private genStoreSlugFallback(merchantId: Types.ObjectId) {
     return this.normalizeSlug(`store-${merchantId.toString().slice(-8)}`);
   }
-  private isOfferActive(ofr?: { enabled?: boolean; startAt?: Date; endAt?: Date; newPrice?: number }) {
+  private isOfferActive(ofr?: {
+    enabled?: boolean;
+    startAt?: Date;
+    endAt?: Date;
+    newPrice?: number;
+  }) {
     if (!ofr?.enabled || ofr.newPrice == null) return false;
     const now = new Date();
     const startOk = ofr.startAt ? now >= new Date(ofr.startAt) : true;
     const endOk = ofr.endAt ? now <= new Date(ofr.endAt) : true;
     return startOk && endOk;
   }
-  
+
   private async ensureUniqueSlug(merchantId: Types.ObjectId, base: string) {
     // لو base فاضي استخدم fallback
     let s = base && base.trim() ? base : this.genStoreSlugFallback(merchantId);
@@ -142,11 +147,18 @@ export class ProductsService {
   // ====== Helpers للتخزين ======
   private async ensureBucket(bucket: string) {
     const exists = await this.minio.bucketExists(bucket).catch(() => false);
-    if (!exists) await this.minio.makeBucket(bucket, process.env.MINIO_REGION || 'us-east-1');
+    if (!exists)
+      await this.minio.makeBucket(
+        bucket,
+        process.env.MINIO_REGION || 'us-east-1',
+      );
   }
   private async publicUrlFor(bucket: string, key: string): Promise<string> {
     const cdnBase = (process.env.ASSETS_CDN_BASE_URL || '').replace(/\/+$/, '');
-    const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(/\/+$/, '');
+    const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(
+      /\/+$/,
+      '',
+    );
 
     if (cdnBase) return `${cdnBase}/${bucket}/${key}`;
     if (minioPublic) return `${minioPublic}/${bucket}/${key}`;
@@ -184,29 +196,36 @@ export class ProductsService {
     const MAX_PIXELS = Math.floor(maxMP * 1_000_000);
     const img = sharp(inputPath, { failOn: 'none' });
     const meta = await img.metadata();
-    const w = meta.width ?? 0, h = meta.height ?? 0;
-    if (w <= 0 || h <= 0) throw new BadRequestException('لا يمكن قراءة أبعاد الصورة');
-  
+    const w = meta.width ?? 0,
+      h = meta.height ?? 0;
+    if (w <= 0 || h <= 0)
+      throw new BadRequestException('لا يمكن قراءة أبعاد الصورة');
+
     let pipeline = img;
-  
+
     // لو عدد البكسلات كبير، صغّر مع الحفاظ على النسبة (بدون قصّ)
     const total = w * h;
     if (total > MAX_PIXELS) {
       const scale = Math.sqrt(MAX_PIXELS / total);
       const newW = Math.max(1, Math.floor(w * scale));
       const newH = Math.max(1, Math.floor(h * scale));
-      pipeline = pipeline.resize(newW, newH, { fit: 'inside', withoutEnlargement: true });
+      pipeline = pipeline.resize(newW, newH, {
+        fit: 'inside',
+        withoutEnlargement: true,
+      });
     }
-  
+
     // جرّب WEBP بجودات متدرجة لتصل ≤ 2MB
     for (const q of [85, 80, 70, 60, 50]) {
       const buf = await pipeline.webp({ quality: q }).toBuffer();
-      if (buf.length <= 2 * 1024 * 1024) return { buffer: buf, mime: 'image/webp', ext: 'webp' };
+      if (buf.length <= 2 * 1024 * 1024)
+        return { buffer: buf, mime: 'image/webp', ext: 'webp' };
     }
     // محاولة أخيرة JPEG
     for (const q of [80, 70, 60, 50]) {
       const buf = await pipeline.jpeg({ quality: q }).toBuffer();
-      if (buf.length <= 2 * 1024 * 1024) return { buffer: buf, mime: 'image/jpeg', ext: 'jpg' };
+      if (buf.length <= 2 * 1024 * 1024)
+        return { buffer: buf, mime: 'image/jpeg', ext: 'jpg' };
     }
     throw new BadRequestException('تعذر ضغط الصورة تحت 2MB؛ استخدم صورة أصغر.');
   }
@@ -821,6 +840,4 @@ export class ProductsService {
     // (اختياري) احذف من الفيكتور أيضا
     // await this.vectorService.removeProductEmbedding(externalId);
   }
-
-
 }

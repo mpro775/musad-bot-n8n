@@ -145,12 +145,20 @@ export class StorefrontController {
     return this.svc.uploadBannerImagesToMinio(merchantId, files);
   }
   @Public()
-  @Get('my-orders')
-  myOrders(
+  @Get('merchant/:merchantId/my-orders')
+  @ApiOperation({ summary: 'جلب طلبات الزبون حسب الجلسة/الهاتف' })
+  @ApiParam({ name: 'merchantId', description: 'معرّف التاجر' })
+  async myOrders(
     @Param('merchantId') merchantId: string,
     @Query('sessionId') sessionId: string,
+    @Query('phone') phone?: string,          // ✅ دعم الهاتف مباشرة من الطلب
+    @Query('limit') limit = '50',
   ) {
-    return this.svc.getMyOrdersForSession(merchantId, sessionId);
+    if (!merchantId || (!sessionId && !phone)) {
+      throw new BadRequestException('merchantId و sessionId/phone مطلوبة');
+    }
+    const lim = Math.min(parseInt(limit, 10) || 50, 200);
+    return this.svc.getMyOrdersForSession(merchantId, sessionId, phone, lim);
   }
 
   @Get('/public/storefront/:slug/brand.css')

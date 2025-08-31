@@ -81,7 +81,6 @@ export class Product {
   @Prop({ unique: true, sparse: true })
   uniqueKey: string;
 
-  
   @Prop({ type: String, enum: Object.values(Currency), default: Currency.SAR })
   currency: Currency;
 
@@ -168,7 +167,9 @@ function recomputePublicUrlStored(doc: any) {
   try {
     // الـ virtual أعلاه
     doc.publicUrlStored = doc.publicUrl;
-  } catch {}
+  } catch {
+    // ignore
+  }
 }
 
 ProductSchema.pre('save', function (next) {
@@ -180,11 +181,25 @@ ProductSchema.pre('findOneAndUpdate', function (next) {
   // سنجلب الوثيقة بعد التحديث في service ونحدّثها (مُبيّن أدناه)
   next();
 });
-ProductSchema.post('save', function () { recomputePublicUrlStored(this); });
+ProductSchema.post('save', function () {
+  recomputePublicUrlStored(this);
+});
 
-ProductSchema.post('init', function () { computeDerived(this); });
-ProductSchema.post('save', function () { computeDerived(this); });
-ProductSchema.post('find', function (docs) { docs.forEach(computeDerived); });
-ProductSchema.post('findOne', function (doc) { if (doc) computeDerived(doc); });
-ProductSchema.index({ 'offer.enabled': 1, 'offer.startAt': 1, 'offer.endAt': 1 });
+ProductSchema.post('init', function () {
+  computeDerived(this);
+});
+ProductSchema.post('save', function () {
+  computeDerived(this);
+});
+ProductSchema.post('find', function (docs) {
+  docs.forEach(computeDerived);
+});
+ProductSchema.post('findOne', function (doc) {
+  if (doc) computeDerived(doc);
+});
+ProductSchema.index({
+  'offer.enabled': 1,
+  'offer.startAt': 1,
+  'offer.endAt': 1,
+});
 ProductSchema.index({ merchantId: 1, category: 1, status: 1, isAvailable: 1 });

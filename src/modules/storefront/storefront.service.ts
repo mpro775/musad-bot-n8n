@@ -35,6 +35,7 @@ export interface StorefrontResult {
   merchant: any;
   products: any[];
   categories: any[];
+  storefront: any;
 }
 @Injectable()
 export class StorefrontService {
@@ -164,7 +165,7 @@ export class StorefrontService {
           'Cache-Control': 'public, max-age=31536000, immutable',
         });
 
-        const url = await this.publicUrlFor(bucket, key);
+        const url = this.publicUrlFor(bucket, key);
         urls.push(url);
       } finally {
         await unlink(file.path).catch(() => {});
@@ -192,15 +193,11 @@ export class StorefrontService {
       );
   }
 
-  private async publicUrlFor(bucket: string, key: string): Promise<string> {
-    const cdnBase = (process.env.ASSETS_CDN_BASE_URL || '').replace(/\/+$/, '');
-    const minioPublic = (process.env.MINIO_PUBLIC_URL || '').replace(
-      /\/+$/,
-      '',
-    );
-    if (cdnBase) return `${cdnBase}/${bucket}/${key}`;
-    if (minioPublic) return `${minioPublic}/${bucket}/${key}`;
-    return await this.minio.presignedGetObject(bucket, key, 3600); // 1h
+  private publicUrlFor(bucket: string, key: string): string {
+    const cdnBase = (
+      process.env.ASSETS_CDN_BASE_URL || 'https://cdn.kaleem-ai.com'
+    ).replace(/\/+$/, '');
+    return `${cdnBase}/${bucket}/${key}`;
   }
 
   constructor(
@@ -256,7 +253,6 @@ export class StorefrontService {
   }
 
   async getStorefront(slugOrId: string): Promise<StorefrontResult> {
-    // احضر storefront عبر slug أو _id
     const sf = await this.storefrontModel
       .findOne(
         Types.ObjectId.isValid(slugOrId)
@@ -267,7 +263,17 @@ export class StorefrontService {
 
     if (!sf) throw new NotFoundException('Storefront not found');
 
-    // ثم احضر merchant المرتبط
+    // ✅ طبّق publicUrlFor على كل banner.image
+    if (Array.isArray(sf.banners)) {
+      const bucket = process.env.MINIO_BUCKET!;
+      sf.banners = sf.banners.map((b) => {
+        if (b.image && !b.image.startsWith('http')) {
+          b.image = this.publicUrlFor(bucket, b.image);
+        }
+        return b;
+      });
+    }
+
     const merchant = await this.merchantModel.findById(sf.merchant).lean();
     if (!merchant) throw new NotFoundException('Merchant not found');
 
@@ -281,8 +287,9 @@ export class StorefrontService {
       .sort({ name: 1 })
       .lean();
 
-    return { merchant, products, categories };
+    return { merchant, products, categories, storefront: sf };
   }
+
   async deleteByMerchant(merchantId: string) {
     await this.storefrontModel.deleteOne({ merchant: merchantId }).exec();
   }
@@ -381,16 +388,41 @@ export class StorefrontService {
     await sf.save();
     return sf;
   }
-  async getMyOrdersForSession(merchantId: string, sessionId: string) {
-    const phone = await this.leads.getPhoneBySession(merchantId, sessionId);
+  async getMyOrdersForSession(
+    merchantId: string,
+    sessionId: string,
+    phone?: string,
+    limit = 50,
+  ) {
+    // لو ما أُرسل الهاتف من الفرونت، نحاول نستخرجه من leads
+    let resolvedPhone = phone;
+    if (!resolvedPhone) {
+      try {
+        resolvedPhone = await this.leads.getPhoneBySession(
+          merchantId,
+          sessionId,
+        );
+      } catch {
+        // تجاهل الخطأ واكمل بدون هاتف
+      }
+    }
 
-    const filter: any = { merchantId, $or: [{ sessionId }] };
-    if (phone) filter.$or.push({ 'customer.phone': phone });
+    const filter: any = { merchantId, $or: [] as any[] };
+
+    if (sessionId) filter.$or.push({ sessionId });
+    if (resolvedPhone) filter.$or.push({ 'customer.phone': resolvedPhone });
+
+    // لو ما توفرت أي حالة، نتجنب $or فارغ
+    if (filter.$or.length === 0) {
+      return { orders: [] };
+    }
 
     const orders = await this.orderModel
       .find(filter)
       .sort({ createdAt: -1 })
+      .limit(Math.min(limit, 200))
       .lean();
+
     return { orders };
   }
   async getBrandCssBySlug(slug: string) {
