@@ -10,6 +10,7 @@ import { Observable } from 'rxjs';
 import { tap, finalize } from 'rxjs/operators';
 import { SentryService } from '../services/sentry.service';
 import { RequestWithUser } from '../interfaces/request-with-user.interface';
+import { shouldBypass } from './bypass.util';
 
 @Injectable()
 export class PerformanceTrackingInterceptor implements NestInterceptor {
@@ -24,7 +25,9 @@ export class PerformanceTrackingInterceptor implements NestInterceptor {
     const requestId = (request as any).requestId;
     const userId = request.user?.userId;
     const merchantId = request.user?.merchantId;
-
+    if (shouldBypass(request)) {
+      return next.handle(); // لا تبدأ معاملة Sentry لمسار /metrics
+    }
     // إنشاء اسم المعاملة
     const operationName = `${method} ${url}`;
     const operationType = 'http.server';
@@ -41,7 +44,7 @@ export class PerformanceTrackingInterceptor implements NestInterceptor {
         method,
         ip,
         userAgent,
-      }
+      },
     );
 
     if (!transaction) {
@@ -67,11 +70,11 @@ export class PerformanceTrackingInterceptor implements NestInterceptor {
       }),
       finalize(() => {
         const duration = Date.now() - startTime;
-        
+
         // إضافة بيانات الأداء
         transaction.setData('duration_ms', duration);
         transaction.setData('request_id', requestId);
-        
+
         // إضافة تاج للأداء
         if (duration > 5000) {
           transaction.setTag('performance', 'slow');
@@ -86,18 +89,23 @@ export class PerformanceTrackingInterceptor implements NestInterceptor {
 
         // تسجيل الأداء في السجلات
         if (duration > 3000) {
-          this.logger.warn(`Slow request detected: ${operationName} took ${duration}ms`, {
-            duration,
-            url,
-            method,
-            userId,
-            merchantId,
-            requestId,
-          });
+          this.logger.warn(
+            `Slow request detected: ${operationName} took ${duration}ms`,
+            {
+              duration,
+              url,
+              method,
+              userId,
+              merchantId,
+              requestId,
+            },
+          );
         } else {
-          this.logger.debug(`Request completed: ${operationName} took ${duration}ms`);
+          this.logger.debug(
+            `Request completed: ${operationName} took ${duration}ms`,
+          );
         }
-      })
+      }),
     );
   }
 }

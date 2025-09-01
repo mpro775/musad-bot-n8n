@@ -1,13 +1,15 @@
 // src/common/decorators/api-response.decorator.ts
 import { applyDecorators, Type } from '@nestjs/common';
-import { ApiResponse as SwaggerApiResponse, getSchemaPath } from '@nestjs/swagger';
-import { ApiResponseData } from '../interceptors/response.interceptor';
+import {
+  ApiResponse as SwaggerApiResponse,
+  getSchemaPath,
+} from '@nestjs/swagger';
 
 /** Decorator لتوثيق الاستجابات في Swagger */
 export function ApiResponse<T extends Type<any>>(
   model: T,
   status: number = 200,
-  description?: string
+  description?: string,
 ) {
   return applyDecorators(
     SwaggerApiResponse({
@@ -25,14 +27,14 @@ export function ApiResponse<T extends Type<any>>(
           },
         ],
       },
-    })
+    }),
   );
 }
 
 /** Decorator للاستجابة الناجحة */
 export function ApiSuccessResponse<T extends Type<any>>(
   model: T,
-  description?: string
+  description?: string,
 ) {
   return ApiResponse(model, 200, description || 'تمت العملية بنجاح');
 }
@@ -40,7 +42,7 @@ export function ApiSuccessResponse<T extends Type<any>>(
 /** Decorator للاستجابة المحدثة */
 export function ApiCreatedResponse<T extends Type<any>>(
   model: T,
-  description?: string
+  description?: string,
 ) {
   return ApiResponse(model, 201, description || 'تم الإنشاء بنجاح');
 }
@@ -51,6 +53,6 @@ export function ApiDeletedResponse(description?: string) {
     SwaggerApiResponse({
       status: 204,
       description: description || 'تم الحذف بنجاح',
-    })
+    }),
   );
 }

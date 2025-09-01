@@ -1,7 +1,6 @@
 import './polyfills';
 import { NestFactory } from '@nestjs/core';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
-import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Logger as PinoLogger } from 'nestjs-pino';
@@ -48,7 +47,7 @@ async function bootstrap() {
 
   const logger = app.get(PinoLogger);
   app.useLogger(logger);
-  
+
   // إضافة الإنترسبتورات
   app.useGlobalInterceptors(
     app.get(HttpMetricsInterceptor),
