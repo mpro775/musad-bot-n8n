@@ -41,14 +41,14 @@ scrape_configs:
   - job_name: 'ai-reply-worker'
     metrics_path: /metrics
     static_configs:
-      - targets: ['kaleem-ai-reply:9101']
+      - targets: ['ai-reply-worker:9101']
 
   - job_name: 'webhook-dispatcher'
     metrics_path: /metrics
     static_configs:
-      - targets: ['kaleem-webhook-dispatcher:9102']
+      - targets: ['webhook-dispatcher:9102']
 
   - job_name: 'indexing-worker'
     metrics_path: /metrics
     static_configs:
-      - targets: ['kaleem-indexing:9103']
+      - targets: ['indexing-worker:9103']
