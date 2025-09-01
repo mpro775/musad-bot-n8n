@@ -123,15 +123,9 @@ services:
     image: rediscommander/redis-commander:latest
     container_name: kaleem-redis-commander
     environment:
-      # استبدل <USER_FROM_RENDER> و <PASSWORD> من نفس REDIS_URL لديك
-      REDIS_HOSTS: 'render:rediss://<USER_FROM_RENDER>:<PASSWORD>@oregon-keyvalue.render.com:6379'
-      # حماية لوحة التحكم للويب
+      REDIS_HOSTS: 'local:redis://redis:6379' # حماية لوحة التحكم للويب
       HTTP_USER: admin
       HTTP_PASSWORD: '<STRONG_UI_PASS>'
-      # اختيارية عند استخدام rediss:// عبر REDIS_HOSTS (TLS ضمني)
-      REDIS_TLS: 'true'
-      # في حال مشاكل شهادة (اختياري ومؤقت)
-      # REDIS_SSL_REJECT_UNAUTHORIZED: 'false'
     ports:
       - '8082:8081'
     networks:
