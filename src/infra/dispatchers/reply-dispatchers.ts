@@ -31,7 +31,7 @@ export class ReplyDispatchers implements OnModuleInit {
       'chat.reply',
       'webchat', // ✅ انتبه للمفتاح
       (p) => this.handle('webchat', p),
-      { queue: 'web.out.q', prefetch: 20 },
+      { queue: 'webchat.out.q', prefetch: 20 },
     );
   }
 
