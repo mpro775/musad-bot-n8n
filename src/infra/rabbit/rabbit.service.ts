@@ -86,33 +86,37 @@ export class RabbitService implements OnModuleInit, OnModuleDestroy {
     opts: { queue?: string; prefetch?: number } = {},
   ) {
     if (!this.ch) throw new Error('Channel not ready');
-    // تأكد من الإكستشنج
+
     await this.ch.assertExchange(exchange, 'topic', { durable: true });
 
-    // صف (queue) دائم؛ يمكنك تسميته أو تتركه يولَّد تلقائيًا
-    const q = await this.ch.assertQueue(opts.queue ?? '', { durable: true });
+    let queueName: string;
 
-    // اربط البايندنغ
-    await this.ch.bindQueue(q.queue, exchange, bindingKey);
+    if (opts.queue) {
+      // ✅ لا تعلن من جديد صفاً مسمّى — فقط تأكّد أنه موجود
+      await this.ch.checkQueue(opts.queue);
+      queueName = opts.queue;
+    } else {
+      // صف مؤقّت (يُعلن محلياً) لا يحتوي DLQ ولا يتعارض
+      const q = await this.ch.assertQueue('', {
+        exclusive: true,
+        autoDelete: true,
+      });
+      queueName = q.queue;
+    }
 
-    // تحكّم بعدد الرسائل المتوازية
-    await this.ch.prefetch(opts.prefetch ?? 10);
+    await this.ch.bindQueue(queueName, exchange, bindingKey);
+    if (opts.prefetch) await this.ch.prefetch(opts.prefetch);
 
-    // ابدأ الاستهلاك
     await this.ch.consume(
-      q.queue,
+      queueName,
       async (m) => {
         if (!m) return;
         try {
           const content = JSON.parse(m.content.toString('utf8'));
           await onMessage(content);
           this.ch!.ack(m);
-        } catch (err) {
-          // لو فيه خطأ، رجّع الرسالة للطابور بمحاولة لاحقة
-          this.ch!.nack(m, false, true);
-          this.logger.error(
-            `Consumer error: ${err instanceof Error ? err.message : String(err)}`,
-          );
+        } catch {
+          this.ch!.nack(m, false, false); // DLQ سيتعامل
         }
       },
       { noAck: false },
