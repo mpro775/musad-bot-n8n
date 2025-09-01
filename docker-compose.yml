@@ -123,13 +123,16 @@ services:
     image: rediscommander/redis-commander:latest
     container_name: kaleem-redis-commander
     environment:
-      REDIS_HOSTS: 'local:redis://redis:6379' # حماية لوحة التحكم للويب
-      HTTP_USER: admin
-      HTTP_PASSWORD: '<STRONG_UI_PASS>'
+      - REDIS_HOSTS=local:redis:6379 # ✅ الصيغة القديمة الواضحة
+      - PORT=8081 # ✅ يتوافق مع المابنج
+      - ADDRESS=0.0.0.0 # ✅ استماع على كل الواجهات داخل الحاوية
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=<STRONG_UI_PASS>
+    depends_on:
+      - redis
     ports:
-      - '8082:8081'
-    networks:
-      - backnet
+      - '8082:8081' # host:container
+    networks: [backnet]
     restart: unless-stopped
 
   minio:
