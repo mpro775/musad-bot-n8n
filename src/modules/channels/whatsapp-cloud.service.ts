@@ -10,7 +10,9 @@ import { decryptSecret } from '../channels/utils/secrets.util';
 export class WhatsappCloudService {
   private readonly logger = new Logger(WhatsappCloudService.name);
   // اسمح بتغيير نسخة الـ Graph من env، وإلا استخدم v19.0
-  private base = (process.env.FB_GRAPH_BASE || 'https://graph.facebook.com/v19.0').replace(/\/+$/, '');
+  private base = (
+    process.env.FB_GRAPH_BASE || 'https://graph.facebook.com/v19.0'
+  ).replace(/\/+$/, '');
 
   constructor(
     @InjectModel(Channel.name)
@@ -25,19 +27,31 @@ export class WhatsappCloudService {
     merchantId: string,
     sessionId: string,
   ): Promise<'api' | 'qr'> {
-    // مثال: لو عندك جدول Conversation يحوي channelId/provider، اقرأه هنا.
-    // fallback:
+    // 1) لو Cloud غير مفعلة أو ناقصة الاعتمادات → رجّع 'qr'
+    const cloud = await this.getDefaultCloudChannel(merchantId);
+    const cloudReady = !!(
+      cloud?.enabled &&
+      cloud?.accessTokenEnc &&
+      cloud?.phoneNumberId
+    );
+    if (!cloudReady) return 'qr';
+
+    // 2) (مستحسن) اقرأ آخر رسالة من المحادثة لو عندك MessageService وحدد المزود من metadata.provider
+    // TODO: ابحث عن آخر incoming من نفس sessionId وحدد qr/api
+
     return 'api';
   }
 
   /** جلب قناة WhatsApp Cloud الافتراضية للتاجر */
   private async getDefaultCloudChannel(merchantId: string) {
-    return this.channelModel.findOne({
-      merchantId: new Types.ObjectId(merchantId),
-      provider: 'whatsapp_cloud',
-      isDefault: true,
-      deletedAt: null,
-    }).lean();
+    return this.channelModel
+      .findOne({
+        merchantId: new Types.ObjectId(merchantId),
+        provider: 'whatsapp_cloud',
+        isDefault: true,
+        deletedAt: null,
+      })
+      .lean();
   }
 
   /** الحصول على الاعتمادات (Token + phoneNumberId) بعد فكّ التشفير */
@@ -58,17 +72,29 @@ export class WhatsappCloudService {
     try {
       await axios.post(
         `${this.base}/${phoneNumberId}/messages`,
-        { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } },
+        {
+          messaging_product: 'whatsapp',
+          to,
+          type: 'text',
+          text: { body: text },
+        },
         { headers: { Authorization: `Bearer ${token}` } },
       );
     } catch (err: any) {
-      this.logger.error(`WA Cloud sendText failed: ${err?.response?.status} ${err?.response?.data ? JSON.stringify(err.response.data) : err?.message}`);
+      this.logger.error(
+        `WA Cloud sendText failed: ${err?.response?.status} ${err?.response?.data ? JSON.stringify(err.response.data) : err?.message}`,
+      );
       throw err;
     }
   }
 
   /** (اختياري) إرسال Template */
-  async sendTemplate(merchantId: string, to: string, name: string, lang = 'ar') {
+  async sendTemplate(
+    merchantId: string,
+    to: string,
+    name: string,
+    lang = 'ar',
+  ) {
     const { token, phoneNumberId } = await this.creds(merchantId);
     await axios.post(
       `${this.base}/${phoneNumberId}/messages`,

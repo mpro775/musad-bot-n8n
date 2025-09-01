@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HttpModule } from '@nestjs/axios';
 import { ChannelsController } from './channels.controller';
@@ -9,11 +9,15 @@ import { WhatsAppCloudAdapter } from './adapters/whatsapp-cloud.adapter';
 import { WhatsAppQrAdapter } from './adapters/whatsapp-qr.adapter';
 import { WebchatAdapter } from './adapters/webchat.adapter';
 import { EvolutionService } from '../integrations/evolution.service';
+import { ChannelsDispatcherService } from './channels-dispatcher.service';
+import { WhatsappCloudService } from './whatsapp-cloud.service';
+import { ChatModule } from '../chat/chat.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Channel.name, schema: ChannelSchema }]),
     HttpModule,
+    forwardRef(() => ChatModule),
   ],
   controllers: [ChannelsController],
   providers: [
@@ -21,9 +25,11 @@ import { EvolutionService } from '../integrations/evolution.service';
     TelegramAdapter,
     WhatsAppCloudAdapter,
     WhatsAppQrAdapter,
+    ChannelsDispatcherService,
     WebchatAdapter,
     EvolutionService,
+    WhatsappCloudService,
   ],
-  exports: [ChannelsService],
+  exports: [ChannelsService, ChannelsDispatcherService],
 })
 export class ChannelsModule {}

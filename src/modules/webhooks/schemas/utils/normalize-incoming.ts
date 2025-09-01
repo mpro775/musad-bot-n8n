@@ -75,7 +75,13 @@ export function normalizeIncomingMessage(
       transport,
       text,
       role,
-      metadata: { ...metadata, from: m.from, entities: m.entities, sourceMessageId: platformMessageId, provider: 'telegram' },
+      metadata: {
+        ...metadata,
+        from: m.from,
+        entities: m.entities,
+        sourceMessageId: platformMessageId,
+        provider: 'telegram',
+      },
       timestamp,
       platformMessageId,
       fileUrl,
@@ -138,7 +144,13 @@ export function normalizeIncomingMessage(
       transport,
       text,
       role,
-      metadata: { ...metadata, value: wValue, type, sourceMessageId: platformMessageId, provider: 'whatsapp_cloud' },
+      metadata: {
+        ...metadata,
+        value: wValue,
+        type,
+        sourceMessageId: platformMessageId,
+        provider: 'whatsapp_cloud',
+      },
       timestamp,
       platformMessageId,
       fileUrl,
@@ -152,24 +164,28 @@ export function normalizeIncomingMessage(
   // -----------------------------------
   // WhatsApp QR (Evolution) – شكل حديث (messages[])
   // -----------------------------------
-  if (Array.isArray(body?.messages) && body.messages.length > 0) {
-    channel = 'whatsapp';
-    transport = 'qr';
-    const m = body.messages[0];
-
-    sessionId = m?.key?.remoteJid
+  if (Array.isArray(body?.data?.messages) && body.data.messages.length > 0) {
+    const m = body.data.messages[0];
+    const sessionId = m?.key?.remoteJid
       ? cleanJid(m.key.remoteJid)
       : m?.key?.participant
         ? cleanJid(m.key.participant)
         : body?.from || '';
 
-    text =
+    const text =
       m?.message?.conversation ??
       m?.message?.extendedTextMessage?.text ??
       m?.message?.imageMessage?.caption ??
       '';
 
-    platformMessageId = m?.key?.id || `${sessionId}:${Date.now()}`;
+    const platformMessageId = m?.key?.id || `${sessionId}:${Date.now()}`;
+
+    let mediaType, mimeType, fileName;
+    const metadata: Record<string, any> = {
+      ...(body?.metadata ?? {}),
+      sourceMessageId: platformMessageId,
+      provider: 'whatsapp_qr',
+    };
 
     if (m?.message?.imageMessage) {
       mediaType = 'image';
@@ -188,20 +204,19 @@ export function normalizeIncomingMessage(
       metadata.base64 = m.message.documentMessage?.base64;
     }
 
-    if (body.role === 'agent' || body.sentBy === 'agent') role = 'agent';
-
     return {
       merchantId,
       sessionId,
-      channel,
-      transport,
+      channel: 'whatsapp',
+      transport: 'qr',
       text,
-      role,
-      metadata: { ...metadata, pushName: body?.pushName, sourceMessageId: platformMessageId, provider: 'whatsapp_qr' },
-      timestamp,
+      role:
+        body.role === 'agent' || body.sentBy === 'agent' ? 'agent' : 'customer',
+      metadata,
+      timestamp: new Date(),
       platformMessageId,
-      fileUrl,
-      fileId,
+      fileUrl: undefined,
+      fileId: undefined,
       fileName,
       mimeType,
       mediaType,
@@ -250,7 +265,11 @@ export function normalizeIncomingMessage(
       transport,
       text,
       role,
-      metadata: { ...metadata, sourceMessageId: platformMessageId, provider: 'whatsapp_qr' },
+      metadata: {
+        ...metadata,
+        sourceMessageId: platformMessageId,
+        provider: 'whatsapp_qr',
+      },
       timestamp,
       platformMessageId,
       fileUrl,
@@ -287,7 +306,11 @@ export function normalizeIncomingMessage(
       transport,
       text,
       role,
-      metadata: { ...(body?.metadata ?? {}), sourceMessageId: platformMessageId, provider: 'webchat' },
+      metadata: {
+        ...(body?.metadata ?? {}),
+        sourceMessageId: platformMessageId,
+        provider: 'webchat',
+      },
       timestamp,
       platformMessageId,
       fileUrl,
@@ -330,7 +353,8 @@ function inferMediaType(
   const n = (name || '').toLowerCase();
   const m = (mime || '').toLowerCase();
   if (m.includes('pdf') || n.endsWith('.pdf')) return 'pdf';
-  if (m.includes('image') || /\.(png|jpg|jpeg|webp|gif)$/i.test(n)) return 'image';
+  if (m.includes('image') || /\.(png|jpg|jpeg|webp|gif)$/i.test(n))
+    return 'image';
   if (m.includes('audio') || /\.(mp3|ogg|wav|m4a)$/i.test(n)) return 'audio';
   if (m.includes('video') || /\.(mp4|mov|mkv|webm)$/i.test(n)) return 'video';
   return 'document';

@@ -134,16 +134,16 @@
       "durable": true
     },
     {
-      "name": "web.out.q",
+      "name": "webchat.out.q",
       "vhost": "kleem",
       "durable": true,
       "arguments": {
         "x-dead-letter-exchange": "",
-        "x-dead-letter-routing-key": "web.out.q.dlq"
+        "x-dead-letter-routing-key": "webchat.out.q.dlq"
       }
     },
     {
-      "name": "web.out.q.dlq",
+      "name": "webchat.out.q.dlq",
       "vhost": "kleem",
       "durable": true
     },
@@ -218,9 +218,9 @@
     {
       "vhost": "kleem",
       "source": "chat.reply",
-      "destination": "web.out.q",
+      "destination": "webchat.out.q",
       "destination_type": "queue",
-      "routing_key": "web",
+      "routing_key": "webchat",
       "arguments": {}
     },
     {

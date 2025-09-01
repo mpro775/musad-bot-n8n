@@ -1,6 +1,21 @@
-import { Controller, Get, Patch, Param, Query, UseGuards, Req, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Param,
+  Query,
+  UseGuards,
+  Req,
+  Post,
+  Body,
+} from '@nestjs/common';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('الإشعارات')
@@ -12,7 +27,8 @@ export class NotificationsController {
 
   @Get('me')
   @ApiOperation({ summary: 'قائمة إشعاراتي' })
-  @ApiQuery({ name: 'page', required: false }) @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'unreadOnly', required: false })
   async myList(@Req() req: any, @Query() q: any) {
     const userId = req.user?.userId;

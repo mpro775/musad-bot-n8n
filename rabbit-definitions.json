@@ -93,7 +93,7 @@
     { "name": "telegram.out.q.dlq", "vhost": "kleem", "durable": true },
 
     {
-      "name": "web.out.q",
+      "name": "webchat.out.q",
       "vhost": "kleem",
       "durable": true,
       "arguments": {
@@ -101,7 +101,7 @@
         "x-dead-letter-routing-key": "web.out.q.dlq"
       }
     },
-    { "name": "web.out.q.dlq", "vhost": "kleem", "durable": true },
+    { "name": "webchat.out.q.dlq", "vhost": "kleem", "durable": true },
 
     {
       "name": "indexing.q",
@@ -164,7 +164,7 @@
     {
       "vhost": "kleem",
       "source": "chat.reply",
-      "destination": "web.out.q",
+      "destination": "webchat.out.q",
       "destination_type": "queue",
       "routing_key": "web",
       "arguments": {}

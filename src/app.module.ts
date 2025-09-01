@@ -63,6 +63,7 @@ import { OffersModule } from './modules/offers/offers.module';
 import { CommonModule, AppConfig, ErrorManagementModule } from './common';
 import { PublicModule } from './modules/public/public.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { DispatchersModule } from './infra/dispatchers/dispatchers.module';
 
 @Module({
   imports: [
@@ -170,8 +171,9 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
     ChannelsModule,
     NotificationsModule,
     CatalogModule,
-    OffersModule, 
+    OffersModule,
     PublicModule,
+    DispatchersModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

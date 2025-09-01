@@ -20,7 +20,6 @@ import {
   UseInterceptors,
   UploadedFile,
   Query,
-  ParseEnumPipe,
   Logger,
 } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
@@ -35,19 +34,15 @@ import {
   ApiParam,
   ApiBody,
   ApiOkResponse,
-  ApiCreatedResponse,
   ApiUnauthorizedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
-  ApiQuery,
 } from '@nestjs/swagger';
 import { Public } from 'src/common/decorators/public.decorator';
-import { 
-  ApiSuccessResponse, 
-  ApiCreatedResponse as CommonApiCreatedResponse, 
-
+import {
+  ApiSuccessResponse,
+  ApiCreatedResponse as CommonApiCreatedResponse,
 } from '../../common';
-import { OnboardingResponseDto } from './dto/onboarding-response.dto';
 import {
   ChecklistGroup,
   MerchantChecklistService,
@@ -97,7 +92,7 @@ export class MerchantsController {
     const exists = await this.svc.existsByPublicSlug(slug);
     return { available: !exists };
   }
-  
+
   @Public()
   @Get(':id') // ← سيصل إليها فقط قيم ObjectId بعد ترتيب الراوتات
   findOne(@Param('id', ParseObjectIdPipe) id: string) {
@@ -122,8 +117,6 @@ export class MerchantsController {
     return this.checklist.getChecklist(merchantId);
   }
 
- 
-
   @Get('prompt/advanced-template')
   async getAdvancedTemplate(@Param('id') id: string) {
     return this.svc.getAdvancedTemplateForEditor(id, {
@@ -131,7 +124,6 @@ export class MerchantsController {
     });
   }
 
- 
   @Post(':id/logo')
   @ApiOperation({ summary: 'رفع شعار التاجر كملف (MinIO + حذف مؤقت)' })
   @ApiParam({ name: 'id', description: 'معرّف التاجر' })
@@ -186,7 +178,7 @@ export class MerchantsController {
         throw new HttpException('ممنوع', HttpStatus.FORBIDDEN);
       }
       this.logger.debug('RAW body = %o', (req as any).body);
-this.logger.debug('DTO keys = %o', Object.keys(dto as any));
+      this.logger.debug('DTO keys = %o', Object.keys(dto as any));
 
       return this.svc.update(id, dto);
     });
