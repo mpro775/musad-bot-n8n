@@ -77,7 +77,7 @@ export class RabbitService implements OnModuleInit, OnModuleDestroy {
   private reconnect() {
     this.conn = undefined;
     this.ch = undefined;
-    setTimeout(() => this.connect().catch(() => {}), 3000);
+    setTimeout(() => void this.connect().catch(() => {}), 3000);
   }
   async subscribe(
     exchange: string,
