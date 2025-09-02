@@ -193,18 +193,20 @@ services:
     container_name: kaleem-extractor
     ports:
       - '8001:8001'
-    networks:
-      - backnet
+    # مهم لتفادي أعطال Chrome headless عند الصفحات الثقيلة
+    shm_size: '1gb'
     healthcheck:
       test:
         [
           'CMD-SHELL',
-          'curl -f http://localhost:8001/extract/?url=https://example.com || exit 1',
+          'curl -sf http://localhost:8001/extract/?url=https://example.com >/dev/null',
         ]
       interval: 30s
       timeout: 10s
       retries: 3
+    networks: [backnet]
     restart: unless-stopped
+
     # docker-compose.yml (إضافات)
   prometheus:
     image: prom/prometheus:v2.54.1
@@ -357,10 +359,19 @@ services:
     env_file: [.env]
     environment:
       - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
+      - METRICS_PORT=9101
+    expose: ['9101']
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget -qO- http://localhost:9101/metrics >/dev/null 2>&1 || exit 1',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     depends_on:
       rabbitmq: { condition: service_healthy }
-      qdrant: { condition: service_started }
-      embedding: { condition: service_started }
     networks: [backnet]
     restart: unless-stopped
 
@@ -371,6 +382,17 @@ services:
     env_file: [.env]
     environment:
       - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
+      - METRICS_PORT=9102
+    expose: ['9102']
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget -qO- http://localhost:9102/metrics >/dev/null 2>&1 || exit 1',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     depends_on:
       rabbitmq: { condition: service_healthy }
     networks: [backnet]
@@ -379,14 +401,24 @@ services:
   indexing-worker:
     build: ./extractor-service
     container_name: kaleem-indexing
+    # اختر واحدة من الطريقتين حسب شرح النقطة (1)
     command: ['python', '-m', 'workers.indexing']
+    working_dir: /app
     environment:
       - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
+      - METRICS_PORT=9103
+    expose: ['9103']
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget -qO- http://localhost:9103/metrics >/dev/null 2>&1 || exit 1',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     depends_on:
       rabbitmq: { condition: service_healthy }
-      qdrant: { condition: service_started }
-      minio: { condition: service_started }
-      embedding: { condition: service_started }
     networks: [backnet]
     restart: unless-stopped
 

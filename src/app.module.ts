@@ -64,6 +64,8 @@ import { CommonModule, AppConfig, ErrorManagementModule } from './common';
 import { PublicModule } from './modules/public/public.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { DispatchersModule } from './infra/dispatchers/dispatchers.module';
+import { WebhookDispatcherWorkerModule } from './workers/webhook-dispatcher.worker.module';
+import { AiReplyWorkerModule } from './workers/ai-reply.worker.module';
 
 @Module({
   imports: [
@@ -149,6 +151,8 @@ import { DispatchersModule } from './infra/dispatchers/dispatchers.module';
     MerchantsModule,
     SupportModule,
     PlansModule,
+    AiReplyWorkerModule,
+    WebhookDispatcherWorkerModule,
     VectorModule,
     ChatModule,
     DocumentsModule,
