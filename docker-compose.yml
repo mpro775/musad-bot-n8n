@@ -355,7 +355,7 @@ services:
   ai-reply-worker:
     build: .
     container_name: kaleem-ai-reply
-    command: ['node', 'dist/workers/ai-reply.worker.js']
+    command: ['node', 'dist/src/workers/ai-incoming.consumer.js'] # ⬅️ كان dist/workers/ai-reply.worker.js
     env_file: [.env]
     environment:
       - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
@@ -378,7 +378,7 @@ services:
   webhook-dispatcher:
     build: .
     container_name: kaleem-webhook-dispatcher
-    command: ['node', 'dist/workers/webhook-dispatcher.worker.js']
+    command: ['node', 'dist/src/workers/webhook-dispatcher.consumer.js'] # ⬅️ عدّل للاسم الصحيح لديك
     env_file: [.env]
     environment:
       - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
