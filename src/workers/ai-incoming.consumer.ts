@@ -43,7 +43,7 @@ export class AiIncomingConsumer implements OnModuleInit {
       });
       this.ch.ack(m);
     } catch (e) {
-      this.logger.error('AI bridge failed', (e as any)?.message);
+      this.logger.error('AI bridge failed', (e as Error).message);
       this.ch.nack(m, false, false); // DLQ
     }
   }
