@@ -193,8 +193,8 @@ services:
     container_name: kaleem-extractor
     ports:
       - '8001:8001'
-    # مهم لتفادي أعطال Chrome headless عند الصفحات الثقيلة
     shm_size: '1gb'
+    init: true # ⬅️ هذا يوفّر init process بديلًا عن dumb-init
     healthcheck:
       test:
         [
