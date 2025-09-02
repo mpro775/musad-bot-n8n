@@ -18,6 +18,7 @@ export class AiIncomingConsumer implements OnModuleInit {
       durable: true,
       arguments: {
         'x-dead-letter-exchange': '',
+        'x-dead-letter-routing-key': 'ai.reply-worker.q.dlq',
       },
     });
     this.ch.consume('ai.reply-worker.q', (m) => this.consume(m), {
