@@ -1,21 +1,23 @@
 version: '3.8'
 
 services:
-  redis:
-    image: redis:6-alpine
-    container_name: kaleem-redis
-    command: ['redis-server']
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - backnet
+
+redis:
+  image: redis:6-alpine
+  container_name: kaleem-redis
+  command: ['redis-server', '/usr/local/etc/redis/redis.conf']
+  ports:
+    - '6379:6379'
+  volumes:
+    - redis_data:/data
+    - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+  healthcheck:
+    test: ['CMD', 'redis-cli', 'ping']
+    interval: 10s
+    timeout: 5s
+    retries: 5
+  networks:
+    - backnet
 
   qdrant:
     image: qdrant/qdrant:latest

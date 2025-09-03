@@ -152,8 +152,8 @@
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.2,
       "position": [
-        896,
-        624
+        944,
+        608
       ],
       "id": "00ccb2cb-b094-4e98-ad1d-0b84f0eaedc9"
     },
@@ -220,61 +220,6 @@
       "id": "33f4ede2-e9f9-4eb9-9bef-9b402a53cfbf",
       "name": "AI Agent1",
       "executeOnce": false
-    },
-    {
-      "parameters": {
-        "sessionIdType": "customKey",
-        "sessionKey": "resopnse",
-        "collectionName": "n8n_resonse_histories",
-        "databaseName": "musadbot",
-        "contextWindowLength": 0
-      },
-      "type": "@n8n/n8n-nodes-langchain.memoryMongoDbChat",
-      "typeVersion": 1,
-      "position": [
-        1120,
-        736
-      ],
-      "id": "599abbde-fd95-4cf4-ad73-a2465d26e911",
-      "name": "MongoDB Chat Memory1",
-      "credentials": {
-        "mongoDb": {
-          "id": "9DK8Xkw5TM1lkNTq",
-          "name": "MongoDB account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsonSchemaExample": "{\n\t\"AiAnylises\": \"California\",\n\t\"cities\": [\"Los Angeles\", \"San Francisco\", \"San Diego\"]\n}"
-      },
-      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
-      "typeVersion": 1.3,
-      "position": [
-        1648,
-        864
-      ],
-      "id": "bc69c98b-b09d-473d-a7b7-abc7cf95eace",
-      "name": "Structured Output Parser"
-    },
-    {
-      "parameters": {
-        "options": {}
-      },
-      "name": "Google Gemini Chat Model2",
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1,
-      "position": [
-        1280,
-        864
-      ],
-      "id": "ed0110d4-5d05-42f7-9d54-8551fc16f86a",
-      "credentials": {
-        "googlePalmApi": {
-          "id": "Wl0dS8d0UuLkzCyp",
-          "name": "Google Gemini(PaLM) Api account"
-        }
-      }
     },
     {
       "parameters": {
@@ -512,21 +457,6 @@
         ]
       ]
     },
-    "MongoDB Chat Memory1": {
-      "ai_memory": [
-        []
-      ]
-    },
-    "Structured Output Parser": {
-      "ai_outputParser": [
-        []
-      ]
-    },
-    "Google Gemini Chat Model2": {
-      "ai_languageModel": [
-        []
-      ]
-    },
     "If": {
       "main": [
         [],
@@ -551,7 +481,7 @@
     "timezone": "America/New_York",
     "executionOrder": "v1"
   },
-  "versionId": "d829eb85-ec8f-45a8-bd8c-d286f2539506",
+  "versionId": "0397b516-4fbd-4d04-949c-44d5704fbf6a",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "2902d9329eddfcc318793e18e641e55e8b973cdfbcfab6ef4f45c4496b52dcf3"
