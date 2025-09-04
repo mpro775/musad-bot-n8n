@@ -518,6 +518,8 @@ volumes:
   prom_data:
   hf_cache:
   loki_data:
+  glitchtip_pg: # ← مفقود
+  tempo_data: # ← مفقود
 
 networks:
   backnet:
