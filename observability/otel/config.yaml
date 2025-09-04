@@ -11,8 +11,8 @@ processors:
 
 exporters:
   otlphttp/tempo:
-    # يرسل الـ traces إلى Tempo (داخل الدوكر)
-    endpoint: http://tempo:4318
+    endpoint: http://tempo:3200
+    url_path: /api/traces
   debug:
     verbosity: basic
 
