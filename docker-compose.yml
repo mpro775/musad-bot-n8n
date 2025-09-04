@@ -456,8 +456,9 @@ services:
       - tempo_data:/var/tempo
     ports:
       - '3200:3200' # tempo http (querier)
-      - '4317:4317' # otlp gRPC (اختياري)
-      - '4318:4318' # otlp http
+    expose:
+      - '4317'
+      - '4318'
     networks: [backnet]
     restart: unless-stopped
 
@@ -468,7 +469,6 @@ services:
     volumes:
       - ./observability/otel/config.yaml:/etc/otelcol/config.yaml:ro
     ports:
-      - '4318:4318' # OTLP HTTP (frontend + backend)
       - '8889:8889' # /metrics ليشيلها Prometheus
     networks: [backnet]
     depends_on:
