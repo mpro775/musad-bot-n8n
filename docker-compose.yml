@@ -205,11 +205,15 @@ services:
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: change-this
       GLITCHTIP_DOMAIN: https://errors.kaleem-ai.com
-      EMAIL_URL: 'console:'
-    depends_on: [glitchtip-postgres, redis]
+      EMAIL_URL: 'smtp://support@kaleem-ai.com:&5V~QY3=tgZXI[Xx@smtp.hostinger.com:465?ssl=True'
+      DEFAULT_FROM_EMAIL: 'support@kaleem-ai.com'
+    depends_on:
+      - glitchtip-postgres
+      - redis
     ports:
       - '8085:8000'
-    networks: [backnet]
+    networks:
+      - backnet
     restart: unless-stopped
 
   extractor:
