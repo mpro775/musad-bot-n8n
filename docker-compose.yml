@@ -205,23 +205,31 @@ services:
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: change-this
       GLITCHTIP_DOMAIN: https://errors.kaleem-ai.com
-
-      # البريد (عندك شغال)
-      EMAIL_URL: 'smtp://support@kaleem-ai.com:%265V~QY3%3DtgZXI%5BXx@smtp.hostinger.com:465?ssl=True'
-      DEFAULT_FROM_EMAIL: 'support@kaleem-ai.com'
-
-      # 👇 الإضافات المهمة لحل مشكلة الـ CSP
-      GLITCHTIP_ALLOWED_HOSTS: errors.kaleem-ai.com,app.kaleem-ai.com,localhost:5173
-      GLITCHTIP_CSP_CONNECT_SRC: https://errors.kaleem-ai.com https://app.kaleem-ai.com http://localhost:5173
+      DEFAULT_FROM_EMAIL: support@kaleem-ai.com
+      EMAIL_URL: 'smtp://support@kaleem-ai.com:password@smtp.hostinger.com:465?ssl=True'
+      CELERY_WORKER_AUTOSCALE: '1,3'
     depends_on:
       - glitchtip-postgres
       - redis
     ports:
-      - '8085:8080'
+      - '8085:8000'
     networks:
       - backnet
     restart: unless-stopped
-
+  glitchtip-worker:
+    image: glitchtip/glitchtip:latest
+    command: ./bin/run-celery-with-beat.sh
+    environment:
+      DATABASE_URL: postgres://glitchtip:change-me@glitchtip-postgres:5432/glitchtip
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: change-this
+      GLITCHTIP_DOMAIN: https://errors.kaleem-ai.com
+    depends_on:
+      - glitchtip-postgres
+      - redis
+    networks:
+      - backnet
+    restart: unless-stopped
   extractor:
     build:
       context: ./extractor-service
