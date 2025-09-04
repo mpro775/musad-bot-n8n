@@ -50,10 +50,17 @@ export class UsersService {
   }
 
   async remove(id: string) {
-    const user = await this.userModel.findByIdAndDelete(id).exec();
+    const user = await this.userModel.findByIdAndUpdate(
+      id,
+      { deletedAt: new Date(), active: false },
+      { new: true },
+    );
     if (!user) throw new UserNotFoundError(id);
-    return { message: 'User deleted successfully' };
+
+    // TODO: جدولة حذف صلب بعد 30 يوم (job/queue) + حذف RefreshTokens/جلسات
+    return { message: 'User deactivated (soft deleted)' };
   }
+
   async setFirstLoginFalse(userId: string): Promise<void> {
     const updated = await this.userModel.findByIdAndUpdate(
       userId,

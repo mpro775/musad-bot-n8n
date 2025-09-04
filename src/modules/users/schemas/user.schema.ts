@@ -121,6 +121,7 @@ export class User {
     topics: NotificationsTopics;
     quietHours: QuietHours;
   };
+  @Prop({ default: true, index: true }) active: boolean;
 
   // (اختياري) دعم حذف ناعم
   @Prop()

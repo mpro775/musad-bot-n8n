@@ -174,6 +174,7 @@ services:
       - EVOLUTION_API_URL=http://evolution_api:8080
       - EVOLUTION_API_KEY=any-secret-key
       - PUBLIC_WEBHOOK_BASE=https://api.kaleem-ai.com/api/webhooks
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces
     volumes:
       - /opt/kaleem/uploads:/app/uploads
     restart: unless-stopped
@@ -187,6 +188,30 @@ services:
       timeout: 5s
       retries: 5
     networks: [backnet]
+
+  glitchtip-postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: change-me
+    volumes:
+      - glitchtip_pg:/var/lib/postgresql/data
+    networks: [backnet]
+
+  glitchtip:
+    image: glitchtip/glitchtip:latest
+    environment:
+      DATABASE_URL: postgres://glitchtip:change-me@glitchtip-postgres:5432/glitchtip
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: change-this
+      GLITCHTIP_DOMAIN: https://errors.kaleem-ai.com
+      EMAIL_URL: 'console:'
+    depends_on: [glitchtip-postgres, redis]
+    ports:
+      - '8085:8000'
+    networks: [backnet]
+    restart: unless-stopped
 
   extractor:
     build:
@@ -248,8 +273,8 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin123
       - GF_USERS_DEFAULT_THEME=light
       # مهم لو خلف بروكسي أو غيرت البورت/الدومين
-      - GF_SERVER_DOMAIN=31.97.155.167
-      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/
+      - GF_SERVER_DOMAIN=grafana.kaleem-ai.com
+      - GF_SERVER_ROOT_URL=https://grafana.kaleem-ai.com/
     volumes:
       - grafana_data:/var/lib/grafana
       - ./observability/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
@@ -421,6 +446,34 @@ services:
     depends_on:
       rabbitmq: { condition: service_healthy }
     networks: [backnet]
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.4.1
+    container_name: kaleem-tempo
+    command: ['-config.file=/etc/tempo/tempo.yml']
+    volumes:
+      - ./observability/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - '3200:3200' # tempo http (querier)
+      - '4317:4317' # otlp gRPC (اختياري)
+      - '4318:4318' # otlp http
+    networks: [backnet]
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.106.0
+    container_name: kaleem-otel-collector
+    command: ['--config=/etc/otelcol/config.yaml']
+    volumes:
+      - ./observability/otel/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - '4318:4318' # OTLP HTTP (frontend + backend)
+      - '8889:8889' # /metrics ليشيلها Prometheus
+    networks: [backnet]
+    depends_on:
+      - tempo
     restart: unless-stopped
 
   n8n:

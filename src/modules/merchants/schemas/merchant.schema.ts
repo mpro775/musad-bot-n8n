@@ -12,7 +12,9 @@ import {
   SubscriptionPlanSchema,
 } from './subscription-plan.schema';
 function normalizeSlug(input = '') {
-  return input.trim().toLowerCase()
+  return input
+    .trim()
+    .toLowerCase()
     .replace(/[\s_]+/g, '-')
     .replace(/[^a-z0-9-]/g, '')
     .replace(/-+/g, '-')
@@ -24,6 +26,27 @@ export interface MerchantDocument extends Merchant, Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+@Schema({ _id: false })
+export class MerchantDeletionMeta {
+  @Prop({ type: Date })
+  requestedAt?: Date;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  requestedBy?: Types.ObjectId;
+
+  @Prop({ type: String })
+  reason?: string;
+
+  @Prop({ type: Date })
+  forcedAt?: Date;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  forcedBy?: Types.ObjectId;
+}
+export const MerchantDeletionMetaSchema =
+  SchemaFactory.createForClass(MerchantDeletionMeta);
+
 @Schema({ timestamps: true })
 export class Merchant {
   // — Core fields —
@@ -99,7 +122,7 @@ export class Merchant {
     match: /^[a-z](?:[a-z0-9-]{1,48}[a-z0-9])$/,
   })
   publicSlug: string;
-  
+
   @Prop({ type: String, trim: true })
   logoKey?: string;
   @Prop({ default: true })
@@ -137,8 +160,17 @@ export class Merchant {
   @Prop({ default: '' })
   shippingPolicy: string;
 
- 
+  // إيقاف الحساب والظهور
+  @Prop({ default: true, index: true })
+  active: boolean;
 
+  // ✅ تصريح صريح بالنوع مع default=null
+  @Prop({ type: Date, default: null, index: true })
+  deletedAt: Date | null;
+
+  // ✅ Subdocument مُعرّف بسكيما
+  @Prop({ type: MerchantDeletionMetaSchema, _id: false })
+  deletion?: MerchantDeletionMeta;
 
   @Prop({ type: Types.ObjectId, ref: 'Storefront' })
   storefront?: Types.ObjectId;
@@ -149,7 +181,7 @@ export class Merchant {
 
 export const MerchantSchema = SchemaFactory.createForClass(Merchant);
 MerchantSchema.index({ userId: 1 }, { unique: true }); // واحد-لواحد
-MerchantSchema.pre('validate', function(next) {
+MerchantSchema.pre('validate', function (next) {
   const doc = this as any;
 
   if (doc.isNew) {
@@ -157,7 +189,7 @@ MerchantSchema.pre('validate', function(next) {
     let normalized = normalizeSlug(base);
     // fallback إن طلع فاضي بسبب اسم عربي
     if (!normalized) {
-      normalized = `s${(doc._id?.toString().slice(-6) || Math.random().toString(36).slice(2, 8))}`;
+      normalized = `s${doc._id?.toString().slice(-6) || Math.random().toString(36).slice(2, 8)}`;
     }
     doc.publicSlug = normalized;
   } else if (doc.isModified('publicSlug')) {

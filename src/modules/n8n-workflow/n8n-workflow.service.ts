@@ -81,13 +81,15 @@ export class N8nWorkflowService {
     // const baseUrl = 'https://n8n.kaleem-ai.com'.replace(/\/+$/, '');
     const keyName = 'X-N8N-API-KEY';
     const apiKey = process.env.N8N_API_KEY!;
-    const baseUrl = (process.env.N8N_API_URL || 'http://n8n:5678/api/v1').replace(/\/+$/, '');
+    const baseUrl = (
+      process.env.N8N_API_URL || 'https://n8n.kaleem-ai.com'
+    ).replace(/\/+$/, '');
 
     this.logger.log(`[n8n.baseURL] = ${baseUrl}`);
     this.logger.log(`[n8n.header]  = ${keyName}: ${apiKey}`);
 
     this.api = axios.create({
-      baseURL: `${baseUrl}/api/v1`,
+      baseURL: `${baseUrl}`,
       headers: { [keyName]: apiKey },
       timeout: 5000,
     });
@@ -121,7 +123,7 @@ export class N8nWorkflowService {
       isObj(v) ? v : {};
     const get = (o: unknown, k: string): unknown => {
       if (!isObj(o)) return undefined;
-      return o[k]; 
+      return o[k];
     };
 
     const isCred = (v: unknown): v is { name: string } =>

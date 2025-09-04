@@ -6,6 +6,7 @@ import {
   CallHandler,
   Logger,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { Observable } from 'rxjs';
 import { tap, finalize } from 'rxjs/operators';
 import { SentryService } from '../services/sentry.service';
@@ -19,20 +20,39 @@ export class PerformanceTrackingInterceptor implements NestInterceptor {
   constructor(private readonly sentryService: SentryService) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const request = context.switchToHttp().getRequest<RequestWithUser>();
-    const { url, method, ip, headers } = request;
-    const userAgent = headers['user-agent'];
-    const requestId = (request as any).requestId;
-    const userId = request.user?.userId;
-    const merchantId = request.user?.merchantId;
-    if (shouldBypass(request)) {
-      return next.handle(); // لا تبدأ معاملة Sentry لمسار /metrics
+    // نتعامل مع HTTP فقط
+    if (context.getType<'http'>() !== 'http') {
+      return next.handle();
     }
-    // إنشاء اسم المعاملة
+
+    const request = context.switchToHttp().getRequest<RequestWithUser>();
+    const response = context.switchToHttp().getResponse<Response>();
+
+    if (shouldBypass(request)) {
+      return next.handle(); // لا تتبع لـ /metrics وما شابه
+    }
+
+    const url = (request.originalUrl || request.url || '').split('?')[0];
+    const method = request.method;
+    const ip = request.ip;
+    const userAgent = request.headers['user-agent'] as string | undefined;
+    const requestId =
+      (request as any).requestId ||
+      (request.headers['x-request-id'] as string | undefined) ||
+      undefined;
+
+    // نفضّل authUser (محمّل من DB عبر IdentityGuard)، وإلا نأخذ من JWT payload
+    const auth = request.authUser;
+    const jwt = request.user;
+    const userId = (auth?._id as any)?.toString?.() || jwt?.userId || undefined;
+    const merchantId =
+      (auth?.merchantId as any)?.toString?.() ||
+      (jwt?.merchantId as any) ||
+      undefined;
+
     const operationName = `${method} ${url}`;
     const operationType = 'http.server';
 
-    // بدء تتبع الأداء
     const transaction = this.sentryService.startTransaction(
       operationName,
       operationType,
@@ -48,34 +68,55 @@ export class PerformanceTrackingInterceptor implements NestInterceptor {
     );
 
     if (!transaction) {
-      // إذا لم يتم بدء المعاملة، نتابع بدون تتبع
+      // لا يوجد Sentry/Tracing مفعّل
       return next.handle();
     }
 
     const startTime = Date.now();
 
+    // وسمات/حقول ثابتة مفيدة
+    try {
+      transaction.setTag('http.method', method);
+      transaction.setTag('http.route', url);
+      if (userId) transaction.setTag('user.id', userId);
+      if (merchantId) transaction.setTag('merchant.id', String(merchantId));
+      if (requestId) transaction.setTag('request.id', requestId);
+    } catch {
+      /* ignore */
+    }
+
     return next.handle().pipe(
       tap({
         next: (data) => {
-          // تسجيل نجاح العملية
           transaction.setStatus('ok');
-          transaction.setData('response_size', JSON.stringify(data).length);
+
+          // حاول قياس حجم الاستجابة بحذر
+          try {
+            const s = JSON.stringify(data);
+            // لا حاجة لتخزين كل الرد—نأخذ الطول فقط
+            transaction.setData('response_size', s.length);
+          } catch {
+            // تجاهل لو ما نقدر نعمل stringify (circular refs)
+          }
         },
         error: (error) => {
-          // تسجيل فشل العملية
           transaction.setStatus('internal_error');
-          transaction.setData('error_message', error.message);
-          transaction.setData('error_code', error.status || 500);
+          transaction.setData('error_message', error?.message ?? 'Unknown');
+          transaction.setData('error_code', error?.status ?? 500);
         },
       }),
       finalize(() => {
         const duration = Date.now() - startTime;
 
-        // إضافة بيانات الأداء
-        transaction.setData('duration_ms', duration);
-        transaction.setData('request_id', requestId);
+        // قد يتغير الكود أثناء السايكل؛ خذه في النهاية
+        const statusCode = (response?.statusCode as number) ?? undefined;
 
-        // إضافة تاج للأداء
+        // بيانات أداء
+        transaction.setData('duration_ms', duration);
+        if (statusCode) transaction.setData('status_code', statusCode);
+        if (requestId) transaction.setData('request_id', requestId);
+
+        // وسم الأداء
         if (duration > 5000) {
           transaction.setTag('performance', 'slow');
         } else if (duration > 1000) {
@@ -84,13 +125,12 @@ export class PerformanceTrackingInterceptor implements NestInterceptor {
           transaction.setTag('performance', 'fast');
         }
 
-        // إنهاء المعاملة
         transaction.finish();
 
-        // تسجيل الأداء في السجلات
+        // سجلات
         if (duration > 3000) {
           this.logger.warn(
-            `Slow request detected: ${operationName} took ${duration}ms`,
+            `Slow request: ${operationName} took ${duration}ms`,
             {
               duration,
               url,
@@ -98,7 +138,8 @@ export class PerformanceTrackingInterceptor implements NestInterceptor {
               userId,
               merchantId,
               requestId,
-            },
+              statusCode,
+            } as any,
           );
         } else {
           this.logger.debug(

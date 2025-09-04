@@ -78,6 +78,28 @@ export class MessageService {
         .exec())
     );
   }
+  async findByWidgetSlugAndSession(
+    slug: string,
+    sessionId: string,
+    channel: 'webchat',
+  ) {
+    const Widget = this.messageModel.db.model('ChatWidgetSettings');
+    const w = await Widget.findOne({
+      $or: [{ widgetSlug: slug }, { publicSlug: slug }],
+    })
+      .select('merchantId')
+      .lean();
+    if (!w) return null;
+
+    return this.messageModel
+      .findOne({
+        merchantId: new Types.ObjectId(String((w as any).merchantId)),
+        sessionId,
+        channel,
+      })
+      .lean()
+      .exec();
+  }
 
   async rateMessage(
     sessionId: string,
@@ -89,6 +111,7 @@ export class MessageService {
   ) {
     const res = await this.messageModel.updateOne(
       { sessionId, 'messages._id': new Types.ObjectId(messageId) },
+      { merchantId: new Types.ObjectId(merchantId) },
       {
         $set: {
           'messages.$.rating': rating,
@@ -123,10 +146,10 @@ export class MessageService {
     return { status: 'ok' };
   }
 
-  async findBySession(
-    sessionId: string,
-  ): Promise<MessageSessionDocument | null> {
-    return this.messageModel.findOne({ sessionId }).exec();
+  async findBySession(sessionId: string, merchantId: string) {
+    return this.messageModel
+      .findOne({ sessionId, merchantId: new Types.ObjectId(merchantId) })
+      .exec();
   }
 
   async findById(id: string): Promise<MessageSessionDocument> {
@@ -134,8 +157,15 @@ export class MessageService {
     if (!doc) throw new NotFoundException(`Session ${id} not found`);
     return doc;
   }
-  async setHandover(sessionId: string, handoverToAgent: boolean) {
-    return this.messageModel.updateOne({ sessionId }, { handoverToAgent });
+  async setHandover(
+    sessionId: string,
+    handoverToAgent: boolean,
+    merchantId: string,
+  ) {
+    return this.messageModel.updateOne(
+      { sessionId, merchantId: new Types.ObjectId(merchantId) },
+      { handoverToAgent },
+    );
   }
 
   async update(

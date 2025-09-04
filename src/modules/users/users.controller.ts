@@ -29,11 +29,11 @@ import {
   ApiNotFoundResponse,
 } from '@nestjs/swagger';
 import { ConfirmPasswordDto } from 'src/common/dto/confirm-password.dto';
-import { 
-  ApiSuccessResponse, 
-  ApiCreatedResponse as CommonApiCreatedResponse, 
-  CurrentUser, 
-  PaginationDto
+import {
+  ApiSuccessResponse,
+  ApiCreatedResponse as CommonApiCreatedResponse,
+  CurrentUser,
+  PaginationDto,
 } from '../../common';
 import { NotificationsPrefsDto } from './dto/notifications-prefs.dto';
 import * as bcrypt from 'bcrypt';
@@ -124,21 +124,43 @@ export class UsersController {
   @ApiOperation({ summary: 'حذف حساب المستخدم بعد تأكيد كلمة المرور' })
   async deleteWithPassword(
     @Param('id') id: string,
-    @Body() body: ConfirmPasswordDto,
+    @Body() body: ConfirmPasswordDto, // { confirmPassword: string }
     @Req() req: any,
   ) {
-    // يجب أن يحذف نفسه فقط أو أدمن
-    if (req.user?.userId !== id && req.user?.role !== 'ADMIN') {
+    const actorId = req.user?.userId;
+    const actorRole = req.user?.role;
+
+    // الصلاحيات
+    const isSelf = actorId === id;
+    const isAdmin = actorRole === 'ADMIN';
+    if (!isSelf && !isAdmin) {
       throw new BadRequestException('لا تملك صلاحية حذف هذا الحساب');
     }
-    const user = await this.userModel.findById(id).select('+password');
-    if (!user) throw new BadRequestException('مستخدم غير موجود');
 
-    const ok = await bcrypt.compare(body.confirmPassword, user.password);
+    // من الذي نطابق كلمة مروره؟
+    const target = await this.userModel.findById(id).select('+password');
+    if (!target) throw new BadRequestException('مستخدم غير موجود');
+
+    // لو أدمن → نتحقق من كلمة مرور الأدمن نفسه (actor)
+    // لو حذف ذاتي → نتحقق من كلمة مرور نفس المستخدم الهدف
+    const passwordOwnerId = isAdmin && !isSelf ? actorId : id;
+    const passwordOwner = await this.userModel
+      .findById(passwordOwnerId)
+      .select('+password');
+    if (!passwordOwner?.password) {
+      // حساب SSO بدون كلمة مرور؟ اطلب OTP بدل ذلك
+      throw new BadRequestException(
+        'لا يمكن تأكيد كلمة المرور لهذا الحساب. استخدم التحقق عبر البريد/OTP.',
+      );
+    }
+
+    const ok = await bcrypt.compare(
+      body.confirmPassword,
+      passwordOwner.password,
+    );
     if (!ok) throw new BadRequestException('كلمة المرور غير صحيحة');
 
-    // حذف ناعم: user.deletedAt = new Date(); await user.save();
-    // أو حذف فعلي:
+    // 🔒 بدّلها بحذف ناعم (مقترح بالأسفل)
     return this.usersService.remove(id);
   }
 }

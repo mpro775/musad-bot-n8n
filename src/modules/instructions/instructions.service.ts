@@ -47,6 +47,10 @@ export class InstructionsService {
       .lean();
   }
 
+  async findOne(id: string) {
+    return this.instructionModel.findById(id).lean();
+  }
+
   async update(id: string, data: Partial<Instruction>) {
     return this.instructionModel.findByIdAndUpdate(id, data, { new: true });
   }

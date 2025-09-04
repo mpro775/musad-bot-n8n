@@ -1,3 +1,4 @@
+import './tracing';
 import './polyfills';
 import { NestFactory } from '@nestjs/core';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';

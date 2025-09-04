@@ -48,7 +48,10 @@ import {
   MerchantChecklistService,
 } from './merchant-checklist.service';
 import { OnboardingBasicDto } from './dto/onboarding-basic.dto';
-import { UpdateProductSourceDto } from './dto/update-product-source.dto';
+import {
+  ProductSource,
+  UpdateProductSourceDto,
+} from './dto/update-product-source.dto';
 import { unlink } from 'fs/promises';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { InjectModel, ParseObjectIdPipe } from '@nestjs/mongoose';
@@ -58,8 +61,24 @@ import * as bcrypt from 'bcrypt';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CatalogService } from '../catalog/catalog.service';
 import { OutboxService } from 'src/common/outbox/outbox.service';
+import { CurrentUser, CurrentUserId, CurrentMerchantId } from '../../common';
+import type { Role } from '../../common/interfaces/jwt-payload.interface';
 const SLUG_RE = /^[a-z](?:[a-z0-9-]{1,48}[a-z0-9])$/;
-
+class SoftDeleteDto {
+  reason?: string;
+}
+function assertOwnerOrAdmin(
+  merchantIdParam: string,
+  jwtMerchantId: string | null,
+  role: Role | string,
+) {
+  if (role !== 'ADMIN' && merchantIdParam !== String(jwtMerchantId)) {
+    throw new HttpException('ممنوع', HttpStatus.FORBIDDEN);
+  }
+}
+class ForceDeleteDto {
+  confirm?: string;
+} // لو حابب إضافة تأكيد نصي مثل "DELETE"
 @ApiTags('التجار')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -92,7 +111,50 @@ export class MerchantsController {
     const exists = await this.svc.existsByPublicSlug(slug);
     return { available: !exists };
   }
+  @Put(':id/soft-delete')
+  @ApiOperation({ summary: 'حذف ناعم للتاجر (تعطيل + تمييز بالحذف)' })
+  @ApiParam({ name: 'id', description: 'معرف التاجر' })
+  @ApiBody({ type: SoftDeleteDto, required: false })
+  @ApiOkResponse({ description: 'تم التعطيل والحذف الناعم' })
+  @ApiUnauthorizedResponse({ description: 'التوثيق مطلوب' })
+  @ApiForbiddenResponse({ description: 'غير مخوّل' })
+  async softDelete(
+    @Param('id') id: string,
+    @Body() body: SoftDeleteDto,
+    @CurrentUser()
+    user: { userId: string; role: Role; merchantId?: string | null },
+  ) {
+    return this.svc.softDelete(id, user, body?.reason);
+  }
 
+  @Put(':id/restore')
+  @ApiOperation({ summary: 'استرجاع التاجر بعد الحذف الناعم' })
+  @ApiParam({ name: 'id', description: 'معرف التاجر' })
+  @ApiOkResponse({ description: 'تم الاسترجاع' })
+  @ApiUnauthorizedResponse({ description: 'التوثيق مطلوب' })
+  @ApiForbiddenResponse({ description: 'غير مخوّل' })
+  async restore(
+    @Param('id') id: string,
+    @CurrentUser()
+    user: { userId: string; role: Role; merchantId?: string | null },
+  ) {
+    return this.svc.restore(id, user);
+  }
+  @Post(':id/purge')
+  @ApiOperation({ summary: 'حذف إجباري + تنظيف كامل (للمشرف فقط)' })
+  @ApiParam({ name: 'id', description: 'معرف التاجر' })
+  @ApiBody({ type: ForceDeleteDto, required: false })
+  @ApiOkResponse({ description: 'تم الحذف النهائي والتنظيف الكامل' })
+  @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
+  @ApiForbiddenResponse({ description: 'غير مخوّل' })
+  @ApiUnauthorizedResponse({ description: 'التوثيق مطلوب' })
+  async purge(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string; role: Role },
+  ) {
+    // (اختياري) التحقق من confirm === "DELETE" في الـ body
+    return this.svc.purge(id, user);
+  }
   @Public()
   @Get(':id') // ← سيصل إليها فقط قيم ObjectId بعد ترتيب الراوتات
   findOne(@Param('id', ParseObjectIdPipe) id: string) {
@@ -113,7 +175,10 @@ export class MerchantsController {
   @ApiUnauthorizedResponse({ description: 'التوثيق مطلوب' })
   async getChecklist(
     @Param('id') merchantId: string,
+    @CurrentMerchantId() jwtMerchantId: string | null,
+    @CurrentUser() user: { role: Role },
   ): Promise<ChecklistGroup[]> {
+    assertOwnerOrAdmin(merchantId, jwtMerchantId, user.role);
     return this.checklist.getChecklist(merchantId);
   }
 
@@ -131,26 +196,25 @@ export class MerchantsController {
   async uploadLogo(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
+    @CurrentMerchantId() jwtMerchantId: string | null,
+    @CurrentUser() user: { role: Role },
   ) {
-    if (!file) throw new BadRequestException('لم يتم إرفاق ملف');
+    assertOwnerOrAdmin(id, jwtMerchantId, user.role);
 
+    if (!file) throw new BadRequestException('لم يتم إرفاق ملف');
     const allowed = ['image/png', 'image/jpeg', 'image/webp'];
-    const maxBytes = 2 * 1024 * 1024; // 2MB
+    const maxBytes = 2 * 1024 * 1024;
 
     if (!allowed.includes(file.mimetype)) {
       try {
         await unlink(file.path);
-      } catch {
-        console.log('Error deleting file', file.path);
-      }
+      } catch {}
       throw new BadRequestException('صيغة الصورة غير مدعومة (PNG/JPG/WEBP)');
     }
     if (file.size > maxBytes) {
       try {
         await unlink(file.path);
-      } catch {
-        console.log('Error deleting file', file.path);
-      }
+      } catch {}
       throw new BadRequestException('الحجم الأقصى 2MB');
     }
 
@@ -164,24 +228,20 @@ export class MerchantsController {
   @ApiOkResponse({ description: 'تم التحديث بنجاح' })
   @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   @ApiForbiddenResponse({ description: 'غير مخوّل' })
-  update(
+  async update(
     @Param('id') id: string,
     @Body() dto: UpdateMerchantDto,
-    @Request() req: RequestWithUser,
+    @CurrentMerchantId() jwtMerchantId: string | null,
+    @CurrentUser() user: { role: Role },
   ) {
-    const user = req.user;
-    return this.svc.findOne(id).then((merchant) => {
-      if (!merchant) {
-        throw new NotFoundException('التاجر غير موجود');
-      }
-      if (user.role !== 'ADMIN' && user.merchantId !== id) {
-        throw new HttpException('ممنوع', HttpStatus.FORBIDDEN);
-      }
-      this.logger.debug('RAW body = %o', (req as any).body);
-      this.logger.debug('DTO keys = %o', Object.keys(dto as any));
+    const merchant = await this.svc.findOne(id);
+    if (!merchant) throw new NotFoundException('التاجر غير موجود');
 
-      return this.svc.update(id, dto);
-    });
+    assertOwnerOrAdmin(id, jwtMerchantId, user.role);
+
+    // (اختياري) لوج محلي بدون req:
+    this.logger.debug('DTO keys = %o', Object.keys(dto as any));
+    return this.svc.update(id, dto);
   }
 
   @Delete(':id')
@@ -191,12 +251,14 @@ export class MerchantsController {
   @ApiNotFoundResponse({ description: 'التاجر غير موجود' })
   @ApiForbiddenResponse({ description: 'غير مخوّل' })
   @ApiUnauthorizedResponse({ description: 'التوثيق مطلوب' })
-  remove(@Param('id') id: string, @Request() req: RequestWithUser) {
-    const user = req.user;
-    if (user.role !== 'ADMIN' && user.merchantId !== id) {
-      throw new HttpException('ممنوع', HttpStatus.FORBIDDEN);
-    }
-    return this.svc.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @CurrentMerchantId() jwtMerchantId: string | null,
+    @CurrentUser() user: { userId: string; role: Role },
+  ) {
+    assertOwnerOrAdmin(id, jwtMerchantId, user.role);
+    // نفّذ الحذف الناعم بدل الصلب لأمان وتوافق
+    return this.svc.softDelete(id, user, 'via DELETE /merchants/:id');
   }
 
   @Get(':id/subscription-status')
@@ -209,7 +271,12 @@ export class MerchantsController {
   })
   @ApiUnauthorizedResponse()
   @ApiNotFoundResponse()
-  checkSubscription(@Param('id') id: string) {
+  checkSubscription(
+    @Param('id') id: string,
+    @CurrentMerchantId() jwtMerchantId: string | null,
+    @CurrentUser() user: { role: Role },
+  ) {
+    assertOwnerOrAdmin(id, jwtMerchantId, user.role);
     return this.svc.isSubscriptionActive(id).then((active) => ({
       merchantId: id,
       subscriptionActive: active,
@@ -225,10 +292,10 @@ export class MerchantsController {
   async skipChecklistItem(
     @Param('id') merchantId: string,
     @Param('itemKey') itemKey: string,
-    @Req() req: RequestWithUser,
+    @CurrentMerchantId() jwtMerchantId: string | null,
   ) {
     // تحقق أن المستخدم مالك المتجر
-    if (req.user.role !== 'ADMIN' && req.user.merchantId !== merchantId) {
+    if (jwtMerchantId !== merchantId) {
       throw new HttpException('ممنوع', HttpStatus.FORBIDDEN);
     }
 
@@ -287,28 +354,31 @@ export class MerchantsController {
   async setSource(
     @Param('id') merchantId: string,
     @Body() dto: UpdateProductSourceDto,
-    @Req() req: any,
+    @CurrentMerchantId() jwtMerchantId: string | null,
+    @CurrentUserId() userId: string, // ✅ كان مفقود
+    @CurrentUser() user: { role: Role }, // لدور ADMIN
   ) {
-    const userId = req.user?.userId;
-    const user = await this.userModel
+    assertOwnerOrAdmin(merchantId, jwtMerchantId, user.role);
+
+    // اجلب المستخدم للتحقق من كلمة المرور
+    const account = await this.userModel
       .findById(userId)
       .select('+password role email name')
       .exec();
-    if (!user) throw new BadRequestException('User not found');
+    if (!account) throw new BadRequestException('User not found');
 
-    // تأكيد كلمة المرور
-    const ok = await bcrypt.compare(dto.confirmPassword, user.password);
-    if (!ok) throw new BadRequestException('كلمة المرور غير صحيحة');
-
-    // (اختياري) تحقّق صلاحيات: Only OWNER/ADMIN يبدّل المصدر
-    if (req.user?.role !== 'ADMIN' && req.user?.role !== 'MERCHANT') {
-      throw new BadRequestException('ليست لديك صلاحية تغيير المصدر');
+    // نطلب كلمة المرور إذا كان المصدر ليس INTERNAL أو عند sync فوري
+    if (dto.source !== ProductSource.INTERNAL || dto.syncMode === 'immediate') {
+      if (!dto.confirmPassword)
+        throw new BadRequestException('كلمة المرور مطلوبة للتأكيد');
+      const ok = await bcrypt.compare(dto.confirmPassword, account.password);
+      if (!ok) throw new BadRequestException('كلمة المرور غير صحيحة');
     }
 
     // 1) بدّل المصدر
     const merchant = await this.svc.setProductSource(merchantId, dto.source);
 
-    // 2) أشعر المستخدم بعملية التغيير
+    // 2) أشعار
     await this.notifications.notifyUser(userId, {
       type: 'productSource.changed',
       title: 'تم تغيير مصدر المنتجات',
@@ -321,7 +391,6 @@ export class MerchantsController {
     // 3) المزامنة حسب الوضع
     const mode = dto.syncMode ?? 'background';
     if (mode === 'immediate') {
-      // مزامنة الآن (قد تستغرق)
       try {
         await this.notifications.notifyUser(userId, {
           type: 'catalog.sync.started',
@@ -353,7 +422,6 @@ export class MerchantsController {
     }
 
     if (mode === 'background') {
-      // أطلق حدث لخلفية/وركر (Outbox/Rabbit أو Cron)
       await this.outbox
         .enqueueEvent({
           aggregateType: 'catalog',
@@ -363,10 +431,7 @@ export class MerchantsController {
           exchange: 'catalog.sync',
           routingKey: 'requested',
         })
-        .catch(() => {
-          /* لو ما عندك Outbox عامل حالياً—تجاهل */
-        });
-
+        .catch(() => {});
       await this.notifications.notifyUser(userId, {
         type: 'catalog.sync.queued',
         title: 'تم جدولة مزامنة الكتالوج',
@@ -377,7 +442,6 @@ export class MerchantsController {
       return { merchant, sync: { mode: 'background', queued: true } };
     }
 
-    // none
     return { merchant, sync: { mode: 'none' } };
   }
 }

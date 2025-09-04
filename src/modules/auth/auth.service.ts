@@ -73,6 +73,7 @@ export class AuthService {
         email,
         password, // pre-save hash
         role: 'MERCHANT',
+        active: true, // حساب مفعل
         firstLogin: true,
         emailVerified: false,
       }).save();
@@ -118,18 +119,49 @@ export class AuthService {
       throw new InternalServerErrorException('Failed to register');
     }
   }
+  // AuthService.login(...)
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;
-    const userDoc = await this.userModel.findOne({ email }).select('+password');
+
+    const userDoc = await this.userModel
+      .findOne({ email })
+      .select('+password active merchantId emailVerified role')
+      .exec();
+
+    // لا نكشف السبب الدقيق على العميل، لكن داخلياً نميّز
     if (!userDoc) throw new BadRequestException('Invalid credentials');
+
+    // حساب المستخدم موقوف؟
+    if (userDoc.active === false) {
+      throw new BadRequestException('الحساب معطّل، تواصل مع الدعم');
+    }
 
     const isMatch = await bcrypt.compare(password, userDoc.password);
     if (!isMatch) throw new BadRequestException('Invalid credentials');
 
+    // يجب تفعيل البريد قبل الدخول (يمكنك إرجاع رسالة أدق للفرونت)
+    if (!userDoc.emailVerified) {
+      throw new BadRequestException(
+        'يجب تفعيل البريد الإلكتروني قبل تسجيل الدخول',
+      );
+    }
+
+    // لو عنده تاجر، امنع الدخول إن كان التاجر محذوف ناعماً/معطل
+    if (userDoc.merchantId && userDoc.role !== 'ADMIN') {
+      const m = await this.merchantModel
+        .findById(userDoc.merchantId)
+        .select('_id active deletedAt')
+        .lean();
+
+      if (m && (m.active === false || m.deletedAt)) {
+        throw new BadRequestException('تم إيقاف حساب التاجر مؤقتًا');
+      }
+    }
+
     const payload = {
       userId: userDoc._id,
       role: userDoc.role,
-      merchantId: userDoc.merchantId ?? null, // 👈 خذه من user مباشرة
+      merchantId: userDoc.merchantId ?? null,
     };
 
     return {
@@ -176,6 +208,8 @@ export class AuthService {
         const merchant = await this.merchants.create({
           userId: String(user._id),
           name: `متجر ${user.name}`,
+          active: true, // ✅ تأكيد أنه نشِط
+          deletedAt: null, // ✅ ليس محذوفاً ناعماً
           addresses: [],
           subscription: {
             tier: PlanTier.Free,
@@ -372,6 +406,19 @@ export class AuthService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new BadRequestException('User not found');
 
+    if (user.merchantId) {
+      const m = await this.merchantModel
+        .findById(user.merchantId)
+        .select('_id active deletedAt')
+        .lean();
+
+      if (!m) {
+        throw new BadRequestException('Merchant not found');
+      }
+      if (m.deletedAt || m.active === false) {
+        throw new BadRequestException('تم إيقاف حساب التاجر مؤقتًا');
+      }
+    }
     // لو في merchantId خلاص رجّع payload جديد (لتحديث التوكن إن أردت)
     if (user.merchantId) {
       const payload = {
@@ -385,6 +432,7 @@ export class AuthService {
           id: user._id,
           name: user.name,
           email: user.email,
+          active: user.active,
           role: user.role,
           merchantId: user.merchantId,
           firstLogin: user.firstLogin,
@@ -402,6 +450,8 @@ export class AuthService {
     const merchant = await this.merchants.create({
       userId: String(user._id),
       name: `متجر ${user.name}`,
+      active: true,
+      deletedAt: null,
       addresses: [],
       subscription: {
         tier: PlanTier.Free,

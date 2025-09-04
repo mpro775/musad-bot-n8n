@@ -21,19 +21,36 @@ export class ErrorLoggingInterceptor implements NestInterceptor {
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    if (context.getType<'http'>() !== 'http') {
+      return next.handle();
+    }
+
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     if (shouldBypass(request)) {
-      return next.handle(); // لا تسجيل للأخطاء على /metrics
+      return next.handle(); // لا تسجيل للأخطاء لمسارات bypass
     }
-    const { url, method, ip, headers } = request;
-    const userAgent = headers['user-agent'];
-    const requestId = (request as any).requestId;
-    const userId = request.user?.userId;
-    const merchantId = request.user?.merchantId;
+
+    const url = (request.originalUrl || request.url || '').split('?')[0];
+    const method = request.method;
+    const ip = request.ip;
+    const userAgent = request.headers['user-agent'] as string | undefined;
+    const requestId =
+      (request as any).requestId ||
+      (request.headers['x-request-id'] as string | undefined) ||
+      undefined;
+
+    // نفضّل بيانات الحُرّاس (authUser) ثم JWT payload
+    const auth = request.authUser;
+    const jwt = request.user;
+    const userId = (auth?._id as any)?.toString?.() || jwt?.userId || undefined;
+    const merchantId =
+      (auth?.merchantId as any)?.toString?.() ||
+      (jwt?.merchantId as any) ||
+      undefined;
 
     return next.handle().pipe(
       catchError((error) => {
-        // تسجيل الخطأ
+        // سجّل الخطأ في خدمة إدارة الأخطاء
         this.errorManagementService
           .logError(error, {
             userId,
@@ -48,10 +65,11 @@ export class ErrorLoggingInterceptor implements NestInterceptor {
             this.logger.debug(`Error logged with ID: ${errorId}`);
           })
           .catch((logError) => {
-            this.logger.error('Failed to log error', logError);
+            // لا تمنع مسار الخطأ؛ فقط سجّل فشل التسجيل
+            this.logger.error('Failed to log error', logError as any);
           });
 
-        // إعادة رمي الخطأ للمعالجة اللاحقة
+        // أعد رمي الخطأ لسلسلة المعالجة (Filters / Nest)
         return throwError(() => error as Error);
       }),
     );

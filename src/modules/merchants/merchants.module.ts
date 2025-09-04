@@ -29,9 +29,16 @@ import { CatalogModule } from '../catalog/catalog.module';
 import { OutboxModule } from '../../common/outbox/outbox.module';
 import { SlugResolverService } from '../public/slug-resolver.service';
 import { PublicRouterController } from '../public/public-router.controller';
-import { ChatWidgetSettings, ChatWidgetSettingsSchema } from '../chat/schema/chat-widget.schema';
-import { Storefront, StorefrontSchema } from '../storefront/schemas/storefront.schema';
+import {
+  ChatWidgetSettings,
+  ChatWidgetSettingsSchema,
+} from '../chat/schema/chat-widget.schema';
+import {
+  Storefront,
+  StorefrontSchema,
+} from '../storefront/schemas/storefront.schema';
 import { ChatModule } from '../chat/chat.module';
+import { CleanupCoordinatorService } from './cleanup-coordinator.service';
 
 @Module({
   imports: [
@@ -61,10 +68,15 @@ import { ChatModule } from '../chat/chat.module';
     PromptBuilderService,
     PromptVersionService,
     PromptPreviewService,
+    CleanupCoordinatorService,
     MerchantChecklistService,
     SlugResolverService,
   ],
-  controllers: [MerchantsController, MerchantPromptController, PublicRouterController],
+  controllers: [
+    MerchantsController,
+    MerchantPromptController,
+    PublicRouterController,
+  ],
   exports: [
     MerchantsService,
     PromptVersionService,

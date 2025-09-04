@@ -27,7 +27,7 @@ import {
 import { Public } from 'src/common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GeminiService } from '../ai/gemini.service';
-import { RateMessageDto } from './dto/rate-message.dto';  // ✅
+import { RateMessageDto } from './dto/rate-message.dto'; // ✅
 
 interface InstructionResult {
   badReply: string;
@@ -123,15 +123,27 @@ export class MessageController {
     },
   })
   async setHandover(
-    @Param('sessionId') sessionId: string,
-    @Body('handoverToAgent') handoverToAgent: boolean,
+    @Param('sessionId') s: string,
+    @Body('handoverToAgent') h: boolean,
+    @Req() req,
   ) {
-    await this.messageService.setHandover(sessionId, handoverToAgent);
+    await this.messageService.setHandover(s, h, req.user.merchantId);
     return { success: true };
+  }
+  @Public()
+  @Get('public/:widgetSlug/webchat/:sessionId')
+  findByWidgetAndSession(
+    @Param('widgetSlug') widgetSlug: string,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.messageService.findByWidgetSlugAndSession(
+      widgetSlug,
+      sessionId,
+      'webchat',
+    );
   }
 
   @Get('session/:sessionId')
-  @Public()
   @ApiOperation({
     summary: 'جلب محادثة كاملة حسب sessionId (رقم الهاتف غالبًا)',
   })
@@ -139,8 +151,8 @@ export class MessageController {
   @ApiOkResponse({
     description: 'محادثة واحدة بجميع الرسائل',
   })
-  findBySession(@Param('sessionId') sessionId: string) {
-    return this.messageService.findBySession(sessionId);
+  findBySession(@Param('sessionId') sessionId: string, @Req() req) {
+    return this.messageService.findBySession(sessionId, req.user.merchantId);
   }
 
   @Get(':id')
@@ -215,7 +227,6 @@ export class MessageController {
     example: '60d0fe4f5311236168a109ca',
   })
   @ApiBody({ type: RateMessageDto })
-
   @ApiOkResponse({
     description: 'تم تقييم الرسالة بنجاح',
     schema: {
@@ -250,14 +261,14 @@ export class MessageController {
   ) {
     const userId = req.user?.userId ?? req.user?._id ?? null;
 
-await this.messageService.rateMessage(
-  sessionId,
-  messageId,
-  userId,              // ← الآن يحمل 24-hex فعلاً
-  body.rating,
-  body.feedback,
-  req.user?.merchantId // مرّره للخدمة لفلترة متعددة المستأجرين
-);
+    await this.messageService.rateMessage(
+      sessionId,
+      messageId,
+      userId, // ← الآن يحمل 24-hex فعلاً
+      body.rating,
+      body.feedback,
+      req.user?.merchantId, // مرّره للخدمة لفلترة متعددة المستأجرين
+    );
     return { status: 'ok' };
   }
   @Post('generate-instructions-from-bad-replies')
@@ -403,9 +414,12 @@ await this.messageService.rateMessage(
       },
     },
   })
-  async getRatedMessages(@Param('sessionId') sessionId: string) {
-    const session = await this.messageService.findBySession(sessionId);
+  async getRatedMessages(@Param('sessionId') sessionId: string, @Req() req) {
+    const session = await this.messageService.findBySession(
+      sessionId,
+      req.user.merchantId,
+    );
     if (!session) return [];
-    return session.messages.filter((msg) => msg.rating !== null);
+    return session.messages.filter((m) => m.rating !== null);
   }
 }

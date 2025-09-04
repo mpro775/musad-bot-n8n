@@ -1,33 +1,57 @@
 // src/common/decorators/current-user.decorator.ts
-import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import {
+  createParamDecorator,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
 
-/** Decorator للحصول على المستخدم الحالي من الطلب */
+export type Role = 'ADMIN' | 'MERCHANT' | 'MEMBER';
+export interface JwtPayload {
+  userId: string;
+  role: Role;
+  merchantId?: string | null;
+}
+
+/** يعيد الحمولة كاملة أو مفتاحًا منها */
 export const CurrentUser = createParamDecorator(
-  (data: string | undefined, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
-    const user = request.user;
+  (
+    key: keyof JwtPayload | undefined,
+    ctx: ExecutionContext,
+  ): JwtPayload[keyof JwtPayload] | JwtPayload => {
+    const req = ctx.switchToHttp().getRequest();
+    const user = req.user as JwtPayload | undefined;
+    if (!user) throw new UnauthorizedException('Unauthorized');
 
-    // إذا تم تحديد خاصية معينة
-    if (data && user) {
-      return user[data];
-    }
-
-    return user;
+    return key ? user[key] : user;
   },
 );
 
-/** Decorator للحصول على معرف المستخدم */
+/** معرف المستخدم من الـ JWT (اسم الحقل الصحيح userId) */
 export const CurrentUserId = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
-    return request.user?.id;
+  (_: unknown, ctx: ExecutionContext): string => {
+    const req = ctx.switchToHttp().getRequest();
+    const user = req.user as JwtPayload | undefined;
+    if (!user?.userId) throw new UnauthorizedException('Unauthorized');
+    return user.userId;
   },
 );
 
-/** Decorator للحصول على معرف التاجر */
+/** معرف التاجر من الـ JWT */
 export const CurrentMerchantId = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
-    return request.user?.merchantId;
+  (_: unknown, ctx: ExecutionContext): string | null => {
+    const req = ctx.switchToHttp().getRequest();
+    const user = req.user as JwtPayload | undefined;
+    if (!user) throw new UnauthorizedException('Unauthorized');
+    return user.merchantId ?? null;
+  },
+);
+
+/** دور المستخدم من الـ JWT (اختياري) */
+export const CurrentRole = createParamDecorator(
+  (_: unknown, ctx: ExecutionContext): Role => {
+    const req = ctx.switchToHttp().getRequest();
+    const user = req.user as JwtPayload | undefined;
+    if (!user?.role) throw new UnauthorizedException('Unauthorized');
+    return user.role;
   },
 );

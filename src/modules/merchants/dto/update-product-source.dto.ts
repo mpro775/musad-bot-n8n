@@ -1,21 +1,31 @@
-import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsEnum,
+  IsIn,
+  IsOptional,
+  IsString,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 
-export type ProductSource = 'internal' | 'salla' | 'zid';
-export type SyncMode = 'none' | 'immediate' | 'background';
+export enum ProductSource {
+  INTERNAL = 'internal',
+  SALLA = 'salla',
+  ZID = 'zid',
+}
 
 export class UpdateProductSourceDto {
-  @ApiProperty({ enum: ['internal', 'salla', 'zid'], example: 'salla' })
-  @IsIn(['internal', 'salla', 'zid'])
-  source: ProductSource;
+  @IsEnum(ProductSource)
+  source!: ProductSource;
 
-  @ApiProperty({ description: 'تأكيد بكلمة المرور' })
+  @IsOptional()
+  @IsIn(['immediate', 'background', 'none'])
+  syncMode?: 'immediate' | 'background' | 'none';
+
+  // اطلب كلمة المرور فقط إذا نغيّر لمصدر خارجي أو نريد مزامنة فورية
+  @ValidateIf(
+    (o) => o.source !== ProductSource.INTERNAL || o.syncMode === 'immediate',
+  )
   @IsString()
   @MinLength(6)
-  confirmPassword: string;
-
-  @ApiPropertyOptional({ enum: ['none','immediate','background'], default: 'background' })
-  @IsOptional()
-  @IsIn(['none', 'immediate', 'background'])
-  syncMode?: SyncMode = 'background';
+  confirmPassword?: string;
 }

@@ -2,6 +2,7 @@
 
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -30,6 +31,7 @@ import { buildHbsContext, stripGuardSections } from './services/prompt-utils';
 import { PreviewPromptDto } from './dto/preview-prompt.dto';
 import { StorefrontService } from '../storefront/storefront.service';
 import { ChatWidgetService } from '../chat/chat-widget.service';
+import { CleanupCoordinatorService } from './cleanup-coordinator.service';
 
 function toRecord(input: unknown): Record<string, string> {
   const out: Record<string, string> = {};
@@ -79,6 +81,7 @@ export class MerchantsService {
     private readonly versionSvc: PromptVersionService,
     private readonly storefrontService: StorefrontService,
     private readonly previewSvc: PromptPreviewService,
+    private readonly cleanupCoordinator: CleanupCoordinatorService,
     private readonly n8n: N8nWorkflowService,
     private readonly businessMetrics: BusinessMetrics,
     private readonly chatWidgetService: ChatWidgetService,
@@ -253,9 +256,7 @@ export class MerchantsService {
     if (updateData.publicSlug) {
       await this.chatWidgetService.syncWidgetSlug(id, updateData.publicSlug);
     }
-    
-    
-    
+
     // حدّث finalPromptTemplate بدون تشغيل validate (حتى لا يعبث pre('validate') بالسلاج)
     try {
       const compiled = await this.promptBuilder.compileTemplate(updated);
@@ -271,13 +272,13 @@ export class MerchantsService {
     const cdn = (
       process.env.ASSETS_CDN_BASE_URL ||
       process.env.MINIO_PUBLIC_URL ||
-      ""
-    ).replace(/\/+$/, "");
-  
+      ''
+    ).replace(/\/+$/, '');
+
     if (cdn) {
       return `${cdn}/${process.env.MINIO_BUCKET}/${key}`;
     }
-  
+
     // fallback: presigned URL
     return await this.minio.presignedGetObject(
       process.env.MINIO_BUCKET!,
@@ -285,7 +286,6 @@ export class MerchantsService {
       3600,
     );
   }
-  
 
   private async ensureBucket(bucket: string) {
     try {
@@ -331,42 +331,40 @@ export class MerchantsService {
   ): Promise<string> {
     const merchant = await this.merchantModel.findById(merchantId).exec();
     if (!merchant) throw new NotFoundException('التاجر غير موجود');
-  
+
     const bucket = process.env.MINIO_BUCKET!;
     await this.ensureBucket(bucket);
-  
+
     const ext = this.extFromMime(file.mimetype);
     const key = `merchants/${merchantId}/logo-${Date.now()}.${ext}`;
-  
+
     this.logger.log(`Uploading merchant logo to MinIO: ${bucket}/${key}`);
-  
+
     try {
       // لو multer memoryStorage:
       if (file.buffer) {
         await this.minio.putObject(bucket, key, file.buffer, file.size, {
-          "Content-Type": file.mimetype,
+          'Content-Type': file.mimetype,
         });
       } else if (file.path) {
         await this.minio.fPutObject(bucket, key, file.path, {
-          "Content-Type": file.mimetype,
+          'Content-Type': file.mimetype,
         });
       } else {
-        throw new Error("Empty file");
+        throw new Error('Empty file');
       }
-  
+
       // خزّن المفتاح في قاعدة البيانات
       merchant.logoKey = key;
       merchant.logoUrl = await this.buildLogoUrl(key); // 👈 خزّنه كمان للعرض
       await merchant.save();
-  
-      this.logger.log(
-        `Logo uploaded. key=${key} url=${merchant.logoUrl}`,
-      );
-  
+
+      this.logger.log(`Logo uploaded. key=${key} url=${merchant.logoUrl}`);
+
       return merchant.logoUrl!;
     } catch (e) {
-      this.logger.error("MinIO upload failed", e);
-      throw new InternalServerErrorException("STORAGE_UPLOAD_FAILED");
+      this.logger.error('MinIO upload failed', e);
+      throw new InternalServerErrorException('STORAGE_UPLOAD_FAILED');
     } finally {
       // احذف الملف لو multer diskStorage
       if (file.path) {
@@ -376,7 +374,7 @@ export class MerchantsService {
       }
     }
   }
-  
+
   /** جلب كل التجار */
   async findAll(): Promise<MerchantDocument[]> {
     return this.merchantModel.find().exec();
@@ -468,7 +466,97 @@ export class MerchantsService {
     if (!deleted) throw new NotFoundException('Merchant not found');
     return { message: 'Merchant deleted successfully' };
   }
+  async softDelete(
+    id: string,
+    actor: { userId: string; role: string },
+    reason?: string,
+  ) {
+    const merchant = await this.merchantModel.findById(id);
+    if (!merchant) throw new NotFoundException('Merchant not found');
 
+    // صلاحيات: أدمن أو مالك التاجر
+    // (لو عندك ربط user.merchantId == id)
+    if (
+      actor.role !== 'ADMIN' &&
+      String((actor as any).merchantId) !== String(id)
+    ) {
+      throw new ForbiddenException('غير مخوّل');
+    }
+
+    if (merchant.deletedAt) {
+      return { message: 'Already soft-deleted', at: merchant.deletedAt };
+    }
+
+    merchant.active = false;
+    merchant.deletedAt = new Date();
+    merchant.deletion = {
+      ...(merchant.deletion || {}),
+      requestedAt: new Date(),
+      requestedBy: new Types.ObjectId(actor.userId),
+      reason,
+    };
+    await merchant.save();
+
+    // تعطيل سريع داخلي (اختياري): إيقاف وصول مستخدمي التاجر، إبطال مفاتيح API...
+    // await this.disableAccessForMerchantUsers(id);
+
+    return { message: 'Merchant soft-deleted', at: merchant.deletedAt };
+  }
+
+  async restore(id: string, actor: { userId: string; role: string }) {
+    const merchant = await this.merchantModel.findById(id);
+    if (!merchant) throw new NotFoundException('Merchant not found');
+
+    if (
+      actor.role !== 'ADMIN' &&
+      String((actor as any).merchantId) !== String(id)
+    ) {
+      throw new ForbiddenException('غير مخوّل');
+    }
+
+    if (!merchant.deletedAt) {
+      return { message: 'Merchant is not soft-deleted' };
+    }
+
+    merchant.active = true;
+    merchant.deletedAt = null;
+    merchant.deletion = {
+      ...(merchant.deletion || {}),
+      requestedAt: undefined,
+      requestedBy: undefined,
+      reason: undefined,
+    };
+    await merchant.save();
+
+    // إعادة التمكين (اختياري): إعادة فتح الوصول/المفاتيح...
+    return { message: 'Merchant restored' };
+  }
+
+  /** الحذف الإجباري + تنظيف كامل ثم حذف المستند */
+  async purge(id: string, actor: { userId: string; role: string }) {
+    const merchant = await this.merchantModel.findById(id);
+    if (!merchant) throw new NotFoundException('Merchant not found');
+
+    if (actor.role !== 'ADMIN') {
+      throw new ForbiddenException('الحذف الإجباري للمشرفين فقط');
+    }
+
+    // تشغيل التنظيف الكامل (خارجي + داخلي)
+    await this.cleanupCoordinator.purgeAll(id);
+
+    // تحديث بيانات الحذف (توثيق)
+    merchant.deletion = {
+      ...(merchant.deletion || {}),
+      forcedAt: new Date(),
+      forcedBy: new Types.ObjectId(actor.userId),
+    };
+    await merchant.save();
+
+    // حذف صلب بعد التنظيف
+    await this.merchantModel.findByIdAndDelete(id).exec();
+
+    return { message: 'Merchant permanently deleted' };
+  }
   /** تحقق من نشاط الاشتراك */
   async isSubscriptionActive(id: string): Promise<boolean> {
     const m = await this.findOne(id);

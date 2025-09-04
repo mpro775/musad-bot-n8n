@@ -63,5 +63,8 @@ export class MessageSession {
 
 export const MessageSessionSchema =
   SchemaFactory.createForClass(MessageSession);
-MessageSessionSchema.index({ merchantId: 1, sessionId: 1, channel: 1 });
+MessageSessionSchema.index(
+  { merchantId: 1, channel: 1, sessionId: 1 },
+  { unique: true, name: 'uniq_merchant_channel_session' },
+);
 MessageSessionSchema.index({ createdAt: -1 });
