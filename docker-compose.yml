@@ -173,7 +173,6 @@ services:
       - RABBIT_URL=amqp://kaleem:supersecret@rabbitmq:5672/kleem
       - EVOLUTION_API_URL=http://evolution_api:8080
       - EVOLUTION_API_KEY=any-secret-key
-      - PUBLIC_WEBHOOK_BASE=https://api.kaleem-ai.com/api/webhooks
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces
     volumes:
       - /opt/kaleem/uploads:/app/uploads
