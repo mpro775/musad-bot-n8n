@@ -211,7 +211,7 @@ services:
       - glitchtip-postgres
       - redis
     ports:
-      - '8085:8000'
+      - '8085:8080'
     networks:
       - backnet
     restart: unless-stopped
