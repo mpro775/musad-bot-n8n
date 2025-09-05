@@ -24,41 +24,6 @@ const PRODUCT_NAMESPACE = 'd94a5f5a-2bfc-4c2d-9f10-1234567890ab';
 const FAQ_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 const NAMESPACE = '6ba7b811-9dad-11d1-80b4-00c04fd430c8';
 
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  SAR: 'ر.س',
-  YER: '﷼',
-  USD: '$',
-};
-const fmtPrice = (n?: number | null, cur?: string | null) =>
-  n == null ? '' : `${n} ${CURRENCY_SYMBOLS[cur || ''] || cur || ''}`;
-
-// الأساس لتكوين URL مطلق
-const PUBLIC_WEB_BASE_URL = (
-  process.env.PUBLIC_WEB_BASE_URL || 'https://kaleem-ai.com'
-).replace(/\/+$/, '');
-
-// يبني رابطًا كاملًا (https://domain/... أو https://app/store/:slug/product/:slug)
-const buildAbsoluteUrl = (p: EmbeddableProduct): string | null => {
-  if (p.url) return p.url; // لو محفوظ جاهز
-  if (p.publicUrlStored) {
-    // لو مخزّن عندك مسارًا نسبيًا (مثل /store/slug/product/slug) حوّله لمطلق
-    if (/^https?:\/\//i.test(p.publicUrlStored)) return p.publicUrlStored;
-    return `${PUBLIC_WEB_BASE_URL}${p.publicUrlStored.startsWith('/') ? '' : '/'}${p.publicUrlStored}`;
-  }
-  if (p.domain && p.slug)
-    return `https://${p.domain}/product/${encodeURIComponent(p.slug)}`;
-  if (p.storefrontSlug && p.slug)
-    return `${PUBLIC_WEB_BASE_URL}/store/${encodeURIComponent(p.storefrontSlug)}/product/${encodeURIComponent(p.slug)}`;
-  // fallback: id
-  if (p.storefrontSlug && p.id)
-    return `${PUBLIC_WEB_BASE_URL}/store/${encodeURIComponent(p.storefrontSlug)}/product/${encodeURIComponent(p.id)}`;
-  return null;
-};
-const truncate = (s: string, max = 400) =>
-  s && s.length > max ? s.slice(0, max) + '…' : s || '';
-
-// ابني رابط تلقائيًا لو ما وصل url
-
 const qdrantIdFor = (mongoId: any) =>
   uuidv5(String(mongoId), PRODUCT_NAMESPACE);
 
@@ -74,6 +39,29 @@ export class VectorService implements OnModuleInit {
 
   private readonly webCollection = 'web_knowledge'; // 👈 مجموعات جديدة
   private readonly logger = new Logger(VectorService.name);
+  private toStringList(val: any): string[] {
+    if (val == null) return [];
+    if (Array.isArray(val)) return val.flatMap((v) => this.toStringList(v));
+    if (typeof val === 'object') {
+      // لو object مثل { red: true } أو {0:'x',1:'y'}
+      const vals = Object.values(val);
+      return vals.length
+        ? vals.flatMap((v) => this.toStringList(v))
+        : [JSON.stringify(val)];
+    }
+    return [String(val)];
+  }
+
+  private safeJoin(val: any, sep = '/'): string {
+    const list = this.toStringList(val)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return list.join(sep);
+  }
+
+  private safeJoinComma(val: any): string {
+    return this.safeJoin(val, ', ');
+  }
 
   constructor(
     private readonly http: HttpService,
@@ -334,21 +322,20 @@ export class VectorService implements OnModuleInit {
     const base = (
       process.env.PUBLIC_WEB_BASE_URL || 'https://kaleem-ai.com'
     ).replace(/\/+$/, '');
+    const clean = (s: string) => s.replace(/^https?:\/\//, '');
     if (p?.domain && p?.slug) {
-      return `https://${p.domain}/product/${encodeURIComponent(p.slug)}`;
+      return `https://${clean(p.domain)}/product/${encodeURIComponent(p.slug)}`;
     }
     if (p?.storefrontSlug && p?.slug) {
       return `${base}/store/${encodeURIComponent(p.storefrontSlug)}/product/${encodeURIComponent(p.slug)}`;
     }
     if (p?.publicUrlStored) {
       try {
-        // لو publicUrlStored نسبي، حوله لمطلق
         return new URL(p.publicUrlStored, base).toString();
       } catch {
         return p.publicUrlStored;
       }
     }
-    // آخر حل بالـ id:
     if (p?.storefrontSlug && p?.mongoId) {
       return `${base}/store/${encodeURIComponent(p.storefrontSlug)}/product/${encodeURIComponent(p.mongoId)}`;
     }
@@ -569,23 +556,32 @@ export class VectorService implements OnModuleInit {
   }
   private buildTextForEmbedding(product: EmbeddableProduct): string {
     const parts: string[] = [];
+
     if (product.name) parts.push(`Name: ${product.name}`);
     if (product.description) parts.push(`Description: ${product.description}`);
-    if (product.categoryName) parts.push(`Category: ${product.categoryName}`);
-    else if (product.categoryId)
-      parts.push(`CategoryId: ${product.categoryId}`);
-    if (product.specsBlock?.length)
-      parts.push(`Specs: ${product.specsBlock.join(', ')}`);
+
+    if (product.category || product.categoryName) {
+      parts.push(
+        `Category: ${this.safeJoin(product.category ?? product.categoryName)}`,
+      );
+    }
+
+    if (product.specsBlock && this.toStringList(product.specsBlock).length) {
+      parts.push(`Specs: ${this.safeJoinComma(product.specsBlock)}`);
+    }
+
     if (product.attributes) {
+      // attributes: Record<string, string[] | string | object>
       const attrs = Object.entries(product.attributes).map(
-        ([k, v]) => `${k}: ${(v || []).join('/')}`,
+        ([k, v]) => `${k}: ${this.safeJoin(v, '/')}`,
       );
       if (attrs.length) parts.push(`Attributes: ${attrs.join('; ')}`);
     }
-    if (product.keywords?.length)
-      parts.push(`Keywords: ${product.keywords.join(', ')}`);
 
-    // تسعير
+    if (product.keywords && this.toStringList(product.keywords).length) {
+      parts.push(`Keywords: ${this.safeJoinComma(product.keywords)}`);
+    }
+
     if (
       product.hasActiveOffer &&
       product.priceOld != null &&
@@ -593,19 +589,9 @@ export class VectorService implements OnModuleInit {
     ) {
       parts.push(`Offer: from ${product.priceOld} to ${product.priceNew}`);
     }
-    if (product.priceEffective != null || product.price != null) {
-      const eff = product.priceEffective ?? product.price;
-      parts.push(`Price: ${eff} ${product.currency || ''}`.trim());
-    }
 
-    // رابط
-    if (
-      product.slug ||
-      product.publicUrlStored ||
-      product.storefrontSlug ||
-      product.domain
-    ) {
-      parts.push(`Link: PRODUCT_PAGE_URL`);
+    if (product.price != null) {
+      parts.push(`Price: ${product.price} ${product.currency || ''}`.trim());
     }
 
     return parts.join('. ');

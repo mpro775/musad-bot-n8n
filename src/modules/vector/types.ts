@@ -22,7 +22,7 @@ export interface EmbeddableProduct {
   price?: number | null;
   priceEffective?: number | null;
   currency?: string | null;
-
+  category?: string | string[];
   // عرض
   hasActiveOffer?: boolean;
   priceOld?: number | null;
