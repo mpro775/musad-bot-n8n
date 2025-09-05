@@ -32,6 +32,7 @@ import { PreviewPromptDto } from './dto/preview-prompt.dto';
 import { StorefrontService } from '../storefront/storefront.service';
 import { ChatWidgetService } from '../chat/chat-widget.service';
 import { CleanupCoordinatorService } from './cleanup-coordinator.service';
+import { PlanTier } from './schemas/subscription-plan.schema';
 
 function toRecord(input: unknown): Record<string, string> {
   const out: Record<string, string> = {};
@@ -836,5 +837,68 @@ export class MerchantsService {
     const filled = Handlebars.compile(noGuard)(buildHbsContext(m, testVars));
 
     return { template: filled, note: 'Generated from final (no guard)' };
+  }
+  // MerchantsService
+  async ensureForUser(
+    userId: Types.ObjectId,
+    opts?: { name?: string; slugBase?: string },
+  ) {
+    const existing = await this.merchantModel.findOne({ userId }).exec();
+    if (existing) return existing;
+
+    // جهّز CreateMerchantDto بالحد الأدنى + الافتراضيات
+    const now = new Date();
+    const name = opts?.name || 'متجر جديد';
+    const publicSlug = opts?.slugBase || `m-${String(userId)}`; // ثابت ومميز
+
+    const dto: CreateMerchantDto = {
+      userId,
+      name,
+      logoUrl: '',
+      addresses: [],
+      subscription: {
+        tier: PlanTier.Free,
+        startDate: now.toISOString(),
+        endDate: undefined,
+        features: [
+          'basic_support',
+          'chat_bot',
+          'analytics',
+          'multi_channel',
+          'api_access',
+          'webhook_integration',
+        ],
+      },
+      categories: [],
+      customCategory: undefined,
+      businessType: 'general',
+      businessDescription: '',
+      workingHours: [],
+      returnPolicy: '',
+      exchangePolicy: '',
+      shippingPolicy: '',
+      quickConfig: {
+        dialect: 'خليجي',
+        tone: 'ودّي',
+        customInstructions: [],
+        includeClosingPhrase: true,
+        customerServicePhone: '',
+        customerServiceWhatsapp: '',
+        closingText: 'هل أقدر أساعدك بشي ثاني؟ 😊',
+      },
+      currentAdvancedConfig: {
+        template: '',
+        note: '',
+        updatedAt: now.toISOString(),
+      },
+      advancedConfigHistory: [],
+      // 👇 أضف هذا الحقل إن لم يكن موجودًا ضمن CreateMerchantDto
+      // أو اجعله يُولد داخل MerchantsService.create إذا لم يُمرَّر
+      publicSlug,
+      // .. بقية الافتراضيات (subscription/quickConfig/..)
+    } as any;
+
+    // هذه الدالة تبني: merchant + n8n workflow + finalPrompt + storefront
+    return this.create(dto);
   }
 }

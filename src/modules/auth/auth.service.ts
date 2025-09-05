@@ -42,6 +42,7 @@ import {
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { toStr } from './utils/id';
+import { CreateMerchantDto } from '../merchants/dto/create-merchant.dto';
 
 @Injectable()
 export class AuthService {
@@ -211,7 +212,14 @@ export class AuthService {
     user.emailVerified = true;
     user.firstLogin = true; // 👈 نريد الذهاب للأونبوردنج
     await user.save();
-
+    const merchant = await this.merchants.ensureForUser(user._id, {
+      name: user.name,
+    });
+    // اربط الـ merchantId إن لم يكن
+    if (!user.merchantId) {
+      user.merchantId = merchant._id as any;
+      await user.save();
+    }
     await this.tokenModel.deleteMany({ userId: user._id });
 
     const payload = {
@@ -381,78 +389,12 @@ export class AuthService {
 
     this.businessMetrics.incPasswordChangeCompleted?.();
   }
-  private async createMerchantIfMissing(
-    user: UserDocument,
-  ): Promise<MerchantDocument> {
-    const now = new Date();
-
-    // slug حتمي وفريد مشتق من userId (يتوافق مع الـ regex)
-    const forcedSlug = `m-${String(user._id)}`; // يبدأ بحرف وينتهي بحرف/رقم
-
-    // upsert آمن ضد السباقات: إذا وُجد يرجّع الموجود، وإن لم يوجد ينشئ
-    const m = await this.merchantModel
-      .findOneAndUpdate(
-        { userId: user._id },
-        {
-          $setOnInsert: {
-            userId: user._id,
-            publicSlug: forcedSlug,
-
-            active: true,
-            deletedAt: null,
-            addresses: [],
-            subscription: {
-              tier: PlanTier.Free,
-              startDate: now,
-              endDate: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
-              features: [
-                'basic_support',
-                'chat_bot',
-                'analytics',
-                'multi_channel',
-                'api_access',
-                'webhook_integration',
-              ],
-            },
-            categories: [],
-            quickConfig: {
-              dialect: 'خليجي',
-              tone: 'ودّي',
-              customInstructions: [],
-              sectionOrder: ['products', 'policies', 'custom'],
-              includeStoreUrl: true,
-              includeAddress: true,
-              includePolicies: true,
-              includeWorkingHours: true,
-              includeClosingPhrase: true,
-              closingText: 'هل أقدر أساعدك بشي ثاني؟ 😊',
-            },
-            currentAdvancedConfig: { template: '', updatedAt: now, note: '' },
-            advancedConfigHistory: [],
-            returnPolicy: '',
-            exchangePolicy: '',
-            shippingPolicy: '',
-            status: 'active',
-            phone: '',
-            finalPromptTemplate: '',
-          },
-        },
-        {
-          upsert: true,
-          new: true,
-          setDefaultsOnInsert: true,
-        },
-      )
-      .exec();
-
-    return m as unknown as MerchantDocument;
-  }
 
   async ensureMerchant(userId: string) {
     const user = await this.userModel.findById(userId);
     if (!user) throw new BadRequestException('User not found');
 
-    // تحقق صلاحية حساب التاجر الحالي إن وجد
+    // تحقق من تاجر موجود وصالح
     if (user.merchantId) {
       const m = await this.merchantModel
         .findById(user.merchantId)
@@ -462,19 +404,18 @@ export class AuthService {
       if (m.deletedAt || m.active === false) {
         throw new BadRequestException('تم إيقاف حساب التاجر مؤقتًا');
       }
-    }
-
-    // لا تنشئ لو البريد غير مفعّل
-    if (!user.merchantId) {
-      if (!user.emailVerified) {
-        throw new BadRequestException('Email not verified');
-      }
-
-      const m = await this.createMerchantIfMissing(user);
-
+    } else {
+      // لا تنشئ لو البريد غير مفعّل
       if (!user.merchantId) {
-        user.merchantId = m._id as any;
-        await user.save();
+        if (!user.emailVerified)
+          throw new BadRequestException('Email not verified');
+        const m = await this.merchants.ensureForUser(user._id, {
+          name: user.name,
+        });
+        if (!user.merchantId) {
+          user.merchantId = m._id as any;
+          await user.save();
+        }
       }
     }
 
