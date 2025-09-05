@@ -54,6 +54,7 @@ services:
       - N8N_HOST=n8n2.kaleem-ai.com
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       - WEBHOOK_URL=https://n8n2.kaleem-ai.com
       - N8N_EDITOR_BASE_URL=https://n8n2.kaleem-ai.com
       - N8N_RUNNERS_ENABLED=true
@@ -62,6 +63,7 @@ services:
       - N8N_CORS_ALLOW_CREDENTIALS=true
     ports:
       - '5679:5678' # منفذ مختلف على الهوست
+    user: '1000:1000'
     volumes:
       - n8n_data_sandbox:/home/node/.n8n
     networks:

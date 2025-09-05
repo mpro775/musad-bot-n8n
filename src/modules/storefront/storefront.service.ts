@@ -40,7 +40,14 @@ export interface StorefrontResult {
 @Injectable()
 export class StorefrontService {
   private readonly MAX_BANNERS = 5;
-
+  private normalizeHex(hex: string) {
+    const v = hex.toUpperCase();
+    if (/^#[0-9A-F]{3}$/.test(v)) {
+      // حوّل #ABC إلى #AABBCC
+      return '#' + v[1] + v[1] + v[2] + v[2] + v[3] + v[3];
+    }
+    return v;
+  }
   // ====== تحجيم مع الحفاظ على النسبة إلى ≤ 5 ميجا بكسل ======
   private async processToMaxMegapixels(
     inputPath: string,
@@ -73,11 +80,7 @@ export class StorefrontService {
     const buffer = await pipeline.webp({ quality: 80 }).toBuffer();
     return { buffer, mime: 'image/webp', ext: 'webp' };
   }
-  private coerceBrandDark(input?: string): string {
-    if (!input) return '#111827';
-    const i = ALLOWED_DARK_BRANDS.indexOf(input.toUpperCase() as any);
-    return i >= 0 ? ALLOWED_DARK_BRANDS[i] : '#111827';
-  }
+
   private toCssVars(brandDark: string) {
     // تفتيح بسيط للهوفر (8%)
     const hover = this.lighten(brandDark, 8);
@@ -369,9 +372,7 @@ export class StorefrontService {
     delete (update as any).merchant;
 
     if (dto.brandDark) {
-      update.brandDark = this.coerceBrandDark(
-        dto.brandDark,
-      ) as AllowedDarkBrand;
+      update.brandDark = this.normalizeHex(dto.brandDark);
     }
 
     if (dto.slug) {

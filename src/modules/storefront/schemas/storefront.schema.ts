@@ -2,12 +2,6 @@
 
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import {
-  ALLOWED_DARK_BRANDS,
-  ALLOWED_DARK_SET,
-  AllowedDarkBrand,
-  toLowerHex,
-} from '../../../common/constants/brand';
 
 export type StorefrontDocument = Storefront & Document;
 
@@ -25,16 +19,8 @@ export class Storefront {
   @Prop({ default: '#2575fc' })
   secondaryColor: string;
   // بانرات/سلايدر
-  @Prop({
-    type: String,
-    default: '#111827',
-    validate: {
-      validator: (v: string) => ALLOWED_DARK_SET.has(v?.toLowerCase() as AllowedDarkBrand),
-      message: 'يجب أن يكون اللون الداكن من القائمة',
-    },
-    set: (v: string) => toLowerHex(v),
-  })
-  brandDark!: AllowedDarkBrand;
+  @Prop({ default: '#2575fc' })
+  brandDark?: string;
   @Prop({
     type: [
       {

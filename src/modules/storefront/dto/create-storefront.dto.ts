@@ -15,8 +15,7 @@ import {
   ArrayMaxSize,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { ALLOWED_DARK_BRANDS, AllowedDarkBrand } from 'src/common/constants/brand';
+import { Transform, Type } from 'class-transformer';
 
 export class BannerDto {
   @ApiPropertyOptional({
@@ -139,8 +138,13 @@ export class CreateStorefrontDto {
   })
   @IsOptional()
   @IsString({ message: 'يجب أن يكون اللون الداكن نصيًا' })
-  @IsIn(ALLOWED_DARK_BRANDS, { message: 'يجب أن يكون اللون الداكن من القائمة' })
-  brandDark?: AllowedDarkBrand;
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.toUpperCase() : value,
+  )
+  @Matches(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, {
+    message: 'لون HEX غير صالح',
+  })
+  brandDark?: string;
   @ApiPropertyOptional({
     description: 'نطاق مخصص للمتجر',
     example: 'store.example.com',
@@ -152,7 +156,10 @@ export class CreateStorefrontDto {
   })
   domain?: string;
 
-  @ApiPropertyOptional({ description: 'قائمة البنرات في الواجهة', type: [BannerDto] })
+  @ApiPropertyOptional({
+    description: 'قائمة البنرات في الواجهة',
+    type: [BannerDto],
+  })
   @IsOptional()
   @IsArray({ message: 'يجب أن تكون البنرات مصفوفة' })
   @ArrayMaxSize(5, { message: 'الحد الأقصى لعدد البنرات هو 5.' }) // 👈 السقف 5
