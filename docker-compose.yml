@@ -54,9 +54,9 @@ services:
       - N8N_HOST=n8n2.kaleem-ai.com
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       - WEBHOOK_URL=https://n8n2.kaleem-ai.com
       - N8N_EDITOR_BASE_URL=https://n8n2.kaleem-ai.com
+      - N8N_ENCRYPTION_KEY=LdpU1CTJbx2QbIaxMwWus1qRkpv3D0ud
       - N8N_RUNNERS_ENABLED=true
       # حدّد CORS لو تحتاج الوصول من واجهة خارجية
       - N8N_CORS_ALLOW_ORIGIN=https://localhost:5173
