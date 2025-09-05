@@ -32,8 +32,12 @@ export class SentryService {
       return;
     }
 
-    const dsn = this.configService.get<string>('SENTRY_DSN');
-    const environment = this.configService.get<string>('NODE_ENV', 'development');
+    const dsn =
+      'https://f5f1b42c1eee4dc3939075726a33a520@errors.kaleem-ai.com/1';
+    const environment = this.configService.get<string>(
+      'NODE_ENV',
+      'development',
+    );
     const release = this.configService.get<string>('APP_VERSION', '1.0.0');
 
     if (!dsn) {
@@ -47,16 +51,14 @@ export class SentryService {
         environment,
         release,
         debug: environment === 'development',
-        
+
         // تكامل الأداء
-        integrations: [
-          nodeProfilingIntegration(),
-        ],
-        
+        integrations: [nodeProfilingIntegration()],
+
         // إعدادات الأداء
         tracesSampleRate: environment === 'production' ? 0.1 : 1.0,
         profilesSampleRate: environment === 'production' ? 0.1 : 1.0,
-        
+
         // إعدادات الأخطاء
         beforeSend(event, hint) {
           // تصفية الأخطاء الحساسة
@@ -67,16 +69,16 @@ export class SentryService {
               return null;
             }
           }
-          
+
           // إزالة البيانات الحساسة
           if (event.request?.headers) {
             delete event.request.headers.authorization;
             delete event.request.headers.cookie;
           }
-          
+
           return event;
         },
-        
+
         // إعدادات السياق
         initialScope: {
           tags: {
@@ -95,10 +97,7 @@ export class SentryService {
   /**
    * تسجيل خطأ في Sentry
    */
-  captureException(
-    error: Error | string,
-    context: SentryContext = {}
-  ): string {
+  captureException(error: Error | string, context: SentryContext = {}): string {
     if (!this.isInitialized) {
       this.logger.warn('Sentry not initialized, error not captured');
       return '';
@@ -111,10 +110,12 @@ export class SentryService {
           ...context.tags,
           service: 'kaleem-bot',
         },
-        user: context.userId ? {
-          id: context.userId,
-          ip_address: context.ip,
-        } : undefined,
+        user: context.userId
+          ? {
+              id: context.userId,
+              ip_address: context.ip,
+            }
+          : undefined,
         extra: {
           ...context.extra,
           merchantId: context.merchantId,
@@ -148,7 +149,7 @@ export class SentryService {
   captureMessage(
     message: string,
     level: Sentry.SeverityLevel = 'info',
-    context: SentryContext = {}
+    context: SentryContext = {},
   ): string {
     if (!this.isInitialized) {
       this.logger.warn('Sentry not initialized, message not captured');
@@ -162,10 +163,12 @@ export class SentryService {
           ...context.tags,
           service: 'kaleem-bot',
         },
-        user: context.userId ? {
-          id: context.userId,
-          ip_address: context.ip,
-        } : undefined,
+        user: context.userId
+          ? {
+              id: context.userId,
+              ip_address: context.ip,
+            }
+          : undefined,
         extra: {
           ...context.extra,
           merchantId: context.merchantId,
@@ -190,7 +193,7 @@ export class SentryService {
   startTransaction(
     name: string,
     operation: string,
-    context: SentryContext = {}
+    context: SentryContext = {},
   ): any {
     if (!this.isInitialized) {
       this.logger.warn('Sentry not initialized, transaction not started');
@@ -201,7 +204,7 @@ export class SentryService {
       // إضافة تاج للعملية
       Sentry.setTag('operation', operation);
       Sentry.setTag('transaction_name', name);
-      
+
       // إضافة سياق للعملية
       Sentry.setContext('transaction', {
         name,
@@ -214,7 +217,7 @@ export class SentryService {
 
       // تسجيل بداية العملية
       this.logger.debug(`Transaction started: ${name} (${operation})`);
-      
+
       return {
         name,
         operation,
@@ -271,7 +274,12 @@ export class SentryService {
   /**
    * إضافة مستخدم للخطأ الحالي
    */
-  setUser(user: { id: string; email?: string; username?: string; ip_address?: string }): void {
+  setUser(user: {
+    id: string;
+    email?: string;
+    username?: string;
+    ip_address?: string;
+  }): void {
     if (!this.isInitialized) {
       return;
     }

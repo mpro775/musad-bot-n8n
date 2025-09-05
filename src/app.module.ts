@@ -66,6 +66,8 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { DispatchersModule } from './infra/dispatchers/dispatchers.module';
 import { WebhookDispatcherWorkerModule } from './workers/webhook-dispatcher.worker.module';
 import { AiReplyWorkerModule } from './workers/ai-reply.worker.module';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 
 @Module({
   imports: [
@@ -180,6 +182,7 @@ import { AiReplyWorkerModule } from './workers/ai-reply.worker.module';
     DispatchersModule,
   ],
   providers: [
+    AppService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     ...AmqpMetricsProviders,
     AmqpMetrics,
@@ -187,8 +190,10 @@ import { AiReplyWorkerModule } from './workers/ai-reply.worker.module';
     { provide: APP_GUARD, useClass: RolesGuard },
     RedisConfig,
     OutboxDispatcher,
+
     // 3) Interceptor لجمع المقاييس على كل طلب HTTP
   ],
   exports: [AmqpMetrics],
+  controllers: [AppController],
 })
 export class AppModule extends AppConfig {}

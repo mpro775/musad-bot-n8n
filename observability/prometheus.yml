@@ -56,3 +56,7 @@ scrape_configs:
   - job_name: 'otel-collector'
     static_configs:
       - targets: ['otel-collector:8889']
+
+  - job_name: 'node'
+    static_configs:
+      - targets: ['kaleem-node-exporter:9100']

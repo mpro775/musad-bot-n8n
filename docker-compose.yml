@@ -216,6 +216,21 @@ services:
     networks:
       - backnet
     restart: unless-stopped
+
+  # === Node Exporter ===
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: kaleem-node-exporter
+    restart: unless-stopped
+    networks:
+      - backnet
+    ports:
+      - '9100:9100'
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - /:/host:ro,rslave
+
   glitchtip-worker:
     image: glitchtip/glitchtip:latest
     command: ./bin/run-celery-with-beat.sh
