@@ -39,16 +39,73 @@ export class VectorService implements OnModuleInit {
 
   private readonly webCollection = 'web_knowledge'; // 👈 مجموعات جديدة
   private readonly logger = new Logger(VectorService.name);
-  private toStringList(val: any): string[] {
+  // استبدل النسخة القديمة بالكامل بهذه
+  private toStringList(
+    val: any,
+    seen: WeakSet<any> = new WeakSet(),
+    depth = 0,
+  ): string[] {
+    const MAX_DEPTH = 4;
+
+    const pushSafeJson = (v: any) => {
+      try {
+        return [JSON.stringify(v).slice(0, 200)];
+      } catch {
+        return [String(v)];
+      }
+    };
+
+    // بدالات خاصة لبعض الأنواع الشائعة
+    const isBufferLike = (v: any) =>
+      v?.type === 'Buffer' && Array.isArray(v?.data);
+    const isMongoObjectIdHex = (s: string) => /^[a-f0-9]{24}$/i.test(s);
+
     if (val == null) return [];
-    if (Array.isArray(val)) return val.flatMap((v) => this.toStringList(v));
-    if (typeof val === 'object') {
-      // لو object مثل { red: true } أو {0:'x',1:'y'}
-      const vals = Object.values(val);
-      return vals.length
-        ? vals.flatMap((v) => this.toStringList(v))
-        : [JSON.stringify(val)];
+    const t = typeof val;
+
+    // primitives
+    if (t === 'string' || t === 'number' || t === 'boolean')
+      return [String(val)];
+
+    // حد أقصى للعمق
+    if (depth >= MAX_DEPTH) return pushSafeJson(val);
+
+    // arrays
+    if (Array.isArray(val)) {
+      const out: string[] = [];
+      for (const item of val)
+        out.push(...this.toStringList(item, seen, depth + 1));
+      return out;
     }
+
+    // objects
+    if (t === 'object') {
+      // حارس الدوائر
+      if (seen.has(val)) return ['[Circular]'];
+      seen.add(val);
+
+      // حالات خاصة
+      if (val instanceof Date) return [val.toISOString()];
+      if (typeof (val as any).toHexString === 'function')
+        return [(val as any).toHexString()];
+      if (isBufferLike(val)) return [`[Buffer:${val.data.length}]`];
+
+      // أحيانًا toString يرجّع ObjectId كسلسلة 24 hex
+      if (typeof (val as any).toString === 'function') {
+        const s = (val as any).toString();
+        if (isMongoObjectIdHex(s)) return [s];
+      }
+
+      const values = Object.values(val);
+      if (!values.length) return pushSafeJson(val);
+
+      const out: string[] = [];
+      for (const v of values)
+        out.push(...this.toStringList(v, seen, depth + 1));
+      return out;
+    }
+
+    // fallback
     return [String(val)];
   }
 
@@ -58,7 +115,6 @@ export class VectorService implements OnModuleInit {
       .filter(Boolean);
     return list.join(sep);
   }
-
   private safeJoinComma(val: any): string {
     return this.safeJoin(val, ', ');
   }
@@ -560,6 +616,7 @@ export class VectorService implements OnModuleInit {
     if (product.name) parts.push(`Name: ${product.name}`);
     if (product.description) parts.push(`Description: ${product.description}`);
 
+    // 👇 fallback لاسم الفئة
     if (product.category || product.categoryName) {
       parts.push(
         `Category: ${this.safeJoin(product.category ?? product.categoryName)}`,
@@ -571,7 +628,6 @@ export class VectorService implements OnModuleInit {
     }
 
     if (product.attributes) {
-      // attributes: Record<string, string[] | string | object>
       const attrs = Object.entries(product.attributes).map(
         ([k, v]) => `${k}: ${this.safeJoin(v, '/')}`,
       );
