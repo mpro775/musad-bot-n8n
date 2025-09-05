@@ -1,25 +1,46 @@
 // src/vector/types.ts
 export interface EmbeddableProduct {
-  id: string;
-  merchantId: string;
+  id: string; // Mongo _id (as string)
+  merchantId: string; // as string
+
+  // أساسي
   name: string;
   description?: string;
-  category?: string;
+
+  // فئة
+  categoryId?: string | null;
+  categoryName?: string | null;
+
+  // سلاج/روابط
+  slug?: string | null;
+  storefrontSlug?: string | null;
+  domain?: string | null;
+  publicUrlStored?: string | null; // إن كنت تخزّنه بمنتجك
+  url?: string | null; // سنبنيه كـ absolute
+
+  // تسعير
+  price?: number | null;
+  priceEffective?: number | null;
+  currency?: string | null;
+
+  // عرض
+  hasActiveOffer?: boolean;
+  priceOld?: number | null;
+  priceNew?: number | null;
+  offerStart?: string | null; // ISO
+  offerEnd?: string | null; // ISO
+  discountPct?: number | null;
+
+  // أخرى
   specsBlock?: string[];
   keywords?: string[];
-  url?: string;
-  price?: number;
-  currency?: string;
   attributes?: Record<string, string[]>;
-  // عروض:
-  hasActiveOffer?: boolean;
-  priceOld?: number;
-  priceNew?: number;
-  priceEffective?: number;
-  offerStart?: string; // ISO
-  offerEnd?: string;   // ISO
-  discountPct?: number;
+  images?: string[]; // أول صورة للعرض في البوت
+  isAvailable?: boolean;
+  status?: string | null;
+  quantity?: number | null;
 }
+
 export type FAQData = {
   question?: string;
   answer?: string;

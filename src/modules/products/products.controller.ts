@@ -107,15 +107,13 @@ export class ProductsController {
   @Get()
   @ApiOperation({ summary: 'جلب جميع المنتجات للتاجر الحالي' })
   @ApiOkResponse({ type: ProductResponseDto, isArray: true })
-  async findAll(
-    @Query('merchantId') merchantId: string,
-  ): Promise<ProductResponseDto[]> {
-    if (!merchantId) {
-      throw new BadRequestException('merchantId is required');
-    }
+  async findAll(@Query('merchantId') merchantId: string) {
+    if (!merchantId) throw new BadRequestException('merchantId is required');
     const merchantObjectId = new Types.ObjectId(merchantId);
     const docs = await this.productsService.findAllByMerchant(merchantObjectId);
-    return plainToInstance(ProductResponseDto, docs);
+    return plainToInstance(ProductResponseDto, docs, {
+      excludeExtraneousValues: true,
+    });
   }
 
   @Post(':id/images')
@@ -264,5 +262,19 @@ export class ProductsController {
     }
 
     return this.productsService.remove(id);
+  }
+  @Public()
+  @Get('public/:storeSlug/product/:productSlug')
+  async getPublicBySlug(
+    @Param('storeSlug') storeSlug: string,
+    @Param('productSlug') productSlug: string,
+  ) {
+    const p = await this.productsService.getPublicBySlug(
+      storeSlug,
+      productSlug,
+    );
+    return plainToInstance(ProductResponseDto, p, {
+      excludeExtraneousValues: true,
+    });
   }
 }

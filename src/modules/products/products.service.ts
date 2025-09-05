@@ -31,7 +31,111 @@ import sharp from 'sharp';
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+const toIdStr = (v: any): string | null => {
+  if (!v) return null;
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object') {
+    const raw = v._id ?? v.id ?? v.value ?? v.$oid ?? v;
+    if (typeof raw === 'string') return raw;
+    const data = raw?.buffer?.data ?? raw?.data;
+    if (Array.isArray(data) && data.length === 12) {
+      return Array.from(data)
+        .map((b: number) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+    const maybe = raw?.toString?.() ?? v?.toString?.();
+    if (maybe && maybe !== '[object Object]') return String(maybe);
+  }
+  return null;
+};
 
+const toNum = (x: any): number | null => {
+  const n = typeof x === 'number' ? x : Number(x);
+  return Number.isFinite(n) ? n : null;
+};
+
+const computePricing = (doc: any) => {
+  const price = toNum(doc.price);
+  const priceOld = toNum(doc.offer?.oldPrice);
+  const priceNew = toNum(doc.offer?.newPrice);
+  const effective = toNum(doc.priceEffective) ?? price ?? null;
+  const hasOffer =
+    !!doc?.offer?.enabled && priceOld != null && priceNew != null;
+  const discountPct =
+    hasOffer && priceOld! > 0
+      ? Math.max(0, Math.round(((priceOld! - priceNew!) / priceOld!) * 100))
+      : null;
+  return { price, priceOld, priceNew, effective, hasOffer, discountPct };
+};
+
+// يبني DTO مناسب للفهرسة في المتجهات
+const toEmbeddable = (
+  doc: any,
+  sf?: { slug?: string; domain?: string } | null,
+  categoryName?: string | null,
+) => {
+  const {
+    _id,
+    merchantId,
+    name,
+    description,
+    specsBlock,
+    keywords,
+    images,
+    attributes,
+    status,
+    isAvailable,
+    quantity,
+  } = doc;
+
+  const categoryId = toIdStr(doc.category);
+  const storefrontSlug = sf?.slug ?? doc.storefrontSlug ?? undefined;
+  const domain = sf?.domain ?? doc.storefrontDomain ?? undefined;
+
+  const { price, priceOld, priceNew, effective, hasOffer, discountPct } =
+    computePricing(doc);
+
+  return {
+    id: String(_id),
+    merchantId: toIdStr(merchantId)!,
+
+    name,
+    description,
+
+    // الفئة
+    categoryId: categoryId ?? undefined,
+    categoryName: categoryName ?? undefined,
+
+    // روابط/سلاج
+    slug: doc.slug ?? undefined,
+    storefrontSlug: storefrontSlug ?? undefined,
+    domain: domain ?? undefined,
+    publicUrlStored: doc.publicUrlStored ?? doc.publicUrl ?? undefined, // لو مخزّنة عندك
+
+    // وسوم/مواصفات/سمات/صور
+    specsBlock: Array.isArray(specsBlock) ? specsBlock : undefined,
+    keywords: Array.isArray(keywords) ? keywords : undefined,
+    attributes: attributes || undefined,
+    images: Array.isArray(images) ? images.slice(0, 6) : undefined,
+
+    // تسعير/عرض
+    price,
+    priceEffective: effective,
+    currency: doc.currency ?? undefined,
+
+    hasActiveOffer: hasOffer,
+    priceOld,
+    priceNew,
+    offerStart: doc.offer?.startAt ?? undefined,
+    offerEnd: doc.offer?.endAt ?? undefined,
+    discountPct,
+
+    // حالة
+    isAvailable: typeof isAvailable === 'boolean' ? isAvailable : undefined,
+    status: status ?? undefined,
+    quantity: toNum(quantity) ?? undefined,
+  };
+};
 function normalizeQuery(query: string) {
   return query.trim().toLowerCase();
 }
@@ -119,18 +223,6 @@ export class ProductsService {
   private genStoreSlugFallback(merchantId: Types.ObjectId) {
     return this.normalizeSlug(`store-${merchantId.toString().slice(-8)}`);
   }
-  private isOfferActive(ofr?: {
-    enabled?: boolean;
-    startAt?: Date;
-    endAt?: Date;
-    newPrice?: number;
-  }) {
-    if (!ofr?.enabled || ofr.newPrice == null) return false;
-    const now = new Date();
-    const startOk = ofr.startAt ? now >= new Date(ofr.startAt) : true;
-    const endOk = ofr.endAt ? now <= new Date(ofr.endAt) : true;
-    return startOk && endOk;
-  }
 
   private async ensureUniqueSlug(merchantId: Types.ObjectId, base: string) {
     // لو base فاضي استخدم fallback
@@ -165,27 +257,6 @@ export class ProductsService {
 
     // كان لديك minio.presignedUrl(..., 7d) — غيّرناه لساعة وبـ presignedGetObject
     return await this.minio.presignedGetObject(bucket, key, 3600);
-  }
-
-  // ====== التحقق من الفئة Leaf ======
-  private async assertLeafCategory(
-    merchantId: Types.ObjectId,
-    categoryId: string,
-  ) {
-    const cat = await this.categoryModel
-      .findOne({ _id: categoryId, merchantId })
-      .lean();
-    if (!cat) throw new BadRequestException('الفئة غير موجودة لهذا التاجر');
-    const hasChildren = await this.categoryModel.exists({
-      merchantId,
-      parent: cat._id,
-    });
-    if (hasChildren) {
-      throw new BadRequestException(
-        'لا يمكن إضافة منتجات لفئة لديها أبناء. اختر فئة فرعية نهائية.',
-      );
-    }
-    return cat._id;
   }
 
   // ====== معالجة الصورة (مربع ≤2MB) ======
@@ -310,18 +381,6 @@ export class ProductsService {
       remaining: Math.max(0, MAX_IMAGES - p.images.length),
     };
   }
-  private async generateUniqueSlug(
-    merchantId: string | Types.ObjectId,
-  ): Promise<string> {
-    const MAX_TRIES = 6;
-    for (let i = 0; i < MAX_TRIES; i++) {
-      const slug = 'p-' + Math.random().toString(16).slice(2, 8);
-      const exists = await this.productModel.exists({ merchantId, slug });
-      if (!exists) return slug;
-    }
-    // fallback أطول
-    return 'p-' + Date.now().toString(36);
-  }
 
   private sanitizeAttributes(input?: Record<string, string[]>) {
     if (!input || typeof input !== 'object') return undefined;
@@ -335,13 +394,6 @@ export class ProductsService {
       if (vals.length) out[key] = Array.from(new Set(vals)).slice(0, 50); // حد أقصى مع إزالة التكرار
     }
     return Object.keys(out).length ? out : undefined;
-  }
-
-  private isLeafCategory(categoryId: string, cats: any[]): boolean {
-    const parentIds = new Set(
-      cats.filter((c) => c.parent).map((c) => String(c.parent)),
-    );
-    return !parentIds.has(String(categoryId));
   }
 
   // src/modules/products/products.service.ts (المقتطفات الأهم)
@@ -413,19 +465,25 @@ export class ProductsService {
       uniqueKey,
     });
 
-    await this.vectorService.upsertProducts([
-      {
-        id: product._id.toString(),
-        merchantId: product.merchantId.toString(),
-        name: product.name,
-        description: product.description,
-        category: product.category?.toString(),
-        specsBlock: product.specsBlock,
-        keywords: product.keywords,
-        url: (product as any).publicUrl,
-        price: product.price ?? 0,
-      },
-    ]);
+    try {
+      // اجلب storefront للحصول على slug/domain
+      const [sf, cat] = await Promise.all([
+        this.storefrontModel
+          .findOne({ merchant: product.merchantId })
+          .select('slug domain')
+          .lean(),
+        product.category
+          ? this.categoryModel.findById(product.category).select('name').lean()
+          : null,
+      ]);
+
+      const ep = toEmbeddable(product, sf, cat?.name ?? null);
+
+      await this.vectorService.upsertProducts([ep]);
+    } catch (e) {
+      // لا تكسر الطلب بسبب فهرسة المتجهات
+      console.warn('vector upsert (create) failed', e as any);
+    }
 
     return product;
   }
@@ -490,24 +548,22 @@ export class ProductsService {
 
     if (!doc) throw new ProductNotFoundError(id);
 
-    // (اختياري) تحدّث المتجهات لو يلزم
     try {
-      await this.vectorService.upsertProducts([
-        {
-          id: doc._id.toString(),
-          merchantId: doc.merchantId.toString?.() ?? String(doc.merchantId),
-          name: doc.name,
-          description: doc.description,
-          category:
-            typeof doc.category === 'object'
-              ? doc.category.toString()
-              : doc.category,
-          specsBlock: doc.specsBlock,
-          keywords: doc.keywords,
-        },
+      const [sf, cat] = await Promise.all([
+        this.storefrontModel
+          .findOne({ merchant: doc.merchantId })
+          .select('slug domain')
+          .lean(),
+        doc.category
+          ? this.categoryModel.findById(doc.category).select('name').lean()
+          : null,
       ]);
+
+      const ep = toEmbeddable(doc, sf, cat?.name ?? null);
+
+      await this.vectorService.upsertProducts([ep]);
     } catch (e) {
-      // لا تكسر الطلب بسبب المتجهات
+      console.warn('vector upsert (update) failed', e as any);
     }
 
     return doc;
@@ -568,21 +624,18 @@ export class ProductsService {
       },
     );
 
-    await this.vectorService.upsertProducts([
-      {
-        id: doc._id.toString(),
-        merchantId,
-        name: doc.name,
-        description: doc.description,
-        category:
-          typeof doc.category === 'object'
-            ? String(doc.category)
-            : (doc.category as any),
-        specsBlock: doc.specsBlock,
-        keywords: doc.keywords,
-        url: (doc as any).publicUrl, // 👈 بالـ ID
-      },
-    ]);
+    try {
+      // عند الاستيراد أنت أصلاً جبت sf بالأعلى
+      const cat = doc.category
+        ? await this.categoryModel.findById(doc.category).select('name').lean()
+        : null;
+
+      const ep = toEmbeddable(doc, sf, cat?.name ?? null);
+
+      await this.vectorService.upsertProducts([ep]);
+    } catch (e) {
+      console.warn('vector upsert (zid import) failed', e as any);
+    }
 
     const existed = await this.productModel.exists(filter);
     const created = !(existed && (existed as any)._id?.equals(doc._id));
@@ -595,18 +648,51 @@ export class ProductsService {
     });
   }
 
-  async findAllByMerchant(merchantObjectId: Types.ObjectId): Promise<any[]> {
+  // جميع منتجات التاجر — ترجع categoryName + category كـ string
+  async findAllByMerchant(merchantId: Types.ObjectId) {
     const docs = await this.productModel
-      .find({ merchantId: merchantObjectId })
-      .lean()
-      .exec();
+      .find({ merchantId })
+      .sort({ createdAt: -1 })
+      .populate({ path: 'category', select: 'name' }) // 👈
+      .lean();
 
-    // حول حقول الـ ObjectId إلى strings
-    return docs.map((doc) => ({
-      ...doc,
-      _id: doc._id.toString(),
-      merchantId: doc.merchantId.toString(),
+    return docs.map((p: any) => ({
+      ...p,
+      _id: p._id?.toString?.() ?? String(p._id),
+      merchantId: p.merchantId?.toString?.() ?? String(p.merchantId),
+      category:
+        p.category?._id?.toString?.() ??
+        (typeof p.category === 'string' ? p.category : undefined),
+      categoryName: p.category?.name, // 👈 هذا ما سيعرضه الفرونت
     }));
+  }
+
+  // منتج عام عبر slug (للمتجر العام)
+  async getPublicBySlug(storeSlug: string, productSlug: string) {
+    const sf = await this.storefrontModel.findOne({ slug: storeSlug }).lean();
+    if (!sf) throw new NotFoundException('Storefront not found');
+
+    const p: any = await this.productModel
+      .findOne({
+        merchantId: sf.merchant,
+        slug: productSlug,
+        status: 'active',
+        isAvailable: true,
+      })
+      .populate({ path: 'category', select: 'name' })
+      .lean();
+
+    if (!p) throw new NotFoundException('Product not found');
+
+    return {
+      ...p,
+      _id: p._id?.toString?.() ?? String(p._id),
+      merchantId: p.merchantId?.toString?.() ?? String(p.merchantId),
+      category:
+        p.category?._id?.toString?.() ??
+        (typeof p.category === 'string' ? p.category : undefined),
+      categoryName: p.category?.name,
+    };
   }
   // البحث حسب الاسم مهما كان متوفرًا أو لا
   async findByName(merchantId: string, name: string): Promise<any> {
@@ -808,23 +894,21 @@ export class ProductsService {
     if (!productDoc) {
       throw new ProductNotFoundError(zidProduct.id);
     }
+    try {
+      // عند الاستيراد أنت أصلاً جبت sf بالأعلى
+      const cat = productDoc.category
+        ? await this.categoryModel
+            .findById(productDoc.category)
+            .select('name')
+            .lean()
+        : null;
 
-    // حدّث المتجهات مع URL عام بالـ ID (publicUrl virtual)
-    await this.vectorService.upsertProducts([
-      {
-        id: productDoc._id.toString(),
-        merchantId,
-        name: productDoc.name,
-        description: productDoc.description,
-        category:
-          typeof productDoc.category === 'object'
-            ? productDoc.category?.toString()
-            : (productDoc.category as any),
-        specsBlock: productDoc.specsBlock,
-        keywords: productDoc.keywords,
-        url: (productDoc as any).publicUrl, // ← رابط بالـ ID
-      },
-    ]);
+      const ep = toEmbeddable(productDoc, sf, cat?.name ?? null);
+
+      await this.vectorService.upsertProducts([ep]);
+    } catch (e) {
+      console.warn('vector upsert (zid import) failed', e as any);
+    }
 
     return productDoc;
   }

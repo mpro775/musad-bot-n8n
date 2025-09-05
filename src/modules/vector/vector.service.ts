@@ -23,6 +23,74 @@ import { ConfigService } from '@nestjs/config';
 const PRODUCT_NAMESPACE = 'd94a5f5a-2bfc-4c2d-9f10-1234567890ab';
 const FAQ_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 const NAMESPACE = '6ba7b811-9dad-11d1-80b4-00c04fd430c8';
+const toStr = (x: any): string | null => {
+  if (x == null) return null;
+  if (typeof x === 'string') return x.trim() || null;
+  if (typeof x === 'object') {
+    const id = x._id ?? x.id ?? x.value ?? x.$oid;
+    if (typeof id === 'string') return id;
+    const data = x?.buffer?.data ?? x?.data;
+    if (Array.isArray(data) && data.length === 12) {
+      return Array.from(data)
+        .map((b: number) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+    const maybe = x.toString?.();
+    if (maybe && maybe !== '[object Object]') return String(maybe);
+  }
+  return String(x);
+};
+
+const toNum = (x: any): number | null => {
+  const n = typeof x === 'number' ? x : Number(x);
+  return Number.isFinite(n) ? n : null;
+};
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  SAR: 'ر.س',
+  YER: '﷼',
+  USD: '$',
+};
+const fmtPrice = (n?: number | null, cur?: string | null) =>
+  n == null ? '' : `${n} ${CURRENCY_SYMBOLS[cur || ''] || cur || ''}`;
+
+// الأساس لتكوين URL مطلق
+const PUBLIC_WEB_BASE_URL = (
+  process.env.PUBLIC_WEB_BASE_URL || 'https://app.kaleem-ai.com'
+).replace(/\/+$/, '');
+
+// يبني رابطًا كاملًا (https://domain/... أو https://app/store/:slug/product/:slug)
+const buildAbsoluteUrl = (p: EmbeddableProduct): string | null => {
+  if (p.url) return p.url; // لو محفوظ جاهز
+  if (p.publicUrlStored) {
+    // لو مخزّن عندك مسارًا نسبيًا (مثل /store/slug/product/slug) حوّله لمطلق
+    if (/^https?:\/\//i.test(p.publicUrlStored)) return p.publicUrlStored;
+    return `${PUBLIC_WEB_BASE_URL}${p.publicUrlStored.startsWith('/') ? '' : '/'}${p.publicUrlStored}`;
+  }
+  if (p.domain && p.slug)
+    return `https://${p.domain}/product/${encodeURIComponent(p.slug)}`;
+  if (p.storefrontSlug && p.slug)
+    return `${PUBLIC_WEB_BASE_URL}/store/${encodeURIComponent(p.storefrontSlug)}/product/${encodeURIComponent(p.slug)}`;
+  // fallback: id
+  if (p.storefrontSlug && p.id)
+    return `${PUBLIC_WEB_BASE_URL}/store/${encodeURIComponent(p.storefrontSlug)}/product/${encodeURIComponent(p.id)}`;
+  return null;
+};
+const truncate = (s: string, max = 400) =>
+  s && s.length > max ? s.slice(0, max) + '…' : s || '';
+
+// ابني رابط تلقائيًا لو ما وصل url
+const buildUrl = (p: any): string | null => {
+  if (p.url) return p.url;
+  if (p.publicUrlStored) return p.publicUrlStored; // موجود عندك مسبقًا
+  const slug = p.slug;
+  const sf = p.storefrontSlug;
+  if (slug && sf)
+    return `/store/${encodeURIComponent(sf)}/product/${encodeURIComponent(slug)}`;
+  if (slug && p.domain)
+    return `https://${p.domain}/product/${encodeURIComponent(slug)}`;
+  return null;
+};
 
 @Injectable()
 export class VectorService implements OnModuleInit {
@@ -41,14 +109,16 @@ export class VectorService implements OnModuleInit {
     private readonly http: HttpService,
     @Inject(forwardRef(() => ProductsService)) // ← أضف هذه السطر
     private readonly productsService: ProductsService,
-    private config: ConfigService
+    private config: ConfigService,
     // 👈 وأيضًا هذا لو استخدمته
   ) {
-      this.embeddingBase = (this.config.get<string>('EMBEDDING_BASE_URL') || '').replace(/\/+$/, '');
-      if (!this.embeddingBase) {
-        throw new Error('EMBEDDING_BASE_URL is required');
-      }
+    this.embeddingBase = (
+      this.config.get<string>('EMBEDDING_BASE_URL') || ''
+    ).replace(/\/+$/, '');
+    if (!this.embeddingBase) {
+      throw new Error('EMBEDDING_BASE_URL is required');
     }
+  }
   public async onModuleInit(): Promise<void> {
     this.qdrant = new QdrantClient({ url: process.env.QDRANT_URL });
     console.log('[VectorService] Qdrant URL is', process.env.QDRANT_URL);
@@ -106,7 +176,6 @@ export class VectorService implements OnModuleInit {
     return this.qdrant.delete(this.faqCollection, { points: [id] });
   }
 
-  
   // vector.service.ts
   public async embed(text: string): Promise<number[]> {
     const embeddingUrl = this.embeddingBase; // تأكد من إزالة المسافة الأولى قبل http
@@ -224,38 +293,99 @@ export class VectorService implements OnModuleInit {
     return this.qdrant.delete(this.botFaqCollection, { points: [pointId] });
   }
   public async upsertProducts(products: EmbeddableProduct[]) {
-    const points = await Promise.all(products.map(async (p) => {
-      const discountPct = (p.priceOld && p.priceNew && p.priceOld > 0)
-        ? Math.max(0, Math.round(((p.priceOld - p.priceNew) / p.priceOld) * 100))
-        : undefined;
-  
-      return {
-        id: uuidv5(p.id, PRODUCT_NAMESPACE),
-        vector: await this.embed(this.buildTextForEmbedding({ ...p, discountPct })),
-        payload: {
-          mongoId: p.id,
-          merchantId: p.merchantId,
+    const points = await Promise.all(
+      products.map(async (p0) => {
+        // تطبيع
+        const p: EmbeddableProduct = { ...p0 };
+
+        const mongoId = toStr(p.id)!;
+        const merchantId = toStr(p.merchantId)!;
+
+        const categoryId = toStr(p.categoryId ?? (p as any).category);
+        const categoryName = p.categoryName ?? null;
+
+        const price = toNum(p.price);
+        const priceOld = toNum(p.priceOld);
+        const priceNew = toNum(p.priceNew);
+        const priceEff = toNum(p.priceEffective) ?? price;
+
+        const discountPct =
+          priceOld && priceNew && priceOld > 0
+            ? Math.max(0, Math.round(((priceOld - priceNew) / priceOld) * 100))
+            : null;
+
+        const urlAbs = buildAbsoluteUrl({
+          ...p,
+          id: mongoId,
+          merchantId,
+          categoryId,
+          price,
+          priceOld,
+          priceNew,
+          priceEffective: priceEff,
+          discountPct,
+        });
+
+        // المتجه
+        const vectorText = this.buildTextForEmbedding({
+          ...p,
+          id: mongoId,
+          merchantId,
+          categoryId,
+          categoryName,
+          price,
+          priceOld,
+          priceNew,
+          priceEffective: priceEff,
+          discountPct,
+          url: urlAbs, // لأجل سطر "الرابط:" في النص
+        });
+        const vector = await this.embed(vectorText);
+
+        // الـ payload (علشان البوت يشكل الرد والزر بسهولة)
+        const payload = {
+          mongoId,
+          merchantId,
           name: p.name,
           description: p.description ?? '',
-          category: p.category ?? '',
+          categoryId: categoryId ?? null,
+          categoryName,
           specsBlock: p.specsBlock ?? [],
           keywords: p.keywords ?? [],
-          url: p.url ?? null,
-          price: Number.isFinite(p.price as number) ? (p.price as number) : null,
-          currency: p.currency || null,
-          attributes: p.attributes || null,
-          // عروض:
+          url: urlAbs, // 👈 مطلق وجاهز للزر
+          slug: p.slug ?? null,
+          storefrontSlug: p.storefrontSlug ?? null,
+          domain: p.domain ?? null,
+
+          images: Array.isArray(p.images) ? p.images.slice(0, 6) : [], // أولى الصور
+          primaryImage:
+            Array.isArray(p.images) && p.images[0] ? p.images[0] : null,
+
+          price,
+          priceEffective: priceEff,
+          currency: p.currency ?? null,
+
           hasOffer: !!p.hasActiveOffer,
-          priceOld: p.priceOld ?? null,
-          priceNew: p.priceNew ?? null,
-          priceEffective: p.priceEffective ?? (Number.isFinite(p.price as number) ? Number(p.price) : null),
-          offerStart: p.offerStart || null,
-          offerEnd: p.offerEnd || null,
-          discountPct: discountPct ?? null,
-        },
-      };
-    }));
-  
+          priceOld,
+          priceNew,
+          offerStart: p.offerStart ?? null,
+          offerEnd: p.offerEnd ?? null,
+          discountPct,
+
+          isAvailable:
+            typeof p.isAvailable === 'boolean' ? p.isAvailable : null,
+          status: p.status ?? null,
+          quantity: p.quantity ?? null,
+        };
+
+        return {
+          id: uuidv5(mongoId, PRODUCT_NAMESPACE),
+          vector,
+          payload,
+        };
+      }),
+    );
+
     return this.qdrant.upsert(this.collection, { wait: true, points });
   }
 
@@ -264,7 +394,19 @@ export class VectorService implements OnModuleInit {
     merchantId: string,
     topK = 5,
   ): Promise<
-    { id: string; name?: string; price?: number; url?: string; score: number }[]
+    {
+      id: string;
+      name?: string;
+      price?: number;
+      priceEffective?: number;
+      currency?: string;
+      url?: string;
+      image?: string;
+      categoryName?: string;
+      hasOffer?: boolean;
+      discountPct?: number | null;
+      score: number;
+    }[]
   > {
     // 1) Embed للاستعلام
     const vector = await this.embed(text);
@@ -272,9 +414,26 @@ export class VectorService implements OnModuleInit {
     // 2) بحث في Qdrant
     const rawResults = await this.qdrant.search(this.collection, {
       vector,
-      limit: topK * 4, // نوسع ثم نعيد ترتيبهم
-      with_payload: { include: ['mongoId', 'name', 'price', 'url'] },
-      filter: { must: [{ key: 'merchantId', match: { value: merchantId } }] },
+      limit: topK * 4,
+      with_payload: {
+        include: [
+          'mongoId',
+          'name',
+          'description',
+          'url',
+          'images',
+          'primaryImage',
+          'price',
+          'priceEffective',
+          'currency',
+          'categoryName',
+          'hasOffer',
+          'discountPct',
+        ],
+      },
+      filter: {
+        must: [{ key: 'merchantId', match: { value: String(merchantId) } }],
+      },
     });
 
     if (!rawResults.length) return [];
@@ -316,22 +475,22 @@ export class VectorService implements OnModuleInit {
     }
 
     // 5) إبراز أفضل Top K
-    const pick = (
-      i: number,
-    ): {
-      id: string;
-      name?: string;
-      price?: number;
-      url?: string;
-      score: number;
-    } => {
+    const pick = (i: number) => {
       const item = rawResults[i];
       const p = item.payload as any;
       return {
         id: String(p.mongoId),
         name: p.name,
         price: typeof p.price === 'number' ? p.price : undefined,
-        url: p.url ?? undefined,
+        priceEffective:
+          typeof p.priceEffective === 'number' ? p.priceEffective : undefined,
+        currency: p.currency ?? undefined,
+        url: p.url ?? undefined, // 👈 الزر
+        image:
+          p.primaryImage ?? (Array.isArray(p.images) ? p.images[0] : undefined),
+        categoryName: p.categoryName ?? undefined,
+        hasOffer: !!p.hasOffer,
+        discountPct: p.discountPct ?? null,
         score: item.score ?? 0,
       };
     };
@@ -469,21 +628,60 @@ export class VectorService implements OnModuleInit {
   }
   private buildTextForEmbedding(product: EmbeddableProduct): string {
     const parts: string[] = [];
-    if (product.name) parts.push(`Name: ${product.name}`);
-    if (product.description) parts.push(`Description: ${product.description}`);
-    if (product.category) parts.push(`Category: ${product.category}`);
-    if (product.specsBlock?.length) parts.push(`Specs: ${product.specsBlock.join(', ')}`);
-    if (product.attributes) {
-      const attrs = Object.entries(product.attributes)
-        .map(([k, v]) => `${k}: ${(v||[]).join('/')}`);
-      if (attrs.length) parts.push(`Attributes: ${attrs.join('; ')}`);
+
+    // الأساس
+    if (product.name) parts.push(`الاسم: ${product.name}`);
+    if (product.description)
+      parts.push(`الوصف: ${truncate(product.description, 500)}`);
+
+    // الفئة
+    const cat = product.categoryName || product.categoryId;
+    if (cat) parts.push(`الفئة: ${cat}`);
+
+    // المواصفات/الكلمات
+    if (product.specsBlock?.length)
+      parts.push(`المواصفات: ${product.specsBlock.join('، ')}`);
+    if (product.attributes && Object.keys(product.attributes).length) {
+      const attrs = Object.entries(product.attributes).map(
+        ([k, v]) => `${k}: ${(v || []).join('/')}`,
+      );
+      parts.push(`السمات: ${attrs.join('؛ ')}`);
     }
-    if (product.keywords?.length) parts.push(`Keywords: ${product.keywords.join(', ')}`);
-    if (product.hasActiveOffer && product.priceOld != null && product.priceNew != null) {
-      parts.push(`Offer: from ${product.priceOld} to ${product.priceNew}`);
+    if (product.keywords?.length)
+      parts.push(`كلمات مفتاحية: ${product.keywords.join('، ')}`);
+
+    // التسعير والعروض
+    const priceEff = product.priceEffective ?? product.price ?? null;
+    const priceStr = fmtPrice(priceEff, product.currency);
+    if (priceStr) parts.push(`السعر: ${priceStr}`);
+
+    if (
+      product.hasActiveOffer &&
+      product.priceOld != null &&
+      product.priceNew != null
+    ) {
+      const oldS = fmtPrice(product.priceOld, product.currency);
+      const newS = fmtPrice(product.priceNew, product.currency);
+      const pct = product.discountPct != null ? `${product.discountPct}%` : '';
+      parts.push(`عرض: من ${oldS} إلى ${newS}${pct ? ` (خصم ${pct})` : ''}`);
+      if (product.offerStart || product.offerEnd) {
+        parts.push(
+          `مدة العرض: ${product.offerStart ?? ''}${product.offerEnd ? ` حتى ${product.offerEnd}` : ''}`,
+        );
+      }
     }
-    if (product.price != null) parts.push(`Price: ${product.price} ${product.currency || ''}`);
+
+    // الحالة
+    if (product.status) parts.push(`الحالة: ${product.status}`);
+    if (typeof product.isAvailable === 'boolean') {
+      parts.push(`التوفر: ${product.isAvailable ? 'متوفر' : 'غير متوفر'}`);
+    }
+    if (product.quantity != null) parts.push(`الكمية: ${product.quantity}`);
+
+    // أخيرًا الرابط (مفيد للبوت — وأيضًا نضعه في payload)
+    const abs = buildAbsoluteUrl(product);
+    if (abs) parts.push(`الرابط: ${abs}`);
+
     return parts.join('. ');
   }
-  
 }

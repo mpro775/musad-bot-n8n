@@ -26,10 +26,6 @@ import { unlink } from 'node:fs/promises';
 import sharp from 'sharp';
 import { LeadsService } from '../leads/leads.service';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
-import {
-  ALLOWED_DARK_BRANDS,
-  AllowedDarkBrand,
-} from '../../common/constants/brand';
 
 export interface StorefrontResult {
   merchant: any;
