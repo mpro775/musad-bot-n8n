@@ -217,19 +217,22 @@ services:
       - backnet
     restart: unless-stopped
 
-  # === Node Exporter ===
   node-exporter:
     image: prom/node-exporter:latest
     container_name: kaleem-node-exporter
     restart: unless-stopped
-    networks:
-      - backnet
     ports:
       - '9100:9100'
     command:
-      - '--path.rootfs=/host'
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
     volumes:
-      - /:/host:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - backnet
 
   glitchtip-worker:
     image: glitchtip/glitchtip:latest

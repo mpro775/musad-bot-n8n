@@ -23,11 +23,11 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Public } from 'src/common/decorators/public.decorator';
-import { 
-  ApiSuccessResponse, 
-  ApiCreatedResponse as CommonApiCreatedResponse, 
-  CurrentUser, 
-  PaginationDto
+import {
+  ApiSuccessResponse,
+  ApiCreatedResponse as CommonApiCreatedResponse,
+  CurrentUser,
+  PaginationDto,
 } from '../../common';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
@@ -85,9 +85,8 @@ export class AuthController {
   @ApiBody({ type: VerifyEmailDto })
   @ApiOkResponse({ description: 'تم تفعيل البريد بنجاح' })
   @ApiUnauthorizedResponse({ description: 'رمز التفعيل غير صحيح أو منتهي' })
-  async verifyEmail(@Body() dto: VerifyEmailDto): Promise<{ message: string }> {
-    await this.authService.verifyEmail(dto);
-    return { message: 'تم تفعيل البريد بنجاح' };
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto);
   }
   @Post('forgot-password')
   @Throttle({ default: { ttl: 60, limit: 3 } }) // 3 طلبات/دقيقة/IP

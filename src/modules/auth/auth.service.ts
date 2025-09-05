@@ -41,6 +41,7 @@ import {
 } from './schemas/password-reset-token.schema';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { toStr } from './utils/id';
 
 @Injectable()
 export class AuthService {
@@ -178,38 +179,49 @@ export class AuthService {
     };
   }
 
-  async verifyEmail(dto: VerifyEmailDto): Promise<void> {
+  // auth.service.ts
+  async verifyEmail(dto: VerifyEmailDto): Promise<{
+    accessToken: string;
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      merchantId: string | null;
+      firstLogin: boolean;
+      emailVerified: boolean;
+    };
+  }> {
     const { email, code } = dto;
     const user = await this.userModel.findOne({ email }).exec();
     if (!user) throw new BadRequestException('رمز التفعيل غير صحيح');
 
-    const token = await this.tokenModel
+    const tokenDoc = await this.tokenModel
       .findOne({ userId: user._id })
       .sort({ createdAt: -1 })
       .exec();
-    if (!token || token.codeHash !== sha256(code)) {
+
+    if (!tokenDoc || tokenDoc.codeHash !== sha256(code)) {
       throw new BadRequestException('رمز التفعيل غير صحيح');
     }
-    if (token.expiresAt.getTime() < Date.now()) {
+    if (tokenDoc.expiresAt.getTime() < Date.now()) {
       throw new BadRequestException('رمز التفعيل منتهي الصلاحية');
     }
 
     user.emailVerified = true;
-    user.firstLogin = false;
+    user.firstLogin = true; // 👈 نريد الذهاب للأونبوردنج
     await user.save();
 
-    // نظّف التوكنات
     await this.tokenModel.deleteMany({ userId: user._id });
 
-    // (اختياري) ابدأ تهيئة Merchant هنا (أو اتركها لأول دخول)
-    // حاول/التقط حتى لا تفشل الاستجابة:
+    // 👇 إبقِ منطق إنشاء التاجر كما هو عندك (اختياري)
     try {
       if (!user.merchantId) {
         const merchant = await this.merchants.create({
           userId: String(user._id),
           name: `متجر ${user.name}`,
-          active: true, // ✅ تأكيد أنه نشِط
-          deletedAt: null, // ✅ ليس محذوفاً ناعماً
+          active: true,
+          deletedAt: null,
           addresses: [],
           subscription: {
             tier: PlanTier.Free,
@@ -250,10 +262,29 @@ export class AuthService {
         user.merchantId = merchant._id as Types.ObjectId;
         await user.save();
       }
-    } catch (e: any) {
+    } catch (e) {
       this.logger.error('Failed to create merchant', e);
-      // سجل فقط، لا تعطل تفعيل الإيميل
     }
+
+    const payload = {
+      userId: user._id,
+      role: user.role,
+      merchantId: user.merchantId ?? null,
+    };
+    const accessToken = this.jwtService.sign(payload);
+
+    return {
+      accessToken,
+      user: {
+        id: String(user._id),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        merchantId: toStr(user.merchantId), // ✅
+        firstLogin: true,
+        emailVerified: true,
+      },
+    };
   }
 
   async resendVerification(dto: ResendVerificationDto): Promise<void> {

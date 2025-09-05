@@ -53,9 +53,10 @@ export class MailService {
    * إرسال بريد تفعيل الحساب بتصميم عصري
    */
   async sendVerificationEmail(email: string, code: string): Promise<void> {
-    const link = `${this.frontendUrl.replace(/\/+$/, '')}/verify-email?code=${encodeURIComponent(
-      code,
-    )}`;
+    const link =
+      `${this.frontendUrl.replace(/\/+$/, '')}/verify-email` +
+      `?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}`;
+
     const html = this.generateEmailTemplate(code, link);
 
     try {
