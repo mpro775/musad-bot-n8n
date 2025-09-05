@@ -56,7 +56,7 @@ const fmtPrice = (n?: number | null, cur?: string | null) =>
 
 // الأساس لتكوين URL مطلق
 const PUBLIC_WEB_BASE_URL = (
-  process.env.PUBLIC_WEB_BASE_URL || 'https://app.kaleem-ai.com'
+  process.env.PUBLIC_WEB_BASE_URL || 'https://kaleem-ai.com'
 ).replace(/\/+$/, '');
 
 // يبني رابطًا كاملًا (https://domain/... أو https://app/store/:slug/product/:slug)
