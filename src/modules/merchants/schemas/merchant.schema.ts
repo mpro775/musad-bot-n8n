@@ -50,8 +50,8 @@ export const MerchantDeletionMetaSchema =
 @Schema({ timestamps: true })
 export class Merchant {
   // — Core fields —
-  @Prop({ required: true, unique: true })
-  name: string;
+  @Prop({ trim: true })
+  name?: string;
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 

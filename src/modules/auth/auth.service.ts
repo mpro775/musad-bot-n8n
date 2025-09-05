@@ -214,58 +214,6 @@ export class AuthService {
 
     await this.tokenModel.deleteMany({ userId: user._id });
 
-    // 👇 إبقِ منطق إنشاء التاجر كما هو عندك (اختياري)
-    try {
-      if (!user.merchantId) {
-        const merchant = await this.merchants.create({
-          userId: String(user._id),
-          name: `متجر ${user.name}`,
-          active: true,
-          deletedAt: null,
-          addresses: [],
-          subscription: {
-            tier: PlanTier.Free,
-            startDate: new Date(),
-            endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            features: [
-              'basic_support',
-              'chat_bot',
-              'analytics',
-              'multi_channel',
-              'api_access',
-              'webhook_integration',
-            ],
-          },
-          categories: [],
-          quickConfig: {
-            dialect: 'خليجي',
-            tone: 'ودّي',
-            customInstructions: [],
-            sectionOrder: ['products', 'policies', 'custom'],
-            includeStoreUrl: true,
-            includeAddress: true,
-            includePolicies: true,
-            includeWorkingHours: true,
-            includeClosingPhrase: true,
-            closingText: 'هل أقدر أساعدك بشي ثاني؟ 😊',
-          },
-          currentAdvancedConfig: {
-            template: '',
-            updatedAt: new Date(),
-            note: '',
-          },
-          advancedConfigHistory: [],
-          returnPolicy: '',
-          exchangePolicy: '',
-          shippingPolicy: '',
-        } as any);
-        user.merchantId = merchant._id as Types.ObjectId;
-        await user.save();
-      }
-    } catch (e) {
-      this.logger.error('Failed to create merchant', e);
-    }
-
     const payload = {
       userId: user._id,
       role: user.role,
@@ -433,92 +381,102 @@ export class AuthService {
 
     this.businessMetrics.incPasswordChangeCompleted?.();
   }
+  private async createMerchantIfMissing(
+    user: UserDocument,
+  ): Promise<MerchantDocument> {
+    const now = new Date();
+
+    // slug حتمي وفريد مشتق من userId (يتوافق مع الـ regex)
+    const forcedSlug = `m-${String(user._id)}`; // يبدأ بحرف وينتهي بحرف/رقم
+
+    // upsert آمن ضد السباقات: إذا وُجد يرجّع الموجود، وإن لم يوجد ينشئ
+    const m = await this.merchantModel
+      .findOneAndUpdate(
+        { userId: user._id },
+        {
+          $setOnInsert: {
+            userId: user._id,
+            publicSlug: forcedSlug,
+
+            active: true,
+            deletedAt: null,
+            addresses: [],
+            subscription: {
+              tier: PlanTier.Free,
+              startDate: now,
+              endDate: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+              features: [
+                'basic_support',
+                'chat_bot',
+                'analytics',
+                'multi_channel',
+                'api_access',
+                'webhook_integration',
+              ],
+            },
+            categories: [],
+            quickConfig: {
+              dialect: 'خليجي',
+              tone: 'ودّي',
+              customInstructions: [],
+              sectionOrder: ['products', 'policies', 'custom'],
+              includeStoreUrl: true,
+              includeAddress: true,
+              includePolicies: true,
+              includeWorkingHours: true,
+              includeClosingPhrase: true,
+              closingText: 'هل أقدر أساعدك بشي ثاني؟ 😊',
+            },
+            currentAdvancedConfig: { template: '', updatedAt: now, note: '' },
+            advancedConfigHistory: [],
+            returnPolicy: '',
+            exchangePolicy: '',
+            shippingPolicy: '',
+            status: 'active',
+            phone: '',
+            finalPromptTemplate: '',
+          },
+        },
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true,
+        },
+      )
+      .exec();
+
+    return m as unknown as MerchantDocument;
+  }
+
   async ensureMerchant(userId: string) {
     const user = await this.userModel.findById(userId);
     if (!user) throw new BadRequestException('User not found');
 
+    // تحقق صلاحية حساب التاجر الحالي إن وجد
     if (user.merchantId) {
       const m = await this.merchantModel
         .findById(user.merchantId)
         .select('_id active deletedAt')
         .lean();
-
-      if (!m) {
-        throw new BadRequestException('Merchant not found');
-      }
+      if (!m) throw new BadRequestException('Merchant not found');
       if (m.deletedAt || m.active === false) {
         throw new BadRequestException('تم إيقاف حساب التاجر مؤقتًا');
       }
     }
-    // لو في merchantId خلاص رجّع payload جديد (لتحديث التوكن إن أردت)
-    if (user.merchantId) {
-      const payload = {
-        userId: user._id,
-        role: user.role,
-        merchantId: user.merchantId,
-      };
-      return {
-        accessToken: this.jwtService.sign(payload),
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          active: user.active,
-          role: user.role,
-          merchantId: user.merchantId,
-          firstLogin: user.firstLogin,
-          emailVerified: user.emailVerified,
-        },
-      };
+
+    // لا تنشئ لو البريد غير مفعّل
+    if (!user.merchantId) {
+      if (!user.emailVerified) {
+        throw new BadRequestException('Email not verified');
+      }
+
+      const m = await this.createMerchantIfMissing(user);
+
+      if (!user.merchantId) {
+        user.merchantId = m._id as any;
+        await user.save();
+      }
     }
-
-    // لو البريد غير مفعّل، لا تنشئ Merchant
-    if (!user.emailVerified) {
-      throw new BadRequestException('Email not verified');
-    }
-
-    // أنشئ Merchant الآن (نفس منطق create عندك)
-    const merchant = await this.merchants.create({
-      userId: String(user._id),
-      name: `متجر ${user.name}`,
-      active: true,
-      deletedAt: null,
-      addresses: [],
-      subscription: {
-        tier: PlanTier.Free,
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        features: [
-          'basic_support',
-          'chat_bot',
-          'analytics',
-          'multi_channel',
-          'api_access',
-          'webhook_integration',
-        ],
-      },
-      categories: [],
-      quickConfig: {
-        dialect: 'خليجي',
-        tone: 'ودّي',
-        customInstructions: [],
-        sectionOrder: ['products', 'policies', 'custom'],
-        includeStoreUrl: true,
-        includeAddress: true,
-        includePolicies: true,
-        includeWorkingHours: true,
-        includeClosingPhrase: true,
-        closingText: 'هل أقدر أساعدك بشي ثاني؟ 😊',
-      },
-      currentAdvancedConfig: { template: '', updatedAt: new Date(), note: '' },
-      advancedConfigHistory: [],
-      returnPolicy: '',
-      exchangePolicy: '',
-      shippingPolicy: '',
-    } as any);
-
-    user.merchantId = merchant._id as any;
-    await user.save();
 
     const payload = {
       userId: user._id,
@@ -535,6 +493,7 @@ export class AuthService {
         merchantId: user.merchantId,
         firstLogin: user.firstLogin,
         emailVerified: user.emailVerified,
+        active: user.active,
       },
     };
   }
