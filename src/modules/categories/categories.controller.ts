@@ -27,32 +27,44 @@ import {
   ApiConsumes,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { 
-  ApiSuccessResponse, 
-  ApiCreatedResponse as CommonApiCreatedResponse, 
-  CurrentUser, 
-  PaginationDto
+import {
+  ApiSuccessResponse,
+  ApiCreatedResponse as CommonApiCreatedResponse,
+  CurrentUser,
 } from '../../common';
+import { TranslationService } from '../../common/services/translation.service';
 import multer from 'multer';
 import os from 'os';
 
-@ApiTags('الفئات')
+@ApiTags('categories')
 @Controller('categories')
 export class CategoriesController {
-  constructor(private readonly categories: CategoriesService) {}
+  constructor(
+    private readonly categories: CategoriesService,
+    private readonly translationService: TranslationService,
+  ) {}
 
   @Post()
-  @ApiOperation({ summary: 'إضافة فئة' })
-  @CommonApiCreatedResponse(CreateCategoryDto, 'تم إنشاء الفئة بنجاح')
+  @ApiOperation({
+    summary: 'categories.operations.create.summary',
+    description: 'categories.operations.create.description',
+  })
+  @CommonApiCreatedResponse(
+    CreateCategoryDto,
+    'categories.responses.success.created',
+  )
   create(@Body() dto: CreateCategoryDto) {
     return this.categories.create(dto);
   }
 
   @Get()
-  @ApiOperation({ summary: 'جلب فئات (flat أو tree)' })
+  @ApiOperation({
+    summary: 'categories.operations.findAll.summary',
+    description: 'categories.operations.findAll.description',
+  })
   @ApiQuery({ name: 'merchantId', required: true })
   @ApiQuery({ name: 'tree', required: false, type: 'boolean' })
-  @ApiSuccessResponse(Array, 'تم جلب الفئات بنجاح')
+  @ApiSuccessResponse(Array, 'categories.responses.success.found')
   findAll(
     @Query('merchantId') merchantId: string,
     @Query('tree') tree?: string,
@@ -63,13 +75,33 @@ export class CategoriesController {
   }
 
   @Get(':id')
+  @ApiOperation({
+    summary: 'categories.operations.findOne.summary',
+    description: 'categories.operations.findOne.description',
+  })
   @ApiQuery({ name: 'merchantId', required: true })
+  @ApiResponse({
+    status: 200,
+    description: 'categories.responses.success.found',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'categories.responses.error.notFound',
+  })
   findOne(@Param('id') id: string, @Query('merchantId') merchantId: string) {
     return this.categories.findOne(id, merchantId);
   }
 
   @Get(':id/breadcrumbs')
+  @ApiOperation({
+    summary: 'categories.operations.breadcrumbs.summary',
+    description: 'categories.operations.breadcrumbs.description',
+  })
   @ApiQuery({ name: 'merchantId', required: true })
+  @ApiResponse({
+    status: 200,
+    description: 'categories.responses.success.found',
+  })
   breadcrumbs(
     @Param('id') id: string,
     @Query('merchantId') merchantId: string,
@@ -78,7 +110,15 @@ export class CategoriesController {
   }
 
   @Get(':id/subtree')
+  @ApiOperation({
+    summary: 'categories.operations.subtree.summary',
+    description: 'categories.operations.subtree.description',
+  })
   @ApiQuery({ name: 'merchantId', required: true })
+  @ApiResponse({
+    status: 200,
+    description: 'categories.responses.success.found',
+  })
   subtree(@Param('id') id: string, @Query('merchantId') merchantId: string) {
     return this.categories.subtree(id, merchantId);
   }
@@ -86,7 +126,12 @@ export class CategoriesController {
   @Patch(':id/move')
   @ApiQuery({ name: 'merchantId', required: true })
   @ApiOperation({
-    summary: 'نقل/ترتيب الفئة (داخل أب، قبل/بعد أخ، أو موضع محدد)',
+    summary: 'categories.operations.move.summary',
+    description: 'categories.operations.move.description',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'categories.responses.success.updated',
   })
   move(
     @Param('id') id: string,
@@ -97,8 +142,20 @@ export class CategoriesController {
   }
 
   @Delete(':id')
+  @ApiOperation({
+    summary: 'categories.operations.remove.summary',
+    description: 'categories.operations.remove.description',
+  })
   @ApiQuery({ name: 'merchantId', required: true })
   @ApiQuery({ name: 'cascade', required: false, type: 'boolean' })
+  @ApiResponse({
+    status: 200,
+    description: 'categories.responses.success.deleted',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'categories.responses.error.notFound',
+  })
   remove(
     @Param('id') id: string,
     @Query('merchantId') merchantId: string,
@@ -108,7 +165,10 @@ export class CategoriesController {
   }
 
   @Post(':id/image')
-  @ApiOperation({ summary: 'رفع صورة الفئة (≤ 2MB، تُحوَّل إلى webp مربّعة)' })
+  @ApiOperation({
+    summary: 'categories.operations.uploadImage.summary',
+    description: 'categories.operations.uploadImage.description',
+  })
   @ApiQuery({ name: 'merchantId', required: true })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -120,37 +180,63 @@ export class CategoriesController {
       required: ['file'],
     },
   })
-  @UseInterceptors(FileInterceptor('file', {
-    storage: multer.diskStorage({
-      destination: os.tmpdir(), // تخزين مؤقت على القرص
-      filename: (_req, file, cb) => {
-        const ext = (file.originalname.split('.').pop() || 'img').toLowerCase();
-        cb(null, `cat-${Date.now()}.${ext}`);
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: multer.diskStorage({
+        destination: os.tmpdir(), // تخزين مؤقت على القرص
+        filename: (_req, file, cb) => {
+          const ext = (
+            file.originalname.split('.').pop() || 'img'
+          ).toLowerCase();
+          cb(null, `cat-${Date.now()}.${ext}`);
+        },
+      }),
+      limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+      fileFilter: (_req, file, cb) => {
+        const ok = /^(image\/png|image\/jpe?g|image\/webp)$/i.test(
+          file.mimetype,
+        );
+        cb(
+          ok
+            ? null
+            : new BadRequestException(
+                'categories.responses.error.unsupportedFormat',
+              ),
+          ok,
+        );
       },
     }),
-    limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
-    fileFilter: (_req, file, cb) => {
-      const ok = /^(image\/png|image\/jpe?g|image\/webp)$/i.test(file.mimetype);
-      cb(ok ? null : new BadRequestException('صيغة الصورة غير مدعومة (png/jpg/webp فقط)'), ok);
-    },
-  }))
+  )
   async uploadImage(
     @Param('id') id: string,
     @Query('merchantId') merchantId: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('لم يتم إرفاق ملف');
-    const url = await this.categories.uploadCategoryImageToMinio(id, merchantId, file);
+    const url = await this.categories.uploadCategoryImageToMinio(
+      id,
+      merchantId,
+      file,
+    );
     return { url };
   }
 
   @Put(':id')
-  @ApiOperation({ summary: 'تعديل فئة' })
-  @ApiParam({ name: 'id', description: 'معرّف الفئة' })
+  @ApiOperation({
+    summary: 'categories.operations.update.summary',
+    description: 'categories.operations.update.description',
+  })
+  @ApiParam({ name: 'id', description: 'categories.fields.merchantId' })
   @ApiQuery({ name: 'merchantId', required: true })
   @ApiBody({ type: UpdateCategoryDto })
-  @ApiResponse({ status: 200, description: 'تم تعديل الفئة بنجاح.' })
-  @ApiResponse({ status: 404, description: 'الفئة غير موجودة.' })
+  @ApiResponse({
+    status: 200,
+    description: 'categories.responses.success.updated',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'categories.responses.error.notFound',
+  })
   async update(
     @Param('id') id: string,
     @Query('merchantId') merchantId: string,

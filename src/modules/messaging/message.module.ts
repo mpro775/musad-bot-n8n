@@ -8,6 +8,8 @@ import { ChatLinksController } from './chat-links.controller';
 import { ChatModule } from '../chat/chat.module';
 import { InstructionsModule } from 'src/modules/instructions/instructions.module';
 import { AiModule } from '../ai/ai.module';
+import { MESSAGE_SESSION_REPOSITORY } from './tokens';
+import { MessageMongoRepository } from './repositories/message.mongo.repository';
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -17,7 +19,10 @@ import { AiModule } from '../ai/ai.module';
     forwardRef(() => InstructionsModule), // أهم نقطة
     forwardRef(() => AiModule),
   ],
-  providers: [MessageService],
+  providers: [
+    MessageService,
+    { provide: MESSAGE_SESSION_REPOSITORY, useClass: MessageMongoRepository },
+  ],
   controllers: [MessageController, ChatLinksController],
   exports: [MessageService],
 })

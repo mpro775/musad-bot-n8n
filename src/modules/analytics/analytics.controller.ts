@@ -33,17 +33,24 @@ import {
 import { CreateKleemMissingResponseDto } from './dto/create-kleem-missing-response.dto';
 import { AddToKnowledgeDto } from './dto/add-to-knowledge.dto';
 import { CurrentMerchantId, CurrentUserId } from 'src/common';
+import { TranslationService } from '../../common/services/translation.service';
 
-@ApiTags('التحليلات')
+@ApiTags('analytics')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('analytics')
 export class AnalyticsController {
-  constructor(private readonly analytics: AnalyticsService) {}
+  constructor(
+    private readonly analytics: AnalyticsService,
+    private readonly translationService: TranslationService,
+  ) {}
 
   /** نظرة عامة */
   @Get('overview')
-  @ApiOperation({ summary: 'الحصول على نظرة عامة على التحليلات' })
+  @ApiOperation({
+    summary: 'analytics.operations.dashboard.summary',
+    description: 'analytics.operations.dashboard.description',
+  })
   @ApiQuery({
     name: 'period',
     required: false,
@@ -55,13 +62,17 @@ export class AnalyticsController {
     @CurrentMerchantId() merchantId: string | null,
     @Query('period') period: 'week' | 'month' | 'quarter' = 'week',
   ): Promise<Overview> {
-    if (!merchantId) throw new ForbiddenException('لا يوجد تاجر مرتبط بالحساب');
+    if (!merchantId)
+      throw new ForbiddenException('analytics.responses.error.noMerchant');
     return this.analytics.getOverview(merchantId, period);
   }
 
   /** أبرز الكلمات المفتاحية */
   @Get('top-keywords')
-  @ApiOperation({ summary: 'الحصول على أبرز الكلمات المفتاحية' })
+  @ApiOperation({
+    summary: 'analytics.operations.metrics.summary',
+    description: 'analytics.operations.metrics.description',
+  })
   @ApiQuery({
     name: 'period',
     required: false,
@@ -80,14 +91,18 @@ export class AnalyticsController {
     @Query('period') period: 'week' | 'month' | 'quarter' = 'week',
     @Query('limit') limit = '10',
   ): Promise<KeywordCount[]> {
-    if (!merchantId) throw new ForbiddenException('لا يوجد تاجر مرتبط بالحساب');
+    if (!merchantId)
+      throw new ForbiddenException('analytics.responses.error.noMerchant');
     const n = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
     return this.analytics.getTopKeywords(merchantId, period, n);
   }
 
   /** الخط الزمني للرسائل */
   @Get('messages-timeline')
-  @ApiOperation({ summary: 'الحصول على الخط الزمني للرسائل' })
+  @ApiOperation({
+    summary: 'analytics.operations.trends.summary',
+    description: 'analytics.operations.trends.description',
+  })
   @ApiQuery({
     name: 'period',
     required: false,
@@ -106,18 +121,23 @@ export class AnalyticsController {
     @Query('period') period: 'week' | 'month' | 'quarter' = 'week',
     @Query('groupBy') groupBy: 'day' | 'hour' = 'day',
   ) {
-    if (!merchantId) throw new ForbiddenException('لا يوجد تاجر مرتبط بالحساب');
+    if (!merchantId)
+      throw new ForbiddenException('analytics.responses.error.noMerchant');
     return this.analytics.getMessagesTimeline(merchantId, period, groupBy);
   }
 
   /** عدد المنتجات */
   @Get('products-count')
-  @ApiOperation({ summary: 'الحصول على عدد المنتجات' })
+  @ApiOperation({
+    summary: 'analytics.operations.performance.summary',
+    description: 'analytics.operations.performance.description',
+  })
   @ApiResponse({ status: 200, description: 'OK' })
   async productsCount(
     @CurrentMerchantId() merchantId: string | null,
   ): Promise<{ total: number }> {
-    if (!merchantId) throw new ForbiddenException('لا يوجد تاجر مرتبط بالحساب');
+    if (!merchantId)
+      throw new ForbiddenException('analytics.responses.error.noMerchant');
     return { total: await this.analytics.getProductsCount(merchantId) };
   }
 
@@ -138,7 +158,8 @@ export class AnalyticsController {
     @CurrentMerchantId() merchantId: string | null,
     @Query() query: any,
   ) {
-    if (!merchantId) throw new ForbiddenException('لا يوجد تاجر مرتبط بالحساب');
+    if (!merchantId)
+      throw new ForbiddenException('analytics.responses.error.noMerchant');
     return this.analytics.listMissingResponses({
       merchantId,
       page: Number(query.page ?? 1),
@@ -180,7 +201,8 @@ export class AnalyticsController {
     @Param('id') id: string,
     @Body() body: AddToKnowledgeDto,
   ) {
-    if (!merchantId) throw new ForbiddenException('لا يوجد تاجر مرتبط بالحساب');
+    if (!merchantId)
+      throw new ForbiddenException('analytics.responses.error.noMerchant');
     return this.analytics.addToKnowledge({
       merchantId,
       missingId: id,
@@ -198,7 +220,8 @@ export class AnalyticsController {
     @Query('days') days?: string,
     @Query('notify') notify?: 'true' | 'false',
   ) {
-    if (!merchantId) throw new ForbiddenException('لا يوجد تاجر مرتبط بالحساب');
+    if (!merchantId)
+      throw new ForbiddenException('analytics.responses.error.noMerchant');
     const d = Math.min(Math.max(Number(days ?? 7), 1), 90);
     const result = await this.analytics.stats(merchantId, d);
 
@@ -228,7 +251,8 @@ export class AnalyticsController {
     @Query('period') period: 'week' | 'month' | 'quarter' = 'week',
     @Query('limit') limit = '5',
   ): Promise<TopProduct[]> {
-    if (!merchantId) throw new ForbiddenException('لا يوجد تاجر مرتبط بالحساب');
+    if (!merchantId)
+      throw new ForbiddenException('analytics.responses.error.noMerchant');
     const n = Math.min(Math.max(parseInt(limit, 10) || 5, 1), 50);
     return this.analytics.getTopProducts(merchantId, period, n);
   }

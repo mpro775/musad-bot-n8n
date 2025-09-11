@@ -1,0 +1,216 @@
+version: '3.8'
+
+services:
+  # ===== التطبيق الرئيسي =====
+  api:
+    image: ${KALEEM_API_IMAGE:-ghcr.io/kaleem/kaleem-api:latest}
+    container_name: kaleem-api-prod
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - TZ=Asia/Riyadh
+    env_file:
+      - .env.production
+    depends_on:
+      redis: { condition: service_healthy }
+      mongo: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/api/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - kaleem-net
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+        labels: 'service=api,environment=production'
+
+  # ===== قاعدة البيانات =====
+  mongo:
+    image: mongo:7
+    container_name: kaleem-mongo-prod
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DB_NAME}
+    ports:
+      - '127.0.0.1:27017:27017' # ربط محلي فقط
+    volumes:
+      - mongo_prod_data:/data/db
+      - ./mongo/init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    healthcheck:
+      test:
+        ['CMD', 'mongosh', '--quiet', '--eval', 'db.runCommand({ ping: 1 }).ok']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - kaleem-net
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # ===== Redis =====
+  redis:
+    image: redis:7-alpine
+    container_name: kaleem-redis-prod
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis_prod_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kaleem-net
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '5m'
+        max-file: '3'
+
+  # ===== RabbitMQ =====
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: kaleem-rabbitmq-prod
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}
+    ports:
+      - '127.0.0.1:5672:5672'
+      - '127.0.0.1:15672:15672'
+      - '127.0.0.1:15692:15692' # Prometheus metrics
+    volumes:
+      - rabbitmq_prod_data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - kaleem-net
+
+  # ===== العمال =====
+  ai-reply-worker:
+    image: ${KALEEM_API_IMAGE:-ghcr.io/kaleem/kaleem-api:latest}
+    container_name: kaleem-ai-worker-prod
+    command: ['node', 'dist/workers/ai-reply.worker.js']
+    environment:
+      - NODE_ENV=production
+      - WORKER_TYPE=ai-reply
+    env_file:
+      - .env.production
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:9101/metrics']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - kaleem-net
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  webhook-dispatcher:
+    image: ${KALEEM_API_IMAGE:-ghcr.io/kaleem/kaleem-api:latest}
+    container_name: kaleem-webhook-worker-prod
+    command: ['node', 'dist/workers/webhook-dispatcher.worker.js']
+    environment:
+      - NODE_ENV=production
+      - WORKER_TYPE=webhook-dispatcher
+    env_file:
+      - .env.production
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:9102/metrics']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - kaleem-net
+
+  # ===== المراقبة =====
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: kaleem-prometheus-prod
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    ports:
+      - '127.0.0.1:9090:9090'
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts:/etc/prometheus/alerts:ro
+      - prometheus_prod_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - kaleem-net
+
+  grafana:
+    image: grafana/grafana:10.4.5
+    container_name: kaleem-grafana-prod
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SERVER_DOMAIN=grafana.kaleem-ai.com
+      - GF_SERVER_ROOT_URL=https://grafana.kaleem-ai.com/
+      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY}
+    ports:
+      - '127.0.0.1:3001:3000'
+    volumes:
+      - grafana_prod_data:/var/lib/grafana
+      - ./observability/grafana:/etc/grafana/provisioning:ro
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - kaleem-net
+
+volumes:
+  mongo_prod_data:
+    driver: local
+  redis_prod_data:
+    driver: local
+  rabbitmq_prod_data:
+    driver: local
+  prometheus_prod_data:
+    driver: local
+  grafana_prod_data:
+    driver: local
+
+networks:
+  kaleem-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

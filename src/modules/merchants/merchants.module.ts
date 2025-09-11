@@ -27,6 +27,7 @@ import { Channel, ChannelSchema } from '../channels/schemas/channel.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CatalogModule } from '../catalog/catalog.module';
 import { OutboxModule } from '../../common/outbox/outbox.module';
+import { CommonServicesModule } from '../../common/services/common-services.module';
 import { SlugResolverService } from '../public/slug-resolver.service';
 import { PublicRouterController } from '../public/public-router.controller';
 import {
@@ -39,6 +40,9 @@ import {
 } from '../storefront/schemas/storefront.schema';
 import { ChatModule } from '../chat/chat.module';
 import { CleanupCoordinatorService } from './cleanup-coordinator.service';
+import { MongoMerchantsRepository } from './repositories/mongo-merchants.repository';
+import { MongoMerchantChecklistRepository } from './repositories/mongo-merchant-checklist.repository';
+import { MongoPromptVersionRepository } from './repositories/mongo-prompt-version.repository';
 
 @Module({
   imports: [
@@ -62,10 +66,24 @@ import { CleanupCoordinatorService } from './cleanup-coordinator.service';
     CatalogModule,
     forwardRef(() => ChatModule),
     OutboxModule,
+    CommonServicesModule,
   ],
   providers: [
     MerchantsService,
     PromptBuilderService,
+
+    {
+      provide: 'MerchantsRepository',
+      useClass: MongoMerchantsRepository,
+    },
+    {
+      provide: 'MerchantChecklistRepository',
+      useClass: MongoMerchantChecklistRepository,
+    },
+    {
+      provide: 'PromptVersionRepository',
+      useClass: MongoPromptVersionRepository,
+    },
     PromptVersionService,
     PromptPreviewService,
     CleanupCoordinatorService,
@@ -78,12 +96,22 @@ import { CleanupCoordinatorService } from './cleanup-coordinator.service';
     PublicRouterController,
   ],
   exports: [
+    // Services
     MerchantsService,
     PromptVersionService,
     PromptPreviewService,
     PromptBuilderService,
     MerchantChecklistService,
     SlugResolverService,
+    CleanupCoordinatorService,
+
+    // Repositories
+    'MerchantsRepository',
+    'MerchantChecklistRepository',
+    'PromptVersionRepository',
+
+    // Mongoose Models (if needed by other modules)
+    MongooseModule,
   ],
 })
 export class MerchantsModule {}

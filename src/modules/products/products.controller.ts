@@ -38,6 +38,7 @@ import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
+import { GetProductsDto } from './dto/get-products.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import {
@@ -49,6 +50,7 @@ import {
 import { ProductSetupConfigDto } from './dto/product-setup-config.dto';
 import { ProductSetupConfigService } from './product-setup-config.service';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { TranslationService } from '../../common/services/translation.service';
 
 @ApiTags('المنتجات')
 @ApiBearerAuth()
@@ -59,10 +61,15 @@ export class ProductsController {
   constructor(
     private readonly productsService: ProductsService,
     private readonly productSetupConfigService: ProductSetupConfigService,
+    private readonly translationService: TranslationService,
   ) {}
 
   @Post()
-  @ApiOperation({ summary: 'إنشاء منتج جديد (للتاجر)' })
+  @ApiOperation({
+    summary: 'products.operations.create.summary',
+
+    description: 'products.operations.create.description',
+  })
   @ApiBody({ type: CreateProductDto, description: 'بيانات إنشاء المنتج' })
   @CommonApiCreatedResponse(
     ProductResponseDto,
@@ -74,7 +81,9 @@ export class ProductsController {
     @CurrentMerchantId() jwtMerchantId: string | null, // ✅ بديل عن req.user
   ): Promise<ProductResponseDto> {
     if (!jwtMerchantId) {
-      throw new ForbiddenException('لا يوجد تاجر مرتبط بالحساب');
+      throw new ForbiddenException(
+        this.translationService.translate('auth.errors.merchantRequired'),
+      );
     }
 
     const input = {
@@ -103,17 +112,106 @@ export class ProductsController {
     });
   }
 
-  @Public()
   @Get()
-  @ApiOperation({ summary: 'جلب جميع المنتجات للتاجر الحالي' })
+  @ApiOperation({
+    summary: 'products.operations.list.summary',
+
+    description: 'products.operations.list.description',
+  })
+  @ApiOkResponse({
+    description: 'قائمة المنتجات مع معلومات الـ pagination',
+    schema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          items: { $ref: '#/components/schemas/ProductResponseDto' },
+        },
+        meta: {
+          type: 'object',
+          properties: {
+            nextCursor: { type: 'string', nullable: true },
+            hasMore: { type: 'boolean' },
+            count: { type: 'number' },
+          },
+        },
+      },
+    },
+  })
+  async getProducts(
+    @Query() dto: GetProductsDto,
+    @CurrentMerchantId() merchantId: string,
+  ) {
+    if (!merchantId) {
+      throw new ForbiddenException(
+        this.translationService.translate('auth.errors.merchantRequired'),
+      );
+    }
+
+    const result = await this.productsService.getProducts(merchantId, dto);
+
+    return {
+      items: plainToInstance(ProductResponseDto, result.items, {
+        excludeExtraneousValues: true,
+      }),
+      meta: result.meta,
+    };
+  }
+
+  @Public()
+  @Get('legacy')
+  @ApiOperation({ summary: 'جلب جميع المنتجات للتاجر (طريقة قديمة)' })
   @ApiOkResponse({ type: ProductResponseDto, isArray: true })
   async findAll(@Query('merchantId') merchantId: string) {
-    if (!merchantId) throw new BadRequestException('merchantId is required');
+    if (!merchantId)
+      throw new BadRequestException(
+        this.translationService.translate('validation.required'),
+      );
     const merchantObjectId = new Types.ObjectId(merchantId);
     const docs = await this.productsService.findAllByMerchant(merchantObjectId);
     return plainToInstance(ProductResponseDto, docs, {
       excludeExtraneousValues: true,
     });
+  }
+
+  @Get('search')
+  @ApiOperation({
+    summary: 'products.operations.search.summary',
+
+    description: 'products.operations.search.description',
+  })
+  @ApiOkResponse({
+    description: 'نتائج البحث مع معلومات الـ pagination',
+  })
+  async searchProducts(
+    @Query('q') query: string,
+    @Query() dto: GetProductsDto,
+    @CurrentMerchantId() merchantId: string,
+  ) {
+    if (!merchantId) {
+      throw new ForbiddenException(
+        this.translationService.translate('auth.errors.merchantRequired'),
+      );
+    }
+
+    if (!query) {
+      throw new BadRequestException(
+        this.translationService.translate('validation.required'),
+      );
+    }
+
+    const result = await this.productsService.searchProducts(
+      merchantId,
+      query,
+      dto,
+    );
+
+    return {
+      items: plainToInstance(ProductResponseDto, result.items, {
+        excludeExtraneousValues: true,
+      }),
+      meta: result.meta,
+    };
   }
 
   @Post(':id/images')
@@ -144,7 +242,11 @@ export class ProductsController {
   @Public()
   @Get(':id')
   @ApiParam({ name: 'id', type: 'string', description: 'معرّف المنتج' })
-  @ApiOperation({ summary: 'جلب منتج واحد حسب المعرّف' })
+  @ApiOperation({
+    summary: 'products.operations.get.summary',
+
+    description: 'products.operations.get.description',
+  })
   async findOne(
     @Param('id') id: string,
     @Request() req: any, // تبقى عامة؛ قد لا يوجد user
@@ -157,7 +259,9 @@ export class ProductsController {
         req.user.role !== 'ADMIN' &&
         String(product.merchantId) !== String(req.user.merchantId)
       ) {
-        throw new ForbiddenException('Not allowed');
+        throw new ForbiddenException(
+          this.translationService.translate('auth.errors.accessDenied'),
+        );
       }
     }
 
@@ -168,7 +272,11 @@ export class ProductsController {
 
   @Put(':id')
   @ApiParam({ name: 'id', type: 'string', description: 'معرّف المنتج' })
-  @ApiOperation({ summary: 'تحديث منتج (لصاحب المنتج فقط)' })
+  @ApiOperation({
+    summary: 'products.operations.update.summary',
+
+    description: 'products.operations.update.description',
+  })
   @ApiBody({ type: UpdateProductDto, description: 'الحقول المراد تحديثها' })
   async update(
     @Param('id') id: string,
@@ -181,7 +289,9 @@ export class ProductsController {
       user.role !== 'ADMIN' &&
       String(product.merchantId) !== String(jwtMerchantId)
     ) {
-      throw new ForbiddenException('Not allowed');
+      throw new ForbiddenException(
+        this.translationService.translate('auth.errors.accessDenied'),
+      );
     }
     const updated = await this.productsService.update(id, dto);
     return plainToInstance(ProductResponseDto, updated, {
@@ -190,17 +300,25 @@ export class ProductsController {
   }
 
   @Post(':merchantId/setup-products')
-  @ApiOperation({ summary: 'إعداد تكوين المنتجات للتاجر' })
+  @ApiOperation({
+    summary: 'products.operations.setup.summary',
+
+    description: 'products.operations.setup.description',
+  })
   async setupProducts(
     @Param('merchantId') merchantId: string,
     @Body() config: ProductSetupConfigDto,
     @CurrentMerchantId() jwtMerchantId: string | null, // ✅
   ) {
     if (!jwtMerchantId || merchantId !== String(jwtMerchantId)) {
-      throw new ForbiddenException('غير مصرح لك بتعديل إعدادات هذا التاجر');
+      throw new ForbiddenException(
+        this.translationService.translate('auth.errors.accessDenied'),
+      );
     }
     if (!Types.ObjectId.isValid(merchantId)) {
-      throw new BadRequestException('معرف التاجر غير صالح');
+      throw new BadRequestException(
+        this.translationService.translate('validation.mongoId'),
+      );
     }
     try {
       const result = await this.productSetupConfigService.saveOrUpdate(
@@ -209,13 +327,17 @@ export class ProductsController {
       );
       return {
         success: true,
-        message: 'تم حفظ إعدادات المنتجات بنجاح',
+        message: this.translationService.translate(
+          'products.messages.configSaved',
+        ),
         data: result,
       };
     } catch (error: any) {
       throw new InternalServerErrorException({
         success: false,
-        message: 'فشل في حفظ إعدادات المنتجات',
+        message: this.translationService.translateError(
+          'system.configurationError',
+        ),
         error: error.message,
       });
     }
@@ -227,7 +349,9 @@ export class ProductsController {
     @CurrentMerchantId() jwtMerchantId: string | null, // ✅
   ) {
     if (!jwtMerchantId || merchantId !== String(jwtMerchantId)) {
-      throw new ForbiddenException('Unauthorized');
+      throw new ForbiddenException(
+        this.translationService.translate('auth.errors.accessDenied'),
+      );
     }
     const config =
       await this.productSetupConfigService.getByMerchantId(merchantId);
@@ -246,7 +370,11 @@ export class ProductsController {
 
   @Delete(':id')
   @ApiParam({ name: 'id', type: 'string', description: 'معرّف المنتج' })
-  @ApiOperation({ summary: 'حذف منتج' })
+  @ApiOperation({
+    summary: 'products.operations.delete.summary',
+
+    description: 'products.operations.delete.description',
+  })
   async remove(
     @Param('id') id: string,
     @CurrentMerchantId() jwtMerchantId: string | null, // ✅
@@ -258,7 +386,9 @@ export class ProductsController {
       user.role !== 'ADMIN' &&
       String(product.merchantId) !== String(jwtMerchantId)
     ) {
-      throw new ForbiddenException('ممنوع الوصول إلى منتج ليس ضمن متجرك');
+      throw new ForbiddenException(
+        this.translationService.translate('auth.errors.accessDenied'),
+      );
     }
 
     return this.productsService.remove(id);
