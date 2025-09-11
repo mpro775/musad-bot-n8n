@@ -148,7 +148,10 @@ export class ProductsController {
       );
     }
 
-    const result = await this.productsService.getProducts(merchantId, dto);
+    const result = await this.productsService.getPublicProducts(
+      merchantId,
+      dto,
+    );
 
     return {
       items: plainToInstance(ProductResponseDto, result.items, {

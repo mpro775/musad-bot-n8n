@@ -20,6 +20,7 @@ import { CategoriesService } from '../categories/categories.service';
 import { ExternalProduct } from '../integrations/types';
 import { Product } from './schemas/product.schema';
 import { TranslationService } from '../../common/services/translation.service';
+import { OutboxService } from '../../common/outbox/outbox.service';
 
 @Injectable()
 export class ProductsService {
@@ -35,6 +36,7 @@ export class ProductsService {
     private readonly storefronts: StorefrontService,
     private readonly categories: CategoriesService,
     private readonly translationService: TranslationService,
+    private readonly outbox: OutboxService,
   ) {}
 
   // مثال: إنشاء منتج
@@ -42,12 +44,10 @@ export class ProductsService {
     const merchantId = new Types.ObjectId(dto.merchantId);
     const sf = await this.storefronts.findByMerchant(merchantId.toString());
 
-    // بناء slug / uniqueKey خارج DB helpers
-    const data = {
+    const data: Partial<Product> = {
       merchantId,
       storefrontSlug: sf?.slug,
       storefrontDomain: sf?.domain ?? undefined,
-      // ... باقي الحقول من dto مع sanitization بسيط
       originalUrl: dto.originalUrl,
       sourceUrl: dto.sourceUrl,
       externalId: dto.externalId,
@@ -72,14 +72,32 @@ export class ProductsService {
       images: dto.images,
       source: (dto.source ?? ProductSource.MANUAL) as 'manual' | 'api',
       status: 'active',
-      syncStatus:
-        dto.source === ProductSource.API
-          ? ('pending' as const)
-          : ('ok' as const),
+      syncStatus: dto.source === ProductSource.API ? 'pending' : 'ok',
     };
 
-    const created = await this.repo.create(data);
-    // فهرسة متجهات (بعد DB)
+    let created!: Product;
+    const session = await (this.repo as any).startSession?.();
+    await session.withTransaction(async () => {
+      created = await this.repo.create(data, session);
+      await this.outbox.enqueueEvent(
+        {
+          aggregateType: 'product',
+          aggregateId: created._id.toString(),
+          eventType: 'product.created',
+          exchange: 'products',
+          routingKey: 'product.created',
+          payload: {
+            productId: created._id.toString(),
+            merchantId: created.merchantId.toString(),
+          },
+          dedupeKey: `product.created:${created._id}`,
+        },
+        session,
+      );
+    });
+    await session.endSession();
+
+    // فهرسة مباشرة كـ fallback (حتى لو الـ Consumer غير مفعّل بعد)
     const catName = created.category
       ? await this.categories.findOne(
           created.category.toString(),
@@ -102,11 +120,25 @@ export class ProductsService {
       );
     const _id = new Types.ObjectId(id);
 
-    const updated = await this.repo.updateById(_id, dto as any);
+    let updated = await this.repo.updateById(_id, dto as any);
     if (!updated)
       throw new NotFoundException(
         this.translationService.translateProduct('errors.notFound'),
       );
+
+    // أرسل حدث Outbox خارج Session هنا (أو غلّفه داخل Session إذا كانت تغييرات مترابطة)
+    await this.outbox.enqueueEvent({
+      aggregateType: 'product',
+      aggregateId: updated._id.toString(),
+      eventType: 'product.updated',
+      exchange: 'products',
+      routingKey: 'product.updated',
+      payload: {
+        productId: updated._id.toString(),
+        merchantId: updated.merchantId.toString(),
+      },
+      dedupeKey: `product.updated:${updated._id}:${updated.updatedAt?.toISOString()}`,
+    });
 
     const sf = await this.storefronts.findByMerchant(
       updated.merchantId.toString(),
@@ -170,15 +202,6 @@ export class ProductsService {
     };
   }
 
-  // القراءة/القوائم
-  getProducts(merchantId: string, dto: GetProductsDto) {
-    return this.repo.list(new Types.ObjectId(merchantId), dto);
-  }
-
-  getPublicProducts(storeSlug: string, dto: GetProductsDto) {
-    return this.repo.listPublic(storeSlug, dto);
-  }
-
   async setAvailability(productId: string, isAvailable: boolean) {
     if (!Types.ObjectId.isValid(productId))
       throw new BadRequestException(
@@ -214,11 +237,50 @@ export class ProductsService {
       throw new BadRequestException(
         this.translationService.translate('validation.mongoId'),
       );
-    const ok = await this.repo.deleteById(new Types.ObjectId(id));
-    if (!ok)
+    const _id = new Types.ObjectId(id);
+
+    // احصل على المنتج قبل الحذف لتحديث الفهرس والكاش
+    const before = await this.repo.findById(_id);
+    if (!before)
       throw new NotFoundException(
         this.translationService.translateProduct('errors.notFound'),
       );
+
+    const session = await (this.repo as any).startSession?.();
+    await session.withTransaction(async () => {
+      const ok = await this.repo.deleteById(_id, session);
+      if (!ok)
+        throw new NotFoundException(
+          this.translationService.translateProduct('errors.notFound'),
+        );
+
+      await this.outbox.enqueueEvent(
+        {
+          aggregateType: 'product',
+          aggregateId: before._id.toString(),
+          eventType: 'product.deleted',
+          exchange: 'products',
+          routingKey: 'product.deleted',
+          payload: {
+            productId: before._id.toString(),
+            merchantId: before.merchantId.toString(),
+          },
+          dedupeKey: `product.deleted:${before._id}`,
+        },
+        session,
+      );
+    });
+    await session.endSession();
+
+    // حذف من المتجهات + كنس الكاش فورًا كـ fallback
+    await this.indexer.removeOne(before._id.toString());
+    await this.cache.invalidate(
+      `v1:products:list:${before.merchantId.toString()}:*`,
+    );
+    await this.cache.invalidate(
+      `v1:products:popular:${before.merchantId.toString()}:*`,
+    );
+
     return {
       message: this.translationService.translateProduct('messages.deleted'),
     };
@@ -347,7 +409,25 @@ export class ProductsService {
   }
 
   // Get product by store slug and product slug (for public access)
+  getPublicProducts = async (storeSlug: string, dto: GetProductsDto) => {
+    const sf = await this.storefronts.findBySlug(storeSlug);
+    if (!sf)
+      return {
+        items: [],
+        meta: { hasMore: false, nextCursor: null, count: 0 },
+      };
+    return this.repo.listPublicByMerchant(
+      new Types.ObjectId(sf.merchantId),
+      dto,
+    );
+  };
+
   async getPublicBySlug(storeSlug: string, productSlug: string) {
-    return this.repo.findPublicBySlug(storeSlug, productSlug);
+    const sf = await this.storefronts.findBySlug(storeSlug);
+    if (!sf) return null;
+    return this.repo.findPublicBySlugWithMerchant(
+      productSlug,
+      new Types.ObjectId(sf.merchantId),
+    );
   }
 }

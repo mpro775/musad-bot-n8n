@@ -256,6 +256,10 @@ export class StorefrontService {
     return this.storefronts.findByMerchant(merchantId) as any;
   }
 
+  async findBySlug(slug: string) {
+    return this.storefronts.findByIdOrSlugLean(slug) as any;
+  }
+
   async updateByMerchant(merchantId: string, dto: UpdateStorefrontDto) {
     let sf = await this.storefronts.findByMerchant(merchantId);
 

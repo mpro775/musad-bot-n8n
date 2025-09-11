@@ -677,4 +677,47 @@ export class VectorService implements OnModuleInit {
 
     return all.slice(0, topK);
   }
+
+  // ====== PRODUCTS — DELETE ======
+  /** احذف نقطة/نقاط منتجات عبر معرف Mongo (point id = uuidv5(mongoId, Namespaces.Product)) */
+  public async deleteProductPointsByMongoIds(
+    ids: Array<string | { toString(): string }>,
+  ) {
+    const pointIds = ids
+      .map((x) => (typeof x === 'string' ? x : x.toString()))
+      .filter(Boolean)
+      .map((id) => qdrantIdForProduct(id));
+
+    if (!pointIds.length) return;
+    await this.qdrant.delete(Collections.Products, { points: pointIds });
+  }
+
+  /** احذف كل منتجات تاجر معيّن بالفلتر */
+  public async deleteProductsByMerchant(merchantId: string) {
+    await this.qdrant.delete(Collections.Products, {
+      filter: { must: [{ key: 'merchantId', match: { value: merchantId } }] },
+    });
+  }
+
+  /** احذف منتجات تاجر داخل تصنيف معيّن */
+  public async deleteProductsByCategory(
+    merchantId: string,
+    categoryId: string,
+  ) {
+    await this.qdrant.delete(Collections.Products, {
+      filter: {
+        must: [
+          { key: 'merchantId', match: { value: merchantId } },
+          { key: 'categoryId', match: { value: categoryId } },
+        ],
+      },
+    });
+  }
+
+  /** احذف منتج واحد باستخدام mongoId (فلتر على payload) */
+  public async deleteProductByMongoId(mongoId: string) {
+    await this.qdrant.delete(Collections.Products, {
+      filter: { must: [{ key: 'mongoId', match: { value: mongoId } }] },
+    });
+  }
 }

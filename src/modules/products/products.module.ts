@@ -44,6 +44,7 @@ import { ProductsCron } from './utils/products.cron';
 import { ErrorManagementModule } from '../../common/error-management.module';
 import { CacheModule } from '../../common/cache/cache.module';
 import { CommonServicesModule } from '../../common/services/common-services.module';
+import { OutboxModule } from '../../common/outbox/outbox.module';
 
 @Module({
   imports: [
@@ -65,7 +66,7 @@ import { CommonServicesModule } from '../../common/services/common-services.modu
     forwardRef(() => ZidModule),
     forwardRef(() => StorefrontModule),
     CategoriesModule,
-
+    OutboxModule,
     BullModule.registerQueue({ name: 'scrape' }),
     ErrorManagementModule,
     CacheModule,

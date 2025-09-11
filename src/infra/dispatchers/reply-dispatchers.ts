@@ -12,27 +12,30 @@ export class ReplyDispatchers implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    // نفس أسماء الصفوف الموجودة عندك
-    await this.rabbit.subscribe(
-      'chat.reply',
-      'telegram',
-      (p) => this.handle('telegram', p),
-      { queue: 'telegram.out.q', prefetch: 20 },
-    );
+    try {
+      await this.rabbit.subscribe(
+        'chat.reply',
+        'telegram',
+        (p) => this.handle('telegram', p),
+        { queue: 'telegram.out.q', prefetch: 20, assert: false },
+      );
 
-    await this.rabbit.subscribe(
-      'chat.reply',
-      'whatsapp',
-      (p) => this.handle('whatsapp', p),
-      { queue: 'whatsapp.out.q', prefetch: 20 },
-    );
+      await this.rabbit.subscribe(
+        'chat.reply',
+        'whatsapp',
+        (p) => this.handle('whatsapp', p),
+        { queue: 'whatsapp.out.q', prefetch: 20, assert: false }, // ⬅️ مهم
+      );
 
-    await this.rabbit.subscribe(
-      'chat.reply',
-      'webchat', // ✅ انتبه للمفتاح
-      (p) => this.handle('webchat', p),
-      { queue: 'webchat.out.q', prefetch: 20 },
-    );
+      await this.rabbit.subscribe(
+        'chat.reply',
+        'webchat',
+        (p) => this.handle('webchat', p),
+        { queue: 'webchat.out.q', prefetch: 20, assert: false }, // ⬅️ مهم
+      );
+    } catch (e) {
+      this.log.error('ReplyDispatchers subscriptions failed', e as any);
+    }
   }
 
   private async handle(ch: 'telegram' | 'whatsapp' | 'webchat', p: any) {

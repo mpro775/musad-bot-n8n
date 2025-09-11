@@ -1,6 +1,6 @@
 // src/modules/products/repositories/mongo-products.repository.ts
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import { Injectable } from '@nestjs/common';
 import { Product, ProductDocument } from '../schemas/product.schema';
 import { GetProductsDto } from '../dto/get-products.dto';
@@ -15,16 +15,23 @@ export class MongoProductsRepository {
     private readonly productModel: Model<ProductDocument>,
     private readonly pagination: PaginationService,
   ) {}
-
-  create(data: Partial<Product>) {
-    return this.productModel.create(data);
+  async startSession(): Promise<ClientSession> {
+    return this.productModel.db.startSession();
   }
 
-  updateById(id: Types.ObjectId, set: Partial<Product>) {
+  create(data: Partial<Product>, session?: ClientSession) {
+    const doc = new this.productModel(data);
+    return doc.save({ session });
+  }
+  updateById(
+    id: Types.ObjectId,
+    set: Partial<Product>,
+    session?: ClientSession,
+  ) {
     return this.productModel.findByIdAndUpdate(
       id,
       { $set: set },
-      { new: true, runValidators: true },
+      { new: true, runValidators: true, session },
     );
   }
 
@@ -32,8 +39,8 @@ export class MongoProductsRepository {
     return this.productModel.findById(id);
   }
 
-  async deleteById(id: Types.ObjectId) {
-    const res = await this.productModel.findByIdAndDelete(id);
+  async deleteById(id: Types.ObjectId, session?: ClientSession) {
+    const res = await this.productModel.findByIdAndDelete(id, { session });
     return !!res;
   }
 
@@ -76,6 +83,40 @@ export class MongoProductsRepository {
       .findOne({ slug: productSlug, status: 'active', isAvailable: true })
       .populate({ path: 'category', select: 'name' })
       .lean();
+  }
+  async findPublicBySlugWithMerchant(
+    merchantId: Types.ObjectId,
+    productSlug: string,
+  ) {
+    return this.productModel
+      .findOne({
+        merchantId,
+        slug: productSlug,
+        status: 'active',
+        isAvailable: true,
+      })
+      .populate({ path: 'category', select: 'name' })
+      .lean();
+  }
+  async listPublicByMerchant(
+    merchantId: Types.ObjectId,
+    dto: GetProductsDto,
+  ): Promise<PaginationResult<any>> {
+    const filter: any = { merchantId, status: 'active', isAvailable: true };
+    if (dto.search) filter.$text = { $search: dto.search };
+    if (dto.categoryId) filter.category = new Types.ObjectId(dto.categoryId);
+    if (dto.hasOffer) filter['offer.enabled'] = true;
+
+    const sortField = dto.sortBy || 'createdAt';
+    const sortOrder = dto.sortOrder === 'asc' ? 1 : -1;
+
+    return this.pagination.paginate(this.productModel as any, dto, filter, {
+      sortField,
+      sortOrder,
+      populate: 'category',
+      select: '-__v',
+      lean: true,
+    });
   }
 
   async list(
