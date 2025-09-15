@@ -39,6 +39,7 @@ import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { TranslationService } from '../../common/services/translation.service';
+import { JwtService } from '@nestjs/jwt';
 
 @ApiTags('i18n:auth.tags.authentication')
 @Controller('auth')
@@ -47,6 +48,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly cookieService: CookieService,
     private readonly i18n: I18nService,
+    private readonly jwtService: JwtService, // ✅ أضف هذا
     private readonly translationService: TranslationService,
   ) {}
   @Public()
@@ -322,11 +324,36 @@ export class AuthController {
   ) {
     // استخدام refresh token من الكوكيز أو من الـ body
     const refreshToken = bodyRefreshToken || req.cookies?.refreshToken;
-
+    const me = req.user?.userId;
     if (refreshToken) {
+      const decoded = this.jwtService.verify(refreshToken, {
+        secret: process.env.JWT_SECRET,
+      });
+      if (decoded?.sub !== me) {
+        throw new UnauthorizedException('Invalid token owner');
+      }
       await this.authService.logout(refreshToken);
     }
-
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      const access = authHeader.slice(7);
+      try {
+        const decoded: any = this.jwtService.verify(access, {
+          secret: process.env.JWT_SECRET,
+        });
+        if (decoded?.jti) {
+          // خزّنه في blacklist لمدة ما تبقى من عمره
+          const now = Math.floor(Date.now() / 1000);
+          const ttlSec = Math.max(1, (decoded.exp || now) - now);
+          await this.authService['tokenService']['store'].addToBlacklist(
+            decoded.jti,
+            ttlSec,
+          );
+        }
+      } catch {
+        /* تجاهل */
+      }
+    }
     // ✅ C4: حذف الكوكيز الآمنة
     this.cookieService.clearAuthCookies(res);
 

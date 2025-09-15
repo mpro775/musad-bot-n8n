@@ -26,7 +26,7 @@ export class RedisSessionStore implements SessionStore {
       this.keySess(jti),
       JSON.stringify(data),
       ttlSeconds * 1000,
-    );
+    ); // ✅ ms
   }
 
   async getSession(jti: string): Promise<SessionData | null> {
@@ -50,17 +50,9 @@ export class RedisSessionStore implements SessionStore {
   ): Promise<void> {
     const key = this.keyUserSessions(userId);
     const raw = await this.cache.get<string>(key);
-    const arr: string[] = raw
-      ? (() => {
-          try {
-            return JSON.parse(raw);
-          } catch {
-            return [];
-          }
-        })()
-      : [];
+    const arr: string[] = raw ? (JSON.parse(raw) as string[]) : [];
     if (!arr.includes(jti)) arr.push(jti);
-    await this.cache.set(key, JSON.stringify(arr), ttlSeconds * 1000);
+    await this.cache.set(key, JSON.stringify(arr), ttlSeconds * 1000); // ✅ key الصحيح + ms
   }
 
   async getUserSessions(userId: string): Promise<string[]> {
@@ -76,9 +68,8 @@ export class RedisSessionStore implements SessionStore {
   async clearUserSessions(userId: string): Promise<void> {
     await this.cache.del(this.keyUserSessions(userId));
   }
-
   async addToBlacklist(jti: string, ttlSeconds: number): Promise<void> {
-    await this.cache.set(this.keyBlacklist(jti), 'revoked', ttlSeconds * 1000);
+    await this.cache.set(this.keyBlacklist(jti), 'revoked', ttlSeconds * 1000); // ✅ ms
   }
 
   async isBlacklisted(jti: string): Promise<boolean> {

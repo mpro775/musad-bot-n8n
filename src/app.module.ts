@@ -12,6 +12,7 @@ import { I18nModule, I18nJsonLoader } from 'nestjs-i18n';
 import { LoggerModule } from 'nestjs-pino';
 
 import configuration from './configuration';
+import varsConfig from './common/config/vars.config';
 import { DatabaseConfigModule } from './config/database.config';
 
 import { AuthModule } from './modules/auth/auth.module';
@@ -191,7 +192,10 @@ console.log(`[I18N] path -> ${i18nPath} | ts=${isTsRuntime}`);
       inject: [ConfigService],
     }),
     // Config
-    ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [configuration, varsConfig],
+    }),
 
     I18nModule.forRoot({
       fallbackLanguage: 'ar',

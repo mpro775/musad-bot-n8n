@@ -1,11 +1,16 @@
 // src/config/database.config.ts
 import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
+import { MongooseModule, getConnectionToken } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { Connection } from 'mongoose';
+import { MongooseMetricsPlugin } from '../metrics/mongoose-metrics.plugin';
+import { DatabaseMetricsProvider } from '../metrics/metrics.module';
+import { MetricsModule } from '../metrics/metrics.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    MetricsModule,
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
@@ -62,6 +67,19 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       },
       inject: [ConfigService],
     }),
+  ],
+  providers: [
+    DatabaseMetricsProvider,
+    {
+      provide: MongooseMetricsPlugin,
+      useFactory: (conn: Connection, histogram: any) => {
+        return new MongooseMetricsPlugin(conn, histogram);
+      },
+      inject: [
+        getConnectionToken(),
+        'PROM_METRIC_DATABASE_QUERY_DURATION_SECONDS',
+      ],
+    },
   ],
   exports: [MongooseModule],
 })

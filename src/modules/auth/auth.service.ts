@@ -5,13 +5,9 @@ import {
   BadRequestException,
   Logger,
   Inject,
-  NotFoundException,
-  ForbiddenException,
 } from '@nestjs/common';
-import { Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { I18nService } from 'nestjs-i18n';
 import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
@@ -26,8 +22,7 @@ import {
   minutesFromNow,
   sha256,
 } from './utils/verification-code';
-import { PlanTier } from '../merchants/schemas/subscription-plan.schema';
-import { BusinessMetrics } from 'src/metrics/business.metrics';
+import { BusinessMetrics } from '../../metrics/business.metrics';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ConfigService } from '@nestjs/config';
 import { generateSecureToken } from './utils/password-reset';
@@ -50,7 +45,6 @@ export class AuthService {
     private readonly businessMetrics: BusinessMetrics,
     private readonly config: ConfigService,
     private readonly tokenService: TokenService,
-    private readonly i18n: I18nService,
     private readonly translationService: TranslationService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
@@ -88,13 +82,13 @@ export class AuthService {
         this.businessMetrics.incEmailFailed();
       }
 
-      const payload = {
-        userId: userDoc._id,
+      const { accessToken } = await this.tokenService.createAccessOnly({
+        userId: String(userDoc._id),
         role: userDoc.role,
         merchantId: null,
-      };
+      });
       return {
-        accessToken: this.jwtService.sign(payload),
+        accessToken,
         user: {
           id: userDoc._id,
           name: userDoc.name,
@@ -267,13 +261,11 @@ export class AuthService {
     }
     await this.repo.deleteEmailVerificationTokensByUser(user._id);
 
-    const payload = {
-      userId: user._id,
+    const { accessToken } = await this.tokenService.createAccessOnly({
+      userId: String(user._id),
       role: user.role,
-      merchantId: user.merchantId ?? null,
-    };
-    const accessToken = this.jwtService.sign(payload);
-
+      merchantId: user.merchantId ? String(user.merchantId) : null,
+    });
     return {
       accessToken,
       user: {
@@ -299,7 +291,7 @@ export class AuthService {
     const user = await this.repo.findUserByEmailWithPassword(email);
     if (user) {
       // Cache for 5 minutes
-      await this.cacheManager.set(cacheKey, user, 300000);
+      await this.cacheManager.set(cacheKey, user, 300 * 1000); // ✅ 5 دقائق بالملّي ثانية
     }
     return user;
   }
@@ -454,6 +446,11 @@ export class AuthService {
 
     // Invalidate cache after password change
     await this.invalidateUserCache(user.email, String(user._id));
+    await this.cacheManager.set(
+      `pwdChangedAt:${user._id}`,
+      user.passwordChangedAt.getTime(),
+      30 * 24 * 3600 * 1000, // ✅ 30 يوم بالملّي ثانية
+    );
 
     await this.repo.deletePasswordResetTokensByUser(user._id);
 
@@ -487,14 +484,14 @@ export class AuthService {
         await this.repo.saveUser(user);
       }
     }
-
-    const payload = {
-      userId: user._id,
+    const { accessToken } = await this.tokenService.createAccessOnly({
+      userId: String(user._id),
       role: user.role,
-      merchantId: user.merchantId,
-    };
+      merchantId: user.merchantId ? String(user.merchantId) : null,
+    });
     return {
-      accessToken: this.jwtService.sign(payload),
+      accessToken,
+
       user: {
         id: user._id,
         name: user.name,
@@ -506,13 +503,5 @@ export class AuthService {
         active: user.active,
       },
     };
-  }
-
-  // ===== Helpers to keep compatibility with original code =====
-  private async repoFindUserByEmail(email: string) {
-    return this.repo.findUserByEmailSelectId(email);
-  }
-  private async repoLatestPrt(userId: Types.ObjectId) {
-    return this.repo.latestPasswordResetTokenByUser(userId, true);
   }
 }

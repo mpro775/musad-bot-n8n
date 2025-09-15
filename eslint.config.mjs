@@ -34,6 +34,21 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
       '@typescript-eslint/no-unsafe-argument': 'off',
+
+      // New rules to prevent degradation
+      'no-magic-numbers': [
+        'error',
+        {
+          ignore: [0, 1, -1],
+          ignoreArrayIndexes: true,
+          enforceConst: true,
+          detectObjects: true,
+        },
+      ],
+      complexity: ['error', 12],
+      'max-lines-per-function': ['error', { max: 60 }],
+      '@typescript-eslint/explicit-module-boundary-types': 'error',
+      'no-console': ['error', { allow: ['warn', 'error'] }],
     },
   },
 );

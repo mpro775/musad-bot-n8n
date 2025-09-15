@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BotFaqService } from '../botFaq.service';
 import { BOT_FAQ_REPOSITORY } from '../tokens';
 import { BotFaqRepository } from '../repositories/bot-faq.repository';
-import { VectorService } from 'src/modules/vector/vector.service';
+import { VectorService } from '../../../vector/vector.service';
 
 describe('BotFaqService', () => {
   let service: BotFaqService;

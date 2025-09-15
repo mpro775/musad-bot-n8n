@@ -9,6 +9,11 @@ import { Observable, throwError } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { Inject } from '@nestjs/common';
 import { Counter, Histogram } from 'prom-client';
+import {
+  METRIC_HTTP_DURATION,
+  METRIC_HTTP_ERRORS,
+  METRIC_HTTP_TOTAL,
+} from 'src/metrics/metrics.providers';
 
 /**
  * Interceptor لقياس أداء HTTP requests
@@ -18,10 +23,10 @@ export class HttpMetricsInterceptor implements NestInterceptor {
   private readonly logger = new Logger(HttpMetricsInterceptor.name);
 
   constructor(
-    @Inject('HTTP_REQUEST_DURATION_SECONDS')
+    @Inject(METRIC_HTTP_DURATION)
     private readonly httpDuration: Histogram<string>,
-    @Inject('HTTP_ERRORS_TOTAL')
-    private readonly httpErrors: Counter<string>,
+    @Inject(METRIC_HTTP_ERRORS) private readonly httpErrors: Counter<string>,
+    @Inject(METRIC_HTTP_TOTAL) private readonly httpTotal: Counter<string>,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
@@ -78,8 +83,8 @@ export class HttpMetricsInterceptor implements NestInterceptor {
     const status = statusCode.toString();
 
     this.httpDuration.labels(method, route, status).observe(duration);
+    this.httpTotal.labels(method, route, status).inc();
 
-    // تسجيل الطلبات البطيئة
     if (duration > 1) {
       this.logger.warn(
         `Slow request detected: ${method} ${route} took ${duration.toFixed(3)}s`,
@@ -97,7 +102,6 @@ export class HttpMetricsInterceptor implements NestInterceptor {
     error: any,
   ): void {
     const errorType = this.categorizeError(statusCode, error);
-
     this.httpErrors
       .labels(method, route, statusCode.toString(), errorType)
       .inc();

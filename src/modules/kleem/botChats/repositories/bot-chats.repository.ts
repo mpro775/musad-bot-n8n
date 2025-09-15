@@ -1,5 +1,4 @@
 import { FilterQuery, PipelineStage, Types } from 'mongoose';
-import { QueryBotRatingsDto } from '../dto/query-bot-ratings.dto';
 import { BotChatSession } from '../schemas/botChats.schema';
 
 export type AppendMessage = {

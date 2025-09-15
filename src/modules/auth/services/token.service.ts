@@ -57,7 +57,26 @@ export class TokenService {
         throw new Error(`Unknown time unit: ${unit}`);
     }
   }
-
+  async createAccessOnly(payload: {
+    userId: string;
+    role: string;
+    merchantId?: string | null;
+  }) {
+    const jti = randomUUID();
+    const claims = {
+      sub: payload.userId,
+      role: payload.role,
+      merchantId: payload.merchantId ?? null,
+      jti,
+      typ: 'access',
+    };
+    const accessToken = this.jwtService.sign(claims, {
+      expiresIn: '15m',
+      issuer: this.config.get('JWT_ISSUER'),
+      audience: this.config.get('JWT_AUDIENCE'),
+    });
+    return { accessToken, jti };
+  }
   async createTokenPair(
     payload: Omit<JwtPayload, 'iat' | 'exp' | 'jti'>,
     sessionInfo?: { userAgent?: string; ip?: string },

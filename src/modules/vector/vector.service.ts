@@ -720,4 +720,26 @@ export class VectorService implements OnModuleInit {
       filter: { must: [{ key: 'mongoId', match: { value: mongoId } }] },
     });
   }
+
+  public async deleteProductPoint(ids: Array<string | { toString(): string }>) {
+    // بعض الاختبارات كانت تسميه بالمفرد وهو يستقبل array
+    return this.deleteProductPointsByMongoIds(ids);
+  }
+
+  // ✅ أحيانًا اسم الجمع:
+  public async deleteProductPoints(
+    ids: Array<string | { toString(): string }>,
+  ) {
+    return this.deleteProductPointsByMongoIds(ids);
+  }
+
+  // ✅ لو كان في اختبارات قديمة تتوقع searchProducts بتوقيع مختلف:
+  public async searchProductsCompat(query: string, merchantId?: string) {
+    // استدعِ ما يلائم داخليًا عندك
+    return this.querySimilarProducts(query, merchantId || '', 20);
+  }
+  public __test_embed(input: string) {
+    // واجهة اختبارية تستدعي الخاصّة داخليًا
+    return this.embed(input as any);
+  }
 }

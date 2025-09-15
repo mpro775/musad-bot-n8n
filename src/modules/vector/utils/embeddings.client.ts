@@ -3,68 +3,79 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { firstValueFrom, timeout, catchError, retry, delay } from 'rxjs';
 import { I18nService } from 'nestjs-i18n';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class EmbeddingsClient {
   private readonly logger = new Logger(EmbeddingsClient.name);
-  private readonly maxRetries = 3;
-  private readonly retryDelay = 1000; // 1 second
 
   constructor(
     private readonly http: HttpService,
     private readonly i18n: I18nService,
+    private readonly config: ConfigService,
   ) {}
 
   async embed(
     baseUrl: string,
     text: string,
-    expected = 384,
+    expected = this.config.get<number>('vars.embeddings.expectedDim')!,
   ): Promise<number[]> {
-    // Input validation
+    // Validation
     if (!baseUrl || typeof baseUrl !== 'string') {
       throw new Error(
         await this.i18n.translate('embeddings.errors.invalidBaseUrl'),
       );
     }
-
     if (!text || typeof text !== 'string') {
       throw new Error(
         await this.i18n.translate('embeddings.errors.invalidText'),
       );
     }
 
-    if (text.length > 10000) {
-      this.logger.warn(`Text length ${text.length} exceeds recommended limit`);
+    const maxLen = this.config.get<number>('vars.embeddings.maxTextLength')!;
+    if (text.length > maxLen) {
+      this.logger.warn(
+        `Text length ${text.length} exceeds recommended limit (${maxLen})`,
+      );
     }
+
+    const endpointPath = this.config.get<string>(
+      'vars.embeddings.endpointPath',
+    )!;
+    const httpTimeoutMs = this.config.get<number>(
+      'vars.embeddings.httpTimeoutMs',
+    )!;
+    const rxTimeoutMs = this.config.get<number>('vars.embeddings.rxTimeoutMs')!;
+    const maxRetries = this.config.get<number>(
+      'vars.embeddings.retry.maxRetries',
+    )!;
+    const baseRetryDelay = this.config.get<number>(
+      'vars.embeddings.retry.baseDelayMs',
+    )!;
 
     let lastError: any;
 
-    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         this.logger.debug(
-          `Embedding attempt ${attempt}/${this.maxRetries} for text length ${text.length}`,
+          `Embedding attempt ${attempt}/${maxRetries} for text length ${text.length}`,
         );
 
         const { data } = await firstValueFrom(
           this.http
-            .post<{
-              embeddings: number[][];
-            }>(
-              `${baseUrl}/embed`,
+            .post<{ embeddings: number[][] }>(
+              `${baseUrl}${endpointPath}`,
               { texts: [text] },
               {
-                timeout: 15_000,
-                headers: {
-                  'Content-Type': 'application/json',
-                },
+                timeout: httpTimeoutMs,
+                headers: { 'Content-Type': 'application/json' },
               },
             )
             .pipe(
-              timeout(20_000),
+              timeout(rxTimeoutMs),
               catchError((error) => {
                 this.logger.warn(
-                  `Embedding attempt ${attempt} failed:`,
-                  error.message,
+                  `Embedding attempt ${attempt} failed: ${error.message}`,
                 );
                 throw error;
               }),
@@ -90,8 +101,8 @@ export class EmbeddingsClient {
       } catch (error) {
         lastError = error;
 
-        if (attempt < this.maxRetries) {
-          const delayMs = this.retryDelay * Math.pow(2, attempt - 1); // Exponential backoff
+        if (attempt < maxRetries) {
+          const delayMs = baseRetryDelay * Math.pow(2, attempt - 1); // Exponential backoff
           this.logger.warn(
             `Embedding attempt ${attempt} failed, retrying in ${delayMs}ms`,
           );
@@ -100,10 +111,7 @@ export class EmbeddingsClient {
       }
     }
 
-    this.logger.error(
-      `All ${this.maxRetries} embedding attempts failed`,
-      lastError,
-    );
+    this.logger.error(`All ${maxRetries} embedding attempts failed`, lastError);
     throw new Error(
       await this.i18n.translate('embeddings.errors.allAttemptsFailed'),
     );

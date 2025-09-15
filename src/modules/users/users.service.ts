@@ -6,7 +6,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { NotificationsPrefsDto } from './dto/notifications-prefs.dto';
 import { GetUsersDto } from './dto/get-users.dto';
 import { PaginationResult } from '../../common/dto/pagination.dto';
-import { UserNotFoundError } from 'src/common/errors/business-errors';
+import { UserNotFoundError } from '../../common/errors/business-errors';
 import { TranslationService } from '../../common/services/translation.service';
 
 @Injectable()

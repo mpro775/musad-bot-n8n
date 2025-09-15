@@ -14,10 +14,11 @@ RUN apk add --no-cache \
 
 # تحسين الكاش - نسخ package.json أولاً
 COPY package*.json ./
-RUN npm ci --omit=dev=false && npm cache clean --force
-
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev=false && npm cache clean --force
+COPY tsconfig*.json nest-cli.json ./
 # نسخ الكود المصدري
 COPY . .
+
 
 # إعداد متغير البيئة للبناء
 ARG NODE_ENV=production

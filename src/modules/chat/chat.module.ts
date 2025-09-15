@@ -12,6 +12,7 @@ import { MerchantsModule } from '../merchants/merchants.module';
 import { HttpModule } from '@nestjs/axios';
 import { PublicChatWidgetController } from './public-chat-widget.controller';
 import { MongoChatWidgetRepository } from './repositories/mongo-chat-widget.repository';
+import { WsActiveGauge } from '../../metrics/metrics.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { MongoChatWidgetRepository } from './repositories/mongo-chat-widget.repo
     HttpModule,
   ],
   providers: [
+    WsActiveGauge,
     ChatGateway,
     ChatWidgetService,
     {

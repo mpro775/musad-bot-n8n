@@ -36,7 +36,7 @@ import {
   ApiForbiddenResponse,
   ApiNotFoundResponse,
 } from '@nestjs/swagger';
-import { Public } from 'src/common/decorators/public.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import {
   ApiSuccessResponse,
   ApiCreatedResponse as CommonApiCreatedResponse,
@@ -58,7 +58,7 @@ import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CatalogService } from '../catalog/catalog.service';
-import { OutboxService } from 'src/common/outbox/outbox.service';
+import { OutboxService } from '../../common/outbox/outbox.service';
 import { CurrentUser, CurrentUserId, CurrentMerchantId } from '../../common';
 import type { Role } from '../../common/interfaces/jwt-payload.interface';
 import { TranslationService } from '../../common/services/translation.service';

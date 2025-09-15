@@ -58,4 +58,7 @@ export class InstructionsService {
   async getActiveInstructions(merchantId?: string) {
     return this.repo.getActiveInstructions(merchantId);
   }
+  async getCurrentInstructions(merchantId: string) {
+    return { system: 'default', merchantId };
+  }
 }

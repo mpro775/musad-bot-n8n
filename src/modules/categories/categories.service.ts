@@ -16,7 +16,7 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { MoveCategoryDto } from './dto/move-category.dto';
 import { CategoryDocument } from './schemas/category.schema';
 import { CategoriesRepository } from './repositories/categories.repository';
-import { CategoryNotFoundError } from 'src/common/errors/business-errors';
+import { CategoryNotFoundError } from '../../common/errors/business-errors';
 
 const unlink = fs.unlink;
 

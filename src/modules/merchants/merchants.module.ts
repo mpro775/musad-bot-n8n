@@ -43,6 +43,11 @@ import { CleanupCoordinatorService } from './cleanup-coordinator.service';
 import { MongoMerchantsRepository } from './repositories/mongo-merchants.repository';
 import { MongoMerchantChecklistRepository } from './repositories/mongo-merchant-checklist.repository';
 import { MongoPromptVersionRepository } from './repositories/mongo-prompt-version.repository';
+import { MerchantProvisioningService } from './services/merchant-provisioning.service';
+import { MerchantCacheService } from './services/merchant-cache.service';
+import { MerchantPromptService } from './services/merchant-prompt.service';
+import { MerchantProfileService } from './services/merchant-profile.service';
+import { MerchantDeletionService } from './services/merchant-deletion.service';
 
 @Module({
   imports: [
@@ -89,6 +94,11 @@ import { MongoPromptVersionRepository } from './repositories/mongo-prompt-versio
     CleanupCoordinatorService,
     MerchantChecklistService,
     SlugResolverService,
+    MerchantProvisioningService,
+    MerchantCacheService,
+    MerchantPromptService,
+    MerchantProfileService,
+    MerchantDeletionService,
   ],
   controllers: [
     MerchantsController,
@@ -104,6 +114,11 @@ import { MongoPromptVersionRepository } from './repositories/mongo-prompt-versio
     MerchantChecklistService,
     SlugResolverService,
     CleanupCoordinatorService,
+    MerchantProvisioningService,
+    MerchantCacheService,
+    MerchantPromptService,
+    MerchantProfileService,
+    MerchantDeletionService,
 
     // Repositories
     'MerchantsRepository',

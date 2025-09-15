@@ -327,12 +327,14 @@ export class RabbitService implements OnModuleInit, OnModuleDestroy {
     rec.queueName = queueName;
   }
 
-  private async waitForConfirmsWithTimeout(ms: number) {
+  private async waitForConfirmsWithTimeout(ms?: number) {
     const ch = this.ch!;
+    const timeoutMs =
+      ms ?? this.cfg.get<number>('vars.rabbit.confirmTimeoutMs')!;
     await Promise.race([
       ch.waitForConfirms(),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Confirm timeout')), ms),
+        setTimeout(() => reject(new Error('Confirm timeout')), timeoutMs),
       ),
     ]);
   }

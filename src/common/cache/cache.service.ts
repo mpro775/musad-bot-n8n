@@ -3,6 +3,9 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import * as Redis from 'ioredis';
 import { CacheMetrics } from './cache.metrics';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Gauge } from 'prom-client';
+import { Interval } from '@nestjs/schedule';
 
 type Entry<T> = { v: T; e: number };
 
@@ -24,9 +27,15 @@ export class CacheService {
     invalidations: 0,
   };
 
+  // متغيرات لمعدل الإصابة
+  private hits = 0;
+  private misses = 0;
+
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private cacheMetrics: CacheMetrics,
+    @InjectMetric('cache_hit_rate')
+    private readonly cacheHitRateGauge: Gauge<string>,
   ) {
     // محاولة الحصول على Redis instance من cache manager (طرق متعددة لدعم اختلاف الستور)
     try {
@@ -74,6 +83,7 @@ export class CacheService {
       const l1Entry = this.l1.get(key);
       if (l1Entry && l1Entry.e > now) {
         this.stats.l1Hits++;
+        this.hits++;
         this.cacheMetrics.recordHit('l1', keyPrefix);
         this.log.debug(`L1 cache hit for key: ${key}`);
         return l1Entry.v;
@@ -85,6 +95,7 @@ export class CacheService {
           const raw = await this.redis.get(key);
           if (!raw) {
             this.stats.misses++;
+            this.misses++;
             this.cacheMetrics.recordMiss(keyPrefix);
             this.log.debug(`Cache miss for key: ${key}`);
             return undefined;
@@ -97,6 +108,7 @@ export class CacheService {
             // إضافة إلى L1 للاستخدام السريع التالي
             this.l1.set(key, { v, e: exp });
             this.stats.l2Hits++;
+            this.hits++;
             this.cacheMetrics.recordHit('l2', keyPrefix);
             this.log.debug(`L2 cache hit for key: ${key}`);
             return v as T;
@@ -112,6 +124,7 @@ export class CacheService {
             }
             this.l1.delete(key);
             this.stats.misses++;
+            this.misses++;
             this.cacheMetrics.recordMiss(keyPrefix);
             return undefined;
           }
@@ -121,6 +134,7 @@ export class CacheService {
           );
           // عند خطأ في Redis نعتبرها miss محمية
           this.stats.misses++;
+          this.misses++;
           this.cacheMetrics.recordMiss(keyPrefix);
           return undefined;
         }
@@ -128,6 +142,7 @@ export class CacheService {
 
       // لا يوجد L2 -> miss
       this.stats.misses++;
+      this.misses++;
       this.cacheMetrics.recordMiss(keyPrefix);
       this.log.debug(`Cache miss (no L2) for key: ${key}`);
       return undefined;
@@ -136,6 +151,7 @@ export class CacheService {
         `Cache get error for key ${key}: ${(error as Error).message}`,
       );
       this.stats.misses++;
+      this.misses++;
       return undefined;
     } finally {
       timer();
@@ -351,5 +367,18 @@ export class CacheService {
    */
   static createKey(prefix: string, ...parts: (string | number)[]): string {
     return [prefix, ...parts.map((p) => String(p))].join(':');
+  }
+
+  /**
+   * تحديث معدل الإصابة كل دقيقة
+   */
+  @Interval(60_000)
+  updateHitRate() {
+    const total = this.hits + this.misses || 1;
+    this.cacheHitRateGauge.set(
+      { cache_type: 'redis' },
+      (this.hits / total) * 100,
+    );
+    this.hits = this.misses = 0;
   }
 }

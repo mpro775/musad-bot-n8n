@@ -4,7 +4,7 @@ import { BotFaq } from './schemas/botFaq.schema';
 import { CreateBotFaqDto } from './dto/create-botFaq.dto';
 import { UpdateBotFaqDto } from './dto/update-botFaq.dto';
 import { BulkImportDto } from './dto/bulk-import.dto';
-import { VectorService } from 'src/modules/vector/vector.service';
+import { VectorService } from '../../vector/vector.service';
 import { BOT_FAQ_REPOSITORY } from './tokens';
 import { BotFaqRepository } from './repositories/bot-faq.repository';
 

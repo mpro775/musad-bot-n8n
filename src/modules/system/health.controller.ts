@@ -8,6 +8,8 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
+import Redis from 'ioredis';
+import { InjectRedis } from '@nestjs-modules/ioredis';
 
 interface HealthStatus {
   status: 'healthy' | 'unhealthy' | 'degraded';
@@ -34,6 +36,7 @@ export class HealthController {
   constructor(
     @InjectConnection() private readonly mongoConnection: Connection,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    @InjectRedis() private readonly redis?: Redis, // <-- اختياري
   ) {}
 
   @Get()
@@ -240,11 +243,16 @@ export class HealthController {
    */
   private async quickCacheCheck(): Promise<boolean> {
     try {
-      const testKey = `quick_check_${Date.now()}`;
-      await this.cacheManager.set(testKey, 'ok', 1);
-      const result = await this.cacheManager.get(testKey);
-      await this.cacheManager.del(testKey);
-      return result === 'ok';
+      if (this.redis) {
+        const pong = await this.redis.ping();
+        return pong === 'PONG';
+      }
+      // fallback للـ cache-manager
+      const k = `quick_check_${Date.now()}`;
+      await this.cacheManager.set(k, 'ok', 1);
+      const v = await this.cacheManager.get(k);
+      await this.cacheManager.del(k);
+      return v === 'ok';
     } catch {
       return false;
     }

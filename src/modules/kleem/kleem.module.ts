@@ -1,9 +1,9 @@
 // kleem.module.ts
 import { Module } from '@nestjs/common';
 import { KleemChatService } from './chat/kleem-chat.service';
-import { KleemChatController } from './chat/kleem-chat.controller';              // ← أضِف هذا
-import { KleemWebhookController } from './webhook/kleem-webhook.controller';    // ← وأيضًا هذا
-import { KleemGateway } from './ws/kleem.gateway';                               // ← والـ Gateway
+import { KleemChatController } from './chat/kleem-chat.controller'; // ← أضِف هذا
+import { KleemWebhookController } from './webhook/kleem-webhook.controller'; // ← وأيضًا هذا
+import { KleemGateway } from './ws/kleem.gateway'; // ← والـ Gateway
 
 import { BotChatsModule } from './botChats/botChats.module';
 import { BotPromptModule } from './botPrompt/botPrompt.module';
@@ -11,6 +11,7 @@ import { SettingsModule } from './settings/settings.module';
 import { VectorModule } from '../vector/vector.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BotFaqModule } from './botFaq/botFaq.module';
+import { WsActiveGauge } from '../../metrics/metrics.module';
 
 @Module({
   imports: [
@@ -21,8 +22,8 @@ import { BotFaqModule } from './botFaq/botFaq.module';
     VectorModule,
     EventEmitterModule.forRoot(),
   ],
-  controllers: [KleemChatController, KleemWebhookController],  // ← مهم
-  providers: [KleemChatService, KleemGateway],                 // ← أضف الـ Gateway هنا
+  controllers: [KleemChatController, KleemWebhookController], // ← مهم
+  providers: [WsActiveGauge, KleemChatService, KleemGateway], // ← أضف الـ Gateway هنا
   exports: [KleemChatService],
 })
 export class KleemModule {}

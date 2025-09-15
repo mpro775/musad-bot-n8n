@@ -19,6 +19,9 @@ import { ServerOptions } from 'socket.io';
 import { corsOptions } from './common/config/cors.config';
 import { setupApp } from './common/config/app.config';
 import { I18nService } from 'nestjs-i18n';
+import cookieParser from 'cookie-parser';
+import csurf from 'csurf';
+import { ConfigService } from '@nestjs/config';
 
 function i18nizeSwagger(
   doc: OpenAPIObject,
@@ -96,7 +99,35 @@ function i18nizeSwagger(
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.use(cookieParser(process.env.COOKIE_SECRET)); // أضف COOKIE_SECRET
+  const csrfMw = csurf({
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    },
+  });
 
+  app.use('/api', (req, res, next) => {
+    const path = req.path || '';
+    // استثناءات آمنة: webhooks, docs, health, metrics
+    if (
+      path.startsWith('/webhooks') ||
+      path.startsWith('/docs') ||
+      path.startsWith('/docs-json') ||
+      path === '/health' ||
+      path === '/metrics'
+    ) {
+      return next();
+    }
+    return csrfMw(req, res, next);
+  });
+  app.use((req: any, res, next) => {
+    if (typeof req.csrfToken === 'function') {
+      res.setHeader('X-CSRF-Token', req.csrfToken());
+    }
+    next();
+  });
   // ✅ F1: التحقق من متغيرات البيئة الحرجة قبل البدء
   const envValidator = app.get('EnvironmentValidatorService');
   envValidator.validateOrExit();
@@ -130,10 +161,15 @@ async function bootstrap() {
         pingInterval: 25000,
         upgradeTimeout: 10000,
         maxHttpBufferSize: 1e6,
-        allowRequest: (req: any, callback: any) => {
-          const origin = req.headers.origin;
-          const isAllowed = this.isOriginAllowed(origin, corsOptions.origin);
-          callback(null, isAllowed);
+        allowRequest: async (req: any, callback: any) => {
+          const ok =
+            typeof corsOptions.origin === 'function'
+              ? await this.isOriginFnAllowed(
+                  req.headers.origin,
+                  corsOptions.origin,
+                )
+              : true;
+          callback(null, ok);
         },
       };
 
@@ -141,23 +177,27 @@ async function bootstrap() {
       return super.createIOServer(port, wsOptions);
     }
 
-    private isOriginAllowed(
+    private isOriginFnAllowed(
       origin: string | undefined,
-      allowedOrigins: any,
-    ): boolean {
-      if (!origin) return false;
-      if (typeof allowedOrigins === 'string') return origin === allowedOrigins;
-      if (Array.isArray(allowedOrigins)) return allowedOrigins.includes(origin);
-      if (allowedOrigins instanceof RegExp) return allowedOrigins.test(origin);
-      if (typeof allowedOrigins === 'function') return allowedOrigins(origin);
-      return false;
+      originFn: any,
+    ): Promise<boolean> {
+      return new Promise((resolve) => {
+        if (!origin) return resolve(false);
+        try {
+          originFn(origin, (err: any, allowed: boolean) =>
+            resolve(!err && !!allowed),
+          );
+        } catch {
+          resolve(false);
+        }
+      });
     }
   }
 
   app.useWebSocketAdapter(new WsAdapter(app));
 
-  // إعداد التطبيق مع المكونات المشتركة
-  setupApp(app);
+  const config = app.get(ConfigService);
+  setupApp(app, config);
 
   // إضافة فلتر الأخطاء المحسن
   const allExceptionsFilter = app.get(AllExceptionsFilter);
@@ -367,6 +407,8 @@ async function bootstrap() {
   );
 
   const port = process.env.PORT || 3000;
+  app.enableShutdownHooks();
+
   await app.listen(port);
   console.log(`🚀 Backend running on http://localhost:${port}/api`);
 }

@@ -29,6 +29,10 @@ import { MongoProductsRepository } from './repositories/mongo-products.repositor
 // خدمات مساعدة
 import { ProductIndexService } from './services/product-index.service';
 import { ProductMediaService } from './services/product-media.service';
+import { ProductCommandsService } from './services/product-commands.service';
+import { ProductSyncService } from './services/product-sync.service';
+import { ProductQueriesService } from './services/product-queries.service';
+import { ProductPublicService } from './services/product-public.service';
 
 // وحدات مرتبطة
 import { ScraperModule } from '../scraper/scraper.module';
@@ -38,18 +42,16 @@ import { ZidModule } from '../integrations/zid/zid.module';
 import { StorefrontModule } from '../storefront/storefront.module';
 import { CategoriesModule } from '../categories/categories.module';
 
-import { ScheduleModule } from '@nestjs/schedule';
 import { ProductsCron } from './utils/products.cron';
 
 import { ErrorManagementModule } from '../../common/error-management.module';
 import { CacheModule } from '../../common/cache/cache.module';
 import { CommonServicesModule } from '../../common/services/common-services.module';
 import { OutboxModule } from '../../common/outbox/outbox.module';
+import { MetricsModule } from '../../metrics/metrics.module';
 
 @Module({
   imports: [
-    // ملاحظة: يفضّل وضع ScheduleModule.forRoot() مرة واحدة في AppModule.
-    ScheduleModule.forRoot(),
     MulterModule.register({ dest: './uploads' }),
 
     MongooseModule.forFeature([
@@ -71,6 +73,7 @@ import { OutboxModule } from '../../common/outbox/outbox.module';
     ErrorManagementModule,
     CacheModule,
     CommonServicesModule,
+    MetricsModule,
   ],
   controllers: [ProductsController],
   providers: [
@@ -84,6 +87,10 @@ import { OutboxModule } from '../../common/outbox/outbox.module';
     ProductIndexService,
     ProductMediaService,
     ProductsCron,
+    ProductCommandsService,
+    ProductSyncService,
+    ProductQueriesService,
+    ProductPublicService,
 
     // Product setup configuration service
     ProductSetupConfigService,
@@ -104,6 +111,10 @@ import { OutboxModule } from '../../common/outbox/outbox.module';
   ],
   exports: [
     ProductsService,
+    ProductCommandsService,
+    ProductSyncService,
+    ProductQueriesService,
+    ProductPublicService,
     // إن احتجت المستودع خارج الموديول (نادراً)
     'ProductsRepository',
     MongooseModule,

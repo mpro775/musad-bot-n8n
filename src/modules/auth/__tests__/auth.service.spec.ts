@@ -1,7 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { AuthService } from '../auth.service';
 import { AuthRepository } from '../repositories/auth.repository';
-import { JwtService } from '@nestjs/jwt';
 
 describe('AuthService', () => {
   let service: AuthService;

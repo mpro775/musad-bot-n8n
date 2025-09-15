@@ -1,7 +1,7 @@
 // src/infra/dispatchers/reply-dispatchers.ts
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { RabbitService } from '../rabbit/rabbit.service';
-import { ChannelsDispatcherService } from 'src/modules/channels/channels-dispatcher.service';
+import { ChannelsDispatcherService } from '../../modules/channels/channels-dispatcher.service';
 
 @Injectable()
 export class ReplyDispatchers implements OnModuleInit {

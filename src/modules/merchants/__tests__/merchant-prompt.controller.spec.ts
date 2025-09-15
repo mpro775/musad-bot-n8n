@@ -5,9 +5,9 @@ import { PromptVersionService } from '../services/prompt-version.service';
 import { PromptPreviewService } from '../services/prompt-preview.service';
 import { StorefrontService } from '../../storefront/storefront.service';
 import { PromptBuilderService } from '../services/prompt-builder.service';
-import { QuickConfigDto } from '../dto/quick-config.dto';
-import { AdvancedTemplateDto } from '../dto/advanced-template.dto';
-import { PreviewPromptDto } from '../dto/preview-prompt.dto';
+import { QuickConfigDto } from '../dto/requests/quick-config.dto';
+import { AdvancedTemplateDto } from '../dto/requests/advanced-template.dto';
+import { PreviewPromptDto } from '../dto/requests/preview-prompt.dto';
 
 describe('MerchantPromptController', () => {
   let controller: MerchantPromptController;
@@ -25,10 +25,11 @@ describe('MerchantPromptController', () => {
       businessType: 'retail',
       targetAudience: 'general',
     },
-    advancedConfig: {
-      template: 'default',
-      customizations: {},
+    currentAdvancedConfig: {
+      template: 'default template content',
+      note: 'Default template',
     },
+    finalPromptTemplate: 'Final prompt content',
   };
 
   beforeEach(async () => {
@@ -36,16 +37,13 @@ describe('MerchantPromptController', () => {
       findOne: jest.fn(),
       updateQuickConfig: jest.fn(),
       updateAdvancedConfig: jest.fn(),
+      saveAdvancedVersion: jest.fn(),
     };
 
     const mockVersionService = {
-      createVersion: jest.fn(),
-      getVersions: jest.fn(),
-      activateVersion: jest.fn(),
-    };
-
-    const mockPreviewService = {
-      generatePreview: jest.fn(),
+      snapshot: jest.fn(),
+      list: jest.fn(),
+      revert: jest.fn(),
     };
 
     const mockStorefrontService = {
@@ -53,7 +51,11 @@ describe('MerchantPromptController', () => {
     };
 
     const mockPromptBuilder = {
-      buildPrompt: jest.fn(),
+      buildFromQuickConfig: jest.fn(),
+    };
+
+    const mockPreviewService = {
+      preview: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -106,7 +108,7 @@ describe('MerchantPromptController', () => {
       };
 
       merchantsService.updateQuickConfig.mockResolvedValue(
-        updatedMerchant as any,
+        quickConfigDto as any,
       );
 
       const result = await controller.updateQuickConfig(
@@ -118,7 +120,7 @@ describe('MerchantPromptController', () => {
         '64a00000000000000000001',
         quickConfigDto,
       );
-      expect(result).toEqual(updatedMerchant.quickConfig);
+      expect(result).toEqual(quickConfigDto);
     });
   });
 
@@ -126,135 +128,154 @@ describe('MerchantPromptController', () => {
     it('should return advanced config for merchant', async () => {
       merchantsService.findOne.mockResolvedValue(mockMerchant as any);
 
-      const result = await controller.getAdvancedConfig(
+      const result = await controller.getAdvancedTemplate(
         '64a00000000000000000001',
       );
 
       expect(merchantsService.findOne).toHaveBeenCalledWith(
         '64a00000000000000000001',
       );
-      expect(result).toEqual(mockMerchant.advancedConfig);
+      expect(result).toEqual({
+        template: mockMerchant.currentAdvancedConfig.template,
+        note: mockMerchant.currentAdvancedConfig.note,
+      });
     });
   });
 
-  describe('updateAdvancedConfig', () => {
-    it('should update advanced config', async () => {
-      const advancedDto: AdvancedTemplateDto = {
-        template: 'custom',
-        customizations: {
-          greeting: 'Welcome to our store!',
-        },
-      } as AdvancedTemplateDto;
-
-      const updatedMerchant = {
-        ...mockMerchant,
-        advancedConfig: advancedDto,
-      };
-
-      merchantsService.updateAdvancedConfig.mockResolvedValue(
-        updatedMerchant as any,
-      );
-
-      const result = await controller.updateAdvancedConfig(
-        '64a00000000000000000001',
-        advancedDto,
-      );
-
-      expect(merchantsService.updateAdvancedConfig).toHaveBeenCalledWith(
-        '64a00000000000000000001',
-        advancedDto,
-      );
-      expect(result).toEqual(updatedMerchant.advancedConfig);
-    });
-  });
-
-  describe('previewPrompt', () => {
+  describe('preview', () => {
     it('should generate prompt preview', async () => {
       const previewDto: PreviewPromptDto = {
         userMessage: 'Hello, I need help with my order',
+        useAdvanced: true,
+        testVars: { businessName: 'Test Business' },
+        quickConfig: {
+          businessName: 'Test Business',
+          businessType: 'retail',
+          targetAudience: 'general',
+        },
       } as PreviewPromptDto;
 
-      const mockPreview = {
-        prompt: 'Generated prompt content',
-        context: { businessName: 'Test Business' },
-      };
+      const mockPreview = 'Generated prompt content';
 
-      previewService.generatePreview.mockResolvedValue(mockPreview as any);
+      // Mock the service methods
+      merchantsService.findOne.mockResolvedValue(mockMerchant as any);
+      promptBuilder.buildFromQuickConfig.mockReturnValue(
+        'Quick config template',
+      );
+      previewService.preview.mockReturnValue(mockPreview);
 
-      const result = await controller.previewPrompt(
+      const result = await controller.preview(
         '64a00000000000000000001',
         previewDto,
       );
 
-      expect(previewService.generatePreview).toHaveBeenCalledWith(
+      expect(merchantsService.findOne).toHaveBeenCalledWith(
         '64a00000000000000000001',
-        previewDto,
       );
-      expect(result).toEqual(mockPreview);
+      expect(result).toEqual({ preview: mockPreview });
     });
   });
 
-  describe('createVersion', () => {
-    it('should create a new prompt version', async () => {
-      const mockVersion = {
-        _id: 'version1',
-        merchantId: '64a00000000000000000001',
-        version: 1,
-        isActive: false,
-      };
+  describe('saveAdvancedTemplate', () => {
+    it('should save advanced template and create snapshot', async () => {
+      const advancedDto: AdvancedTemplateDto = {
+        template: 'Custom template content',
+        note: 'Updated template',
+        updatedAt: new Date(),
+      } as AdvancedTemplateDto;
 
-      versionService.createVersion.mockResolvedValue(mockVersion as any);
+      merchantsService.findOne.mockResolvedValue(mockMerchant as any);
+      merchantsService.saveAdvancedVersion.mockResolvedValue(undefined);
 
-      const result = await controller.createVersion('64a00000000000000000001');
-
-      expect(versionService.createVersion).toHaveBeenCalledWith(
+      const result = await controller.saveAdvancedTemplate(
         '64a00000000000000000001',
+        advancedDto,
       );
-      expect(result).toEqual(mockVersion);
+
+      expect(versionService.snapshot).toHaveBeenCalledWith(
+        '64a00000000000000000001',
+        advancedDto.note,
+      );
+      expect(merchantsService.saveAdvancedVersion).toHaveBeenCalledWith(
+        '64a00000000000000000001',
+        advancedDto.template,
+        advancedDto.note,
+      );
+      expect(result).toEqual({ message: 'Advanced template saved' });
     });
   });
 
-  describe('getVersions', () => {
+  describe('listVersions', () => {
     it('should return all versions for merchant', async () => {
       const mockVersions = [
-        { _id: 'version1', version: 1, isActive: true },
-        { _id: 'version2', version: 2, isActive: false },
+        { template: 'Template 1', note: 'Version 1', updatedAt: new Date() },
+        { template: 'Template 2', note: 'Version 2', updatedAt: new Date() },
       ];
 
-      versionService.getVersions.mockResolvedValue(mockVersions as any);
+      versionService.list.mockResolvedValue(mockVersions as any);
 
-      const result = await controller.getVersions('64a00000000000000000001');
+      const result = await controller.listVersions('64a00000000000000000001');
 
-      expect(versionService.getVersions).toHaveBeenCalledWith(
+      expect(versionService.list).toHaveBeenCalledWith(
         '64a00000000000000000001',
       );
       expect(result).toEqual(mockVersions);
     });
   });
 
-  describe('activateVersion', () => {
-    it('should activate a specific version', async () => {
-      const mockActivatedVersion = {
-        _id: 'version2',
-        merchantId: '64a00000000000000000001',
-        version: 2,
-        isActive: true,
+  describe('revertVersion', () => {
+    it('should revert to a specific version', async () => {
+      const versionIndex = 1;
+
+      versionService.revert.mockResolvedValue(undefined);
+
+      const result = await controller.revertVersion(
+        '64a00000000000000000001',
+        versionIndex,
+      );
+
+      expect(versionService.revert).toHaveBeenCalledWith(
+        '64a00000000000000000001',
+        versionIndex,
+      );
+      expect(result).toEqual({
+        message: `Reverted to version ${versionIndex}`,
+      });
+    });
+  });
+
+  describe('finalPrompt', () => {
+    it('should return final prompt template', async () => {
+      const mockMerchantWithPrompt = {
+        ...mockMerchant,
+        finalPromptTemplate: 'Final prompt template content',
       };
 
-      versionService.activateVersion.mockResolvedValue(
-        mockActivatedVersion as any,
+      merchantsService.findOne.mockResolvedValue(mockMerchantWithPrompt as any);
+
+      const result = await controller.finalPrompt('64a00000000000000000001');
+
+      expect(merchantsService.findOne).toHaveBeenCalledWith(
+        '64a00000000000000000001',
+      );
+      expect(result).toEqual({
+        prompt: mockMerchantWithPrompt.finalPromptTemplate,
+      });
+    });
+
+    it('should throw error when final prompt not configured', async () => {
+      const mockMerchantWithoutPrompt = {
+        ...mockMerchant,
+        finalPromptTemplate: undefined,
+      };
+
+      merchantsService.findOne.mockResolvedValue(
+        mockMerchantWithoutPrompt as any,
       );
 
-      const result = await controller.activateVersion(
-        '64a00000000000000000001',
-        2,
-      );
-
-      expect(versionService.activateVersion).toHaveBeenCalledWith(
-        '64a00000000000000000001',
-        2,
-      );
-      expect(result).toEqual(mockActivatedVersion);
+      await expect(
+        controller.finalPrompt('64a00000000000000000001'),
+      ).rejects.toThrow('Final prompt not configured');
     });
   });
 });
