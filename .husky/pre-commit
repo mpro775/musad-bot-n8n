@@ -4,7 +4,3 @@
 # شغّل lint-staged عبر مدير الحزم الذي تستخدمه
 # لو تستعمل npm:
 npx lint-staged
-# لو pnpm:
-# pnpm lint-staged
-# لو yarn:
-# yarn lint-staged
