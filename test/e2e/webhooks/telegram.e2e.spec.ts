@@ -1,7 +1,8 @@
 // test/e2e/webhooks/telegram.e2e.spec.ts
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { type INestApplication } from '@nestjs/common';
+import { Test, type TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+
 import { AppModule } from '../../../src/app.module';
 
 describe('Telegram Webhook E2E (H2)', () => {
@@ -122,6 +123,8 @@ describe('Telegram Webhook E2E (H2)', () => {
         .send(payload)
         .expect(200);
 
+      expect(firstResponse.body).toHaveProperty('status', 'duplicate_ignored');
+      expect(firstResponse.body).toHaveProperty('updateId', updateId);
       expect(secondResponse.body).toHaveProperty('status', 'duplicate_ignored');
       expect(secondResponse.body).toHaveProperty('updateId', updateId);
     });

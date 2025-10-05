@@ -1,4 +1,5 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
+
 import { MerchantsController } from '../merchants.controller';
 import { MerchantsService } from '../merchants.service';
 
@@ -53,7 +54,7 @@ describe('MerchantsController - Basic Tests', () => {
         userId: 'user1',
       } as any);
 
-      expect(merchantsService.create).toHaveBeenCalled();
+      expect(merchantsService.create.bind(merchantsService)).toHaveBeenCalled();
       expect(result).toEqual(mockMerchant);
     });
   });
@@ -65,7 +66,9 @@ describe('MerchantsController - Basic Tests', () => {
 
       const result = await controller.findAll();
 
-      expect(merchantsService.findAll).toHaveBeenCalled();
+      expect(
+        merchantsService.findAll.bind(merchantsService),
+      ).toHaveBeenCalled();
       expect(result).toEqual(merchants);
     });
   });
@@ -76,9 +79,9 @@ describe('MerchantsController - Basic Tests', () => {
 
       const result = await controller.findOne('64a00000000000000000001');
 
-      expect(merchantsService.findOne).toHaveBeenCalledWith(
-        '64a00000000000000000001',
-      );
+      expect(
+        merchantsService.findOne.bind(merchantsService),
+      ).toHaveBeenCalledWith('64a00000000000000000001');
       expect(result).toEqual(mockMerchant);
     });
   });
@@ -95,10 +98,11 @@ describe('MerchantsController - Basic Tests', () => {
         { role: 'ADMIN' } as any,
       );
 
-      expect(merchantsService.update).toHaveBeenCalledWith(
-        '64a00000000000000000001',
-        { name: 'Updated Merchant' },
-      );
+      expect(
+        merchantsService.update.bind(merchantsService),
+      ).toHaveBeenCalledWith('64a00000000000000000001', {
+        name: 'Updated Merchant',
+      });
       expect(result).toEqual(updatedMerchant);
     });
   });

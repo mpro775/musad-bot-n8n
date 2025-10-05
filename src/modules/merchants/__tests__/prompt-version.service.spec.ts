@@ -1,6 +1,8 @@
 import { Test } from '@nestjs/testing';
+
 import { PromptVersionService } from '../services/prompt-version.service';
-import { PromptVersionRepository } from '../repositories/prompt-version.repository';
+
+import type { PromptVersionRepository } from '../repositories/prompt-version.repository';
 
 describe('PromptVersionService', () => {
   let service: PromptVersionService;
@@ -30,7 +32,7 @@ describe('PromptVersionService', () => {
     } as any);
 
     await service.snapshot('m1', 'note');
-    expect(repo.appendAdvancedHistory).toHaveBeenCalled();
+    expect(repo.appendAdvancedHistory.bind(repo)).toHaveBeenCalled();
   });
 
   it('list returns history', async () => {
@@ -49,7 +51,7 @@ describe('PromptVersionService', () => {
 
     await service.revert('m1', 0);
 
-    expect(repo.setCurrentAdvancedConfig).toHaveBeenCalledWith(
+    expect(repo.setCurrentAdvancedConfig.bind(repo)).toHaveBeenCalledWith(
       'm1',
       expect.objectContaining({
         template: 'old',

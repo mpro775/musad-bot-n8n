@@ -1,11 +1,13 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { Types } from 'mongoose';
-import { ChannelProvider } from './schemas/channel.schema';
-import { EvolutionService } from '../integrations/evolution.service';
-import { WhatsappCloudService } from './whatsapp-cloud.service';
+
 import { ChatGateway } from '../chat/chat.gateway';
+import { EvolutionService } from '../integrations/evolution.service';
+
 import { TelegramAdapter } from './adapters/telegram.adapter';
 import { ChannelsRepository } from './repositories/channels.repository';
+import { ChannelDocument, ChannelProvider } from './schemas/channel.schema';
+import { WhatsappCloudService } from './whatsapp-cloud.service';
 
 type SendChannel = 'telegram' | 'whatsapp' | 'webchat';
 type WaTransport = 'api' | 'qr';
@@ -30,12 +32,12 @@ export class ChannelsDispatcherService {
     sessionId: string,
     text: string,
     transport?: WaTransport,
-  ) {
+  ): Promise<void> {
     if (channel === 'webchat') {
       this.chatGateway.sendMessageToSession(sessionId, {
+        id: '',
         role: 'bot',
         text,
-        ts: Date.now(),
       });
       return;
     }
@@ -43,14 +45,13 @@ export class ChannelsDispatcherService {
     if (channel === 'telegram') {
       const tg = await this.getDefault(merchantId, ChannelProvider.TELEGRAM);
       if (!tg) throw new Error('Telegram not configured');
-      await this.tgAdapter.sendMessage(tg as any, sessionId, text);
+      await this.tgAdapter.sendMessage(tg as ChannelDocument, sessionId, text);
       return;
     }
 
     if (channel === 'whatsapp') {
       const use: WaTransport =
-        transport ||
-        (await this.waCloud.detectTransport(merchantId, sessionId));
+        transport || (await this.waCloud.detectTransport(merchantId));
       if (use === 'api') {
         try {
           await this.waCloud.sendText(merchantId, sessionId, text);

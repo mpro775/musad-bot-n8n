@@ -19,11 +19,15 @@ import {
   ApiBody,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { VectorService } from './vector.service';
-import { SemanticRequestDto } from './dto/semantic-request.dto';
-import { Public } from '../../common/decorators/public.decorator';
+import { IdempotencyGuard } from 'src/common/guards/idempotency.guard';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { ServiceTokenGuard } from 'src/common/guards/service-token.guard';
+
+import { Public } from '../../common/decorators/public.decorator';
 import { TranslationService } from '../../common/services/translation.service';
+
+import { SemanticRequestDto } from './dto/semantic-request.dto';
+import { VectorService } from './vector.service';
 
 /**
  * واجهة تحكم البحث الدلالي
@@ -58,13 +62,20 @@ export class VectorController {
     description: 'vector.responses.error.badRequest',
   })
   @ApiBody({ type: SemanticRequestDto })
-  async semanticSProducts(@Body() dto: SemanticRequestDto) {
+  async semanticSProducts(@Body() dto: SemanticRequestDto): Promise<{
+    success: boolean;
+    data: {
+      recommendations: unknown[];
+      count: number;
+      query: string;
+    };
+  }> {
     try {
-      const recs = await this.vector.querySimilarProducts(
+      const recs = (await this.vector.querySimilarProducts(
         dto.text,
         dto.merchantId,
         dto.topK,
-      );
+      )) as unknown[];
       return {
         success: true,
         data: {
@@ -73,11 +84,13 @@ export class VectorController {
           query: dto.text,
         },
       };
-    } catch (error) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       throw new BadRequestException({
         success: false,
         message: 'vector.responses.error.searchFailed',
-        error: error.message,
+        error: errorMessage,
       });
     }
   }
@@ -127,7 +140,14 @@ export class VectorController {
       new ParseIntPipe({ errorHttpStatusCode: HttpStatus.BAD_REQUEST }),
     )
     topK = 5,
-  ) {
+  ): Promise<{
+    success: boolean;
+    data: {
+      recommendations: unknown[];
+      count: number;
+      query: string;
+    };
+  }> {
     if (!text || !merchantId) {
       throw new BadRequestException({
         success: false,
@@ -135,7 +155,7 @@ export class VectorController {
       });
     }
 
-    if (topK < 1 || topK > 50) {
+    if (topK < 1 || topK > 10) {
       throw new BadRequestException({
         success: false,
         message: 'vector.responses.error.invalidTopK',
@@ -143,11 +163,11 @@ export class VectorController {
     }
 
     try {
-      const recs = await this.vector.querySimilarProducts(
+      const recs = (await this.vector.querySimilarProducts(
         text,
         merchantId,
         topK,
-      );
+      )) as unknown[];
       return {
         success: true,
         data: {
@@ -156,11 +176,13 @@ export class VectorController {
           query: text,
         },
       };
-    } catch (error) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       throw new BadRequestException({
         success: false,
         message: 'vector.responses.error.searchFailed',
-        error: error.message,
+        error: errorMessage,
       });
     }
   }
@@ -169,6 +191,7 @@ export class VectorController {
    * بحث موحد في جميع أنواع البيانات
    * يبحث في المنتجات والفئات والعلامات التجارية
    */
+  @UseGuards(ServiceTokenGuard, IdempotencyGuard)
   @Post('unified-search')
   @Public()
   @ApiOperation({
@@ -212,7 +235,14 @@ export class VectorController {
     @Body('merchantId') merchantId: string,
     @Body('query') query: string,
     @Body('topK') topK = 5,
-  ) {
+  ): Promise<{
+    success: boolean;
+    data: {
+      results: unknown[];
+      count: number;
+      query: string;
+    };
+  }> {
     if (!merchantId || !query) {
       throw new BadRequestException({
         success: false,
@@ -237,11 +267,13 @@ export class VectorController {
           query,
         },
       };
-    } catch (error) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       throw new BadRequestException({
         success: false,
         message: 'vector.responses.error.searchFailed',
-        error: error.message,
+        error: errorMessage,
       });
     }
   }

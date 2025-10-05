@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+
 import {
   SupportTicket,
   SupportTicketDocument,
 } from '../schemas/support-ticket.schema';
+
 import { SupportRepository, SupportTicketEntity } from './support.repository';
 
 @Injectable()
@@ -17,7 +19,7 @@ export class SupportMongoRepository implements SupportRepository {
   async create(
     dto: Partial<SupportTicketEntity>,
   ): Promise<SupportTicketEntity> {
-    const doc = await this.model.create(dto as any);
+    const doc = await this.model.create(dto as Record<string, unknown>);
     return doc.toObject() as SupportTicketEntity;
   }
 
@@ -32,7 +34,7 @@ export class SupportMongoRepository implements SupportRepository {
   ): Promise<SupportTicketEntity | null> {
     if (!Types.ObjectId.isValid(id)) return null;
     return this.model
-      .findByIdAndUpdate(id, patch as any, { new: true })
+      .findByIdAndUpdate(id, patch as Record<string, unknown>, { new: true })
       .lean<SupportTicketEntity>()
       .exec();
   }

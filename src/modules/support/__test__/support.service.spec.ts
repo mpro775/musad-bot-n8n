@@ -1,9 +1,11 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { HttpService } from '@nestjs/axios';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { of } from 'rxjs';
+
 import { SupportService } from '../support.service';
 import { SUPPORT_REPOSITORY } from '../tokens';
-import { SupportRepository } from '../repositories/support.repository';
-import { HttpService } from '@nestjs/axios';
-import { of } from 'rxjs';
+
+import type { SupportRepository } from '../repositories/support.repository';
 
 describe('SupportService', () => {
   let service: SupportService;
@@ -12,7 +14,7 @@ describe('SupportService', () => {
     create: jest.fn(),
     findById: jest.fn(),
     updateById: jest.fn(),
-  } as any;
+  } as unknown as jest.Mocked<SupportRepository>;
 
   const httpMock = {
     post: jest.fn(),
@@ -84,7 +86,7 @@ describe('SupportService', () => {
     );
 
     expect(minioMock.putObject).toHaveBeenCalled();
-    expect(repo.create).toHaveBeenCalledWith(
+    expect(repo.create.bind(repo)).toHaveBeenCalledWith(
       expect.objectContaining({
         attachments: expect.any(Array),
         status: 'open',

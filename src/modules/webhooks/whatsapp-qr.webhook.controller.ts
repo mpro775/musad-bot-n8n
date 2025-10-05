@@ -1,145 +1,194 @@
 // src/modules/webhooks/whatsapp-qr.webhook.controller.ts
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
-  ForbiddenException,
   NotFoundException,
   Param,
   Post,
   Req,
   Inject,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
+  UseInterceptors,
 } from '@nestjs/common';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
-import { Public } from 'src/common/decorators/public.decorator';
 import { InjectModel } from '@nestjs/mongoose';
+import { Throttle } from '@nestjs/throttler';
+import { Cache } from 'cache-manager';
 import { Model } from 'mongoose';
-import { ConfigService } from '@nestjs/config';
+import { Public } from 'src/common/decorators/public.decorator';
+import { WebhookSignatureGuard } from 'src/common/guards/webhook-signature.guard';
+import { RequestWithUser } from 'src/common/interfaces/request-with-user.interface';
+import { preventDuplicates, idemKey } from 'src/common/utils/idempotency.util';
+
+import { ChannelSecretsLean } from '../channels/repositories/channels.repository';
 import {
   Channel,
   ChannelDocument,
   ChannelStatus,
 } from '../channels/schemas/channel.schema';
-import { WebhooksController } from './webhooks.controller'; // لإعادة استخدام المعالجة الموحّدة
 import { mapEvoStatus } from '../channels/utils/evo-status.util';
-import { timingSafeEqual } from 'crypto';
 
-// src/modules/webhooks/whatsapp-qr.webhook.controller.ts
+import { WhatsAppQrDto } from './dto/whatsapp-qr.dto';
+import { WebhookLoggingInterceptor } from './interceptors/webhook-logging.interceptor';
+import { WebhooksController } from './webhooks.controller';
+interface RequestWithWebhookData extends RequestWithUser {
+  merchantId: string;
+  channel: ChannelSecretsLean;
+}
+
 @Public()
+@UseInterceptors(WebhookLoggingInterceptor)
 @Controller('webhooks/whatsapp_qr')
 export class WhatsappQrWebhookController {
   constructor(
     @InjectModel(Channel.name)
     private readonly channelModel: Model<ChannelDocument>,
-    private readonly config: ConfigService,
     private readonly webhooksController: WebhooksController,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
-  // يلتقط: POST /webhooks/whatsapp_qr/:channelId
   @Post(':channelId')
+  @UseGuards(WebhookSignatureGuard)
+  @Throttle({
+    default: {
+      ttl: parseInt(process.env.WEBHOOKS_INCOMING_TTL || '10'),
+      limit: parseInt(process.env.WEBHOOKS_INCOMING_LIMIT || '1'),
+    },
+  })
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  )
   async incoming(
     @Param('channelId') channelId: string,
-    @Req() req: any,
-    @Body() body: any,
-  ) {
-    return this.handleAny(channelId, req, body, undefined);
+    @Req() req: RequestWithWebhookData,
+    @Body() body: WhatsAppQrDto,
+  ): Promise<void> {
+    await this.handleAny(channelId, req, body, undefined);
   }
 
-  // يلتقط: POST /webhooks/whatsapp_qr/:channelId/event  (وهذا الذي يرسله Evolution عند webhook_by_events=true)
   @Post(':channelId/event')
+  @UseGuards(WebhookSignatureGuard)
+  @Throttle({
+    default: {
+      ttl: parseInt(process.env.WEBHOOKS_INCOMING_TTL || '10'),
+      limit: parseInt(process.env.WEBHOOKS_INCOMING_LIMIT || '1'),
+    },
+  })
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  )
   async incomingEvent(
     @Param('channelId') channelId: string,
-    @Req() req: any,
-    @Body() body: any,
-  ) {
-    return this.handleAny(channelId, req, body, 'event');
+    @Req() req: RequestWithWebhookData,
+    @Body() body: WhatsAppQrDto,
+  ): Promise<void> {
+    await this.handleAny(channelId, req, body, 'event');
   }
 
-  // اختياري: يلتقط أي اسم حدث: /:channelId/:evt
   @Post(':channelId/:evt')
+  @UseGuards(WebhookSignatureGuard)
+  @Throttle({
+    default: {
+      ttl: parseInt(process.env.WEBHOOKS_INCOMING_TTL || '10'),
+      limit: parseInt(process.env.WEBHOOKS_INCOMING_LIMIT || '1'),
+    },
+  })
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  )
   async incomingAny(
     @Param('channelId') channelId: string,
     @Param('evt') evt: string,
-    @Req() req: any,
-    @Body() body: any,
-  ) {
-    return this.handleAny(channelId, req, body, evt);
+    @Req() req: RequestWithWebhookData,
+    @Body() body: WhatsAppQrDto,
+  ): Promise<void> {
+    await this.handleAny(channelId, req, body, evt);
+  }
+
+  private extractEvoState(body: WhatsAppQrDto): string | undefined {
+    return (
+      body?.status ||
+      body?.instance?.status ||
+      body?.connection ||
+      body?.event?.status
+    );
+  }
+
+  private async updateChannelStatus(
+    channelId: string,
+    evoState: string | undefined,
+  ): Promise<void> {
+    if (!evoState) return;
+
+    const chDoc = await this.channelModel.findById(channelId);
+    if (!chDoc) throw new NotFoundException('channel not found');
+
+    const mapped = mapEvoStatus(evoState as unknown as Record<string, unknown>);
+    if (mapped) {
+      chDoc.status = mapped;
+      if (mapped === ChannelStatus.CONNECTED) chDoc.qr = undefined;
+      await chDoc.save();
+    }
+  }
+
+  private getEffectiveBody(body: WhatsAppQrDto): WhatsAppQrDto {
+    return Array.isArray(body?.data?.messages) ? body.data : body;
+  }
+
+  private async checkMessageIdempotency(
+    effective: WhatsAppQrDto,
+    channelId: string,
+    merchantId: string,
+  ): Promise<boolean> {
+    const messages = effective?.messages;
+    if (!Array.isArray(messages) || messages.length === 0) return false;
+
+    const messageId = messages[0]?.key?.id || messages[0]?.id;
+    if (!messageId) return false;
+
+    const key = idemKey({
+      provider: 'whatsapp_qr',
+      channelId,
+      merchantId,
+      messageId,
+    });
+    return await preventDuplicates(this.cacheManager, key);
   }
 
   private async handleAny(
     channelId: string,
-    req: any,
-    body: any,
+    req: RequestWithWebhookData,
+    body: WhatsAppQrDto,
     evt?: string,
-  ) {
-    // ✅ B3: إلزام X-Evolution-ApiKey + timing-safe comparison
-    const got = req.headers['apikey'] || req.headers['x-evolution-apikey'];
-    const expected =
-      this.config.get<string>('EVOLUTION_APIKEY') ||
-      this.config.get<string>('EVOLUTION_API_KEY');
+  ): Promise<void> {
+    const merchantId = String(req.merchantId);
+    if (!merchantId) throw new NotFoundException('Merchant not resolved');
 
-    if (!got || !expected) {
-      throw new ForbiddenException('Missing API key');
+    const evoState = this.extractEvoState(body);
+    await this.updateChannelStatus(channelId, evoState);
+
+    const effective = this.getEffectiveBody(body);
+    if (await this.checkMessageIdempotency(effective, channelId, merchantId)) {
+      return;
     }
 
-    // استخدام timing-safe comparison لمنع timing attacks
-    const gotBuffer = Buffer.from(got);
-    const expectedBuffer = Buffer.from(expected);
-
-    if (
-      gotBuffer.length !== expectedBuffer.length ||
-      !timingSafeEqual(gotBuffer, expectedBuffer)
-    ) {
-      throw new ForbiddenException('Invalid API key');
-    }
-
-    const ch = await this.channelModel.findById(channelId);
-    if (!ch) throw new NotFoundException('channel not found');
-
-    // تحديث حالة القناة لو وصلتنا
-    const evoState =
-      body?.status ||
-      body?.instance?.status ||
-      body?.connection ||
-      body?.event?.status;
-    const mapped = mapEvoStatus(evoState);
-    if (mapped) {
-      ch.status = mapped;
-      if (mapped === ChannelStatus.CONNECTED) ch.qr = undefined;
-      await ch.save();
-    }
-
-    // Evolution كثيرًا ما يغلف الرسالة داخل body.data .. افردها لو موجودة
-    const effective = Array.isArray(body?.data?.messages) ? body.data : body;
-
-    // ✅ B3: Idempotency باستخدام messages[0].key.id
-    const messages = effective?.messages;
-    if (Array.isArray(messages) && messages.length > 0) {
-      const messageId = messages[0]?.key?.id || messages[0]?.id;
-      if (messageId) {
-        const idempotencyKey = `idem:webhook:whatsapp_qr:${messageId}`;
-        const existing = await this.cacheManager.get(idempotencyKey);
-
-        if (existing) {
-          // إرجاع نفس الاستجابة المخزنة مسبقاً
-          return { status: 'duplicate_ignored', messageId };
-        }
-
-        // تخزين في الكاش لمدة 24 ساعة
-        await this.cacheManager.set(idempotencyKey, true, 24 * 60 * 60 * 1000);
-      }
-    }
-
-    // مرّر إلى المعالج الموحد (سيقوم normalize بتحويلها)
-    return this.webhooksController.handleIncoming(
-      String(ch.merchantId),
-      {
-        provider: 'whatsapp_qr',
-        channelId,
-        event: evt,
-        ...effective, // ← الآن لو كانت messages داخل data ستظهر في الجذر
-      },
+    await this.webhooksController.handleIncoming(
+      merchantId,
+      { provider: 'whatsapp_qr', channelId, event: evt, ...effective },
       req,
     );
   }

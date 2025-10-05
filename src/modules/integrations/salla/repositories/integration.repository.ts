@@ -1,9 +1,9 @@
-import { Types } from 'mongoose';
+import type { Types } from 'mongoose';
 
 export type SallaIntegrationEntity = {
   _id: Types.ObjectId;
   merchantId: Types.ObjectId | string;
-  provider: 'salla' | string;
+  provider: 'salla';
   accessToken?: string;
   refreshToken?: string;
   tokenType?: string;

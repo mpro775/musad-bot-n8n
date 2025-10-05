@@ -1,15 +1,21 @@
 // src/extract/extract.service.spec.ts
 // يغطي ExtractService.extractFromUrl مع إصلاح نوع AxiosResponse عبر config.headers
-import { ExtractService, ExtractResult } from '../extract.service';
-import { HttpService } from '@nestjs/axios';
-import { mockDeep, DeepMockProxy } from 'jest-mock-extended';
-import { of, throwError } from 'rxjs';
-import { AxiosResponse } from 'axios';
-import { Logger } from '@nestjs/common';
 import { faker } from '@faker-js/faker';
+import { Logger } from '@nestjs/common';
+import { mockDeep } from 'jest-mock-extended';
+import { of, throwError } from 'rxjs';
+
+import { ExtractService, type ExtractResult } from '../extract.service';
+
+import type { HttpService } from '@nestjs/axios';
+import type { AxiosResponse } from 'axios';
+import type { DeepMockProxy } from 'jest-mock-extended';
 
 // مُساعد لصنع AxiosResponse صحيح النوع (Axios v1 يتطلب config.headers)
-function makeAxiosResponse<T>(data: T, init?: Partial<AxiosResponse<T>>): AxiosResponse<T> {
+function makeAxiosResponse<T>(
+  data: T,
+  init?: Partial<AxiosResponse<T>>,
+): AxiosResponse<T> {
   return {
     data,
     status: 200,
@@ -45,10 +51,13 @@ describe('ExtractService', () => {
       availability: 'in_stock',
     };
 
-    http.get.mockReturnValue(of(makeAxiosResponse<{ data: ExtractResult }>({ data: payload })) as any);
+    http.get.mockReturnValue(
+      of(makeAxiosResponse<{ data: ExtractResult }>({ data: payload })) as any,
+    );
 
     const result = await service.extractFromUrl(url);
 
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(http.get).toHaveBeenCalledWith(
       'http://extractor-service:8001/extract/',
       { params: { url } },
@@ -58,11 +67,14 @@ describe('ExtractService', () => {
 
   it('يعيد {} عندما تكون الاستجابة بلا حقول ذات معنى (partial/empty payload)', async () => {
     const url = '';
-    http.get.mockReturnValue(of(makeAxiosResponse<{ data: ExtractResult }>({ data: {} })) as any);
+    http.get.mockReturnValue(
+      of(makeAxiosResponse<{ data: ExtractResult }>({ data: {} })) as any,
+    );
 
     const result = await service.extractFromUrl(url);
 
     expect(result).toEqual({});
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(http.get).toHaveBeenCalledWith(
       'http://extractor-service:8001/extract/',
       { params: { url } },
@@ -73,7 +85,9 @@ describe('ExtractService', () => {
     const url = faker.internet.url();
     const error = new Error('network down');
     http.get.mockReturnValue(throwError(() => error) as any);
-    const loggerSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation();
 
     const result = await service.extractFromUrl(url);
 
@@ -86,8 +100,11 @@ describe('ExtractService', () => {
   it('يتعامل مع خطأ بلا message دون أن يرمي (edge case)', async () => {
     const url = faker.internet.url();
     const weirdErr: any = {}; // بلا message
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     http.get.mockReturnValue(throwError(() => weirdErr) as any);
-    const loggerSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation();
 
     const result = await service.extractFromUrl(url);
 

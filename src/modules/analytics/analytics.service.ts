@@ -4,17 +4,23 @@ import {
   NotFoundException,
   Inject,
 } from '@nestjs/common';
-import { Types } from 'mongoose';
 import dayjs from 'dayjs';
+import { RootFilterQuery, Types } from 'mongoose';
 
-import { CreateMissingResponseDto } from './dto/create-missing-response.dto';
-import { CreateKleemMissingResponseDto } from './dto/create-kleem-missing-response.dto';
-import { QueryKleemMissingResponsesDto } from './dto/query-kleem-missing-responses.dto';
 import { FaqService } from '../faq/faq.service';
-import { AddToKnowledgeDto } from './dto/add-to-knowledge.dto';
 import { NotificationsService } from '../notifications/notifications.service';
-import { AnalyticsRepository } from './repositories/analytics.repository';
 
+import { AddToKnowledgeDto } from './dto/add-to-knowledge.dto';
+import { CreateKleemMissingResponseDto } from './dto/create-kleem-missing-response.dto';
+import { CreateMissingResponseDto } from './dto/create-missing-response.dto';
+import { QueryKleemMissingResponsesDto } from './dto/query-kleem-missing-responses.dto';
+import { AnalyticsRepository } from './repositories/analytics.repository';
+import {
+  UpdateKleemMissingDto,
+  StatsResult,
+} from './repositories/analytics.repository';
+import { KleemMissingResponseDocument } from './schemas/kleem-missing-response.schema';
+import { MissingResponseDocument } from './schemas/missing-response.schema';
 export interface KeywordCount {
   keyword: string;
   count: number;
@@ -44,6 +50,60 @@ export interface Overview {
   firstResponseTimeSec?: number | null;
   missingOpen?: number;
   storeExtras?: { paidOrders: number; aov: number | null };
+}
+
+type ListParams = {
+  merchantId: string;
+  page?: number;
+  limit?: number;
+  resolved?: 'all' | 'true' | 'false';
+  channel?: 'telegram' | 'whatsapp' | 'webchat' | 'all';
+  type?: 'missing_response' | 'unavailable_product' | 'all';
+  search?: string;
+  from?: string;
+  to?: string;
+};
+
+type Query = Record<string, unknown>;
+
+function buildBaseQuery(merchantId: string): Query {
+  return { merchant: new Types.ObjectId(merchantId) };
+}
+
+function applyResolvedFilter(q: Query, resolved: ListParams['resolved']): void {
+  if (resolved !== 'all') {
+    q.resolved = resolved === 'true';
+  }
+}
+
+function applyChannelFilter(q: Query, channel: ListParams['channel']): void {
+  if (channel !== 'all') {
+    q.channel = channel;
+  }
+}
+
+function applyTypeFilter(q: Query, type: ListParams['type']): void {
+  if (type !== 'all') {
+    q.type = type;
+  }
+}
+
+function applyDateFilter(q: Query, from?: string, to?: string): void {
+  if (!from && !to) return;
+  q.createdAt = {};
+  if (from) (q.createdAt as Record<string, Date>).$gte = new Date(from);
+  if (to) (q.createdAt as Record<string, Date>).$lte = new Date(to);
+}
+
+function applySearchFilter(q: Query, search?: string): void {
+  if (!search?.trim()) return;
+  q.$or = [
+    { question: { $regex: search, $options: 'i' } },
+    { botReply: { $regex: search, $options: 'i' } },
+    { aiAnalysis: { $regex: search, $options: 'i' } },
+    { sessionId: { $regex: search, $options: 'i' } },
+    { customerId: { $regex: search, $options: 'i' } },
+  ];
 }
 
 @Injectable()
@@ -193,7 +253,7 @@ export class AnalyticsService {
     merchantId: string,
     period: 'week' | 'month' | 'quarter' = 'week',
     groupBy: 'day' | 'hour' = 'day',
-  ) {
+  ): Promise<Array<{ _id: string; count: number }>> {
     const { start, end } = this.getPeriodDates(period);
     return this.repo.messagesTimeline(
       new Types.ObjectId(merchantId),
@@ -207,7 +267,7 @@ export class AnalyticsService {
     merchantId: string,
     period: 'week' | 'month' | 'quarter',
     limit = 10,
-  ) {
+  ): Promise<KeywordCount[]> {
     const { start, end } = this.getPeriodDates(period);
     return this.repo.getTopKeywords(
       new Types.ObjectId(merchantId),
@@ -217,25 +277,22 @@ export class AnalyticsService {
     );
   }
 
-  async getProductsCount(merchantId: string) {
+  async getProductsCount(merchantId: string): Promise<number> {
     return this.repo.countProducts(new Types.ObjectId(merchantId));
   }
 
-  async createFromWebhook(dto: CreateMissingResponseDto) {
+  async createFromWebhook(
+    dto: CreateMissingResponseDto,
+  ): Promise<MissingResponseDocument> {
     return this.repo.createMissingFromWebhook(dto);
   }
 
-  async listMissingResponses(params: {
-    merchantId: string;
-    page?: number;
-    limit?: number;
-    resolved?: 'all' | 'true' | 'false';
-    channel?: 'telegram' | 'whatsapp' | 'webchat' | 'all';
-    type?: 'missing_response' | 'unavailable_product' | 'all';
-    search?: string;
-    from?: string;
-    to?: string;
-  }) {
+  async listMissingResponses(params: ListParams): Promise<{
+    items: MissingResponseDocument[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     const {
       merchantId,
       page = 1,
@@ -248,25 +305,13 @@ export class AnalyticsService {
       to,
     } = params;
 
-    const q: any = { merchant: new Types.ObjectId(merchantId) };
-    if (resolved !== 'all') q.resolved = resolved === 'true';
-    if (channel !== 'all') q.channel = channel;
-    if (type !== 'all') q.type = type;
+    const q: Query = buildBaseQuery(merchantId);
 
-    if (from || to) {
-      q.createdAt = {};
-      if (from) q.createdAt.$gte = new Date(from);
-      if (to) q.createdAt.$lte = new Date(to);
-    }
-    if (search && search.trim()) {
-      q.$or = [
-        { question: { $regex: search, $options: 'i' } },
-        { botReply: { $regex: search, $options: 'i' } },
-        { aiAnalysis: { $regex: search, $options: 'i' } },
-        { sessionId: { $regex: search, $options: 'i' } },
-        { customerId: { $regex: search, $options: 'i' } },
-      ];
-    }
+    applyResolvedFilter(q, resolved);
+    applyChannelFilter(q, channel);
+    applyTypeFilter(q, type);
+    applyDateFilter(q, from, to);
+    applySearchFilter(q, search);
 
     const skip = (page - 1) * limit;
     const { items, total } = await this.repo.listMissingResponses(
@@ -274,19 +319,26 @@ export class AnalyticsService {
       skip,
       limit,
     );
+
     return { items, total, page, limit };
   }
 
-  async markResolved(id: string, userId?: string) {
+  async markResolved(
+    id: string,
+    userId?: string,
+  ): Promise<MissingResponseDocument> {
     return this.repo.markMissingResolved(id, userId);
   }
 
-  async bulkResolveMarch(ids: string[], userId?: string) {
+  async bulkResolveMarch(
+    ids: string[],
+    userId?: string,
+  ): Promise<{ updated: number }> {
     // (حافظنا على الاسم كما هو)
     return this.repo.bulkResolveMissing(ids, userId);
   }
 
-  async stats(merchantId: string, days = 7) {
+  async stats(merchantId: string, days = 7): Promise<StatsResult[]> {
     const from = new Date();
     from.setDate(from.getDate() - days);
     return this.repo.statsMissing(merchantId, from);
@@ -297,7 +349,12 @@ export class AnalyticsService {
     missingId: string;
     payload: AddToKnowledgeDto;
     userId?: string;
-  }) {
+  }): Promise<{
+    success: boolean;
+    faqId: string | undefined;
+    missingResponseId: string;
+    resolved: boolean;
+  }> {
     const { merchantId, missingId, payload, userId } = params;
 
     // نحتاج التأكد من ملكية الـ missing قبل إنشاء FAQ
@@ -317,15 +374,20 @@ export class AnalyticsService {
 
     await this.repo.markMissingResolved(missingId, userId);
 
+    const faqId = created[0]
+      ? String((created[0] as { _id: unknown })._id)
+      : undefined;
     return {
       success: true,
-      faqId: created[0]?._id,
-      missingResponseId: doc._id,
+      faqId,
+      missingResponseId: String(doc._id),
       resolved: true,
     };
   }
 
-  async createKleemFromWebhook(dto: CreateKleemMissingResponseDto) {
+  async createKleemFromWebhook(
+    dto: CreateKleemMissingResponseDto,
+  ): Promise<KleemMissingResponseDocument> {
     return this.repo.createKleemFromWebhook(dto);
   }
 
@@ -333,7 +395,7 @@ export class AnalyticsService {
     merchantId: string,
     period: 'week' | 'month' | 'quarter',
     limit = 5,
-  ) {
+  ): Promise<TopProduct[]> {
     const { start, end } = this.getPeriodDates(period);
     return this.repo.topProducts(
       new Types.ObjectId(merchantId),
@@ -343,7 +405,9 @@ export class AnalyticsService {
     );
   }
 
-  async listKleemMissing(dto: QueryKleemMissingResponsesDto) {
+  async listKleemMissing(
+    dto: QueryKleemMissingResponsesDto,
+  ): Promise<{ items: KleemMissingResponseDocument[]; total: number }> {
     const {
       page,
       limit,
@@ -355,16 +419,17 @@ export class AnalyticsService {
       from,
       to,
     } = dto;
-    const filter: any = {};
+    const filter: RootFilterQuery<KleemMissingResponseDocument> = {};
     if (channel) filter.channel = channel;
     if (resolved === 'true') filter.resolved = true;
     if (resolved === 'false') filter.resolved = false;
     if (sessionId) filter.sessionId = sessionId;
     if (customerId) filter.customerId = customerId;
     if (from || to) {
-      filter.createdAt = {};
-      if (from) filter.createdAt.$gte = new Date(from);
-      if (to) filter.createdAt.$lte = new Date(to);
+      (filter as Record<string, unknown>).createdAt = {
+        ...(from && { $gte: new Date(from) }),
+        ...(to && { $lte: new Date(to) }),
+      };
     }
     if (q) {
       filter.$or = [
@@ -381,7 +446,7 @@ export class AnalyticsService {
       skip,
       limit,
     );
-    return { items, total, page, limit };
+    return { items, total };
   }
 
   async updateKleemMissing(
@@ -392,11 +457,11 @@ export class AnalyticsService {
         'resolved' | 'manualReply' | 'category'
       >
     >,
-  ) {
-    return this.repo.updateKleemMissing(id, update as any);
+  ): Promise<KleemMissingResponseDocument> {
+    return this.repo.updateKleemMissing(id, update as UpdateKleemMissingDto);
   }
 
-  async bulkResolve(ids: string[]) {
+  async bulkResolve(ids: string[]): Promise<{ updated: number }> {
     return this.repo.bulkResolveKleem(ids);
   }
 
@@ -404,10 +469,16 @@ export class AnalyticsService {
     merchantId: string;
     userId: string;
     days?: number;
-  }) {
+  }): Promise<{ sent: boolean; summary: StatsResult }> {
     const { merchantId, userId, days = 7 } = params;
     const statsRows = await this.stats(merchantId, days);
-    const s = this.summarizeMissingStats(statsRows as any);
+    const s = this.summarizeMissingStats(
+      statsRows as {
+        _id: string;
+        channels: { channel: string; resolved: boolean; count: number }[];
+        total: number;
+      }[],
+    );
 
     const title = `ملخّص الرسائل المفقودة (آخر ${days} يوم)`;
     const parts = [

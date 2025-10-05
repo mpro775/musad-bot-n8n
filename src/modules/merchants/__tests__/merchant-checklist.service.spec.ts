@@ -1,8 +1,10 @@
 import { Test } from '@nestjs/testing';
-import { MerchantChecklistService } from '../merchant-checklist.service';
-import { MerchantChecklistRepository } from '../repositories/merchant-checklist.repository';
-import { StorefrontService } from '../../storefront/storefront.service';
+
 import { ChannelStatus } from '../../channels/schemas/channel.schema';
+import { StorefrontService } from '../../storefront/storefront.service';
+import { MerchantChecklistService } from '../merchant-checklist.service';
+
+import type { MerchantChecklistRepository } from '../repositories/merchant-checklist.repository';
 
 describe('MerchantChecklistService', () => {
   let service: MerchantChecklistService;

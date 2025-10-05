@@ -1,7 +1,7 @@
 // src/modules/users/schemas/user.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
+import { HydratedDocument, Types } from 'mongoose';
 
 export type UserDocument = HydratedDocument<User>;
 
@@ -36,24 +36,25 @@ export enum UserRole {
 
 @Schema({
   timestamps: true,
+  versionKey: false, // يغنيك عن delete ret.__v
   toJSON: {
     virtuals: true,
-    transform(_doc, ret) {
-      ret.id = ret._id?.toString();
+    transform(_doc, ret: Record<string, unknown>) {
+      ret.id = (ret._id as { toString(): string })?.toString();
       delete ret._id;
-      delete ret.__v;
-      delete ret.password; // اخفِ كلمة السر
+      delete ret.password;
       return ret;
     },
+  },
+  toObject: {
+    virtuals: true, // (اختياري) لو تستخدم toObject
   },
 })
 export class User {
   @Prop({
     required: true,
-    unique: true,
     lowercase: true,
     trim: true,
-    index: true,
   })
   email: string;
 
@@ -187,7 +188,10 @@ UserSchema.pre('save', async function (next) {
 });
 
 // مقارنة كلمة المرور (للاستخدام في خدمة auth)
-UserSchema.methods.comparePassword = function (candidate: string) {
+UserSchema.methods.comparePassword = function (
+  this: UserDocument,
+  candidate: string,
+) {
   // ملاحظة: بما أن password عليه select:false، عند الاستعلام استخدم .select('+password')
   return bcrypt.compare(candidate, this.password);
 };

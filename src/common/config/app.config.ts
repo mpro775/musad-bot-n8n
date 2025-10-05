@@ -1,20 +1,41 @@
 // src/common/config/app.config.ts
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import compression from 'compression';
-import { MiddlewareConsumer, NestModule } from '@nestjs/common';
-import { RequestIdMiddleware } from '../middlewares/request-id.middleware';
-import { corsOptions } from './cors.config';
-import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
 
-export function setupApp(app: any, config: ConfigService) {
+import { RequestIdMiddleware } from '../middlewares/request-id.middleware';
+
+import { corsOptions } from './cors.config';
+
+import type {
+  INestApplication,
+  MiddlewareConsumer,
+  NestModule,
+} from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
+import type { Request, Response, NextFunction } from 'express';
+
+export function setupApp(
+  app: INestApplication & {
+    use: (
+      middleware: (req: Request, res: Response, next: NextFunction) => void,
+    ) => void;
+    enableCors: (options?: unknown) => void;
+  },
+  config: ConfigService,
+): INestApplication {
   // CORS كما هو (إن رغبت تركه هنا)
   app.enableCors(corsOptions);
 
-  app.use((_req, res, next) => {
-    res.vary('Origin');
-    next();
-  });
+  app.use(
+    (
+      _req: Request,
+      res: Response & { vary: (field: string) => Response },
+      next: NextFunction,
+    ) => {
+      res.vary('Origin');
+      next();
+    },
+  );
 
   app.use(
     helmet({
@@ -36,7 +57,12 @@ export function setupApp(app: any, config: ConfigService) {
                   'https://cdnjs.cloudflare.com',
                 ],
                 'font-src': ["'self'", 'https://cdnjs.cloudflare.com'],
-                'connect-src': ["'self'"],
+                'connect-src': [
+                  "'self'",
+                  // أضف وجهات خارجية حسب الحاجة:
+                  // "https://sentry.io",
+                  // "https://glitchtip.yourdomain.com"
+                ],
               },
             }
           : false,
@@ -50,21 +76,6 @@ export function setupApp(app: any, config: ConfigService) {
       xPoweredBy: false,
       frameguard: { action: 'deny' },
       noSniff: true,
-      xssFilter: true,
-    }),
-  );
-
-  app.use(
-    rateLimit({
-      windowMs: config.get<number>('vars.rateLimit.windowMs')!,
-      max: config.get<number>('vars.rateLimit.max')!,
-      message: {
-        status: 429,
-        code: config.get<string>('vars.rateLimit.message.code')!,
-        message: config.get<string>('vars.rateLimit.message.text')!,
-      },
-      standardHeaders: true,
-      legacyHeaders: false,
     }),
   );
 
@@ -77,7 +88,7 @@ export function setupApp(app: any, config: ConfigService) {
  * This class should be extended by AppModule to automatically apply RequestIdMiddleware
  */
 export class AppConfig implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
+  configure(consumer: MiddlewareConsumer): void {
     // تطبيق RequestIdMiddleware على جميع المسارات
     consumer.apply(RequestIdMiddleware).forRoutes('*');
   }

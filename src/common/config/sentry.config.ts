@@ -1,6 +1,9 @@
 // src/common/config/sentry.config.ts
 import { registerAs } from '@nestjs/config';
-import { redactEvent } from '../security/pii-redactor';
+
+import { SENTRY_PRODUCTION_SAMPLE_RATE } from '../constants/common';
+
+import type { Event } from '@sentry/node';
 
 export default registerAs('sentry', () => ({
   dsn: process.env.SENTRY_DSN,
@@ -8,14 +11,16 @@ export default registerAs('sentry', () => ({
   release: process.env.APP_VERSION || '1.0.0',
 
   // إعدادات الأداء
-  tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-  profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+  tracesSampleRate:
+    process.env.NODE_ENV === 'production' ? SENTRY_PRODUCTION_SAMPLE_RATE : 1.0,
+  profilesSampleRate:
+    process.env.NODE_ENV === 'production' ? SENTRY_PRODUCTION_SAMPLE_RATE : 1.0,
 
   // إعدادات التطوير
   debug: process.env.NODE_ENV === 'development',
 
   // إعدادات الأمان
-  beforeSend: (event: any, hint: any) => {
+  beforeSend: (event: Event) => {
     // تصفية الأخطاء الحساسة
     if (event.exception) {
       const exception = event.exception.values?.[0];
@@ -24,14 +29,14 @@ export default registerAs('sentry', () => ({
       }
     }
 
-    // تنقية البيانات الحساسة باستخدام PII Redactor
-    try {
-      return redactEvent(event);
-    } catch (error) {
-      // في حال فشل التنقية، نرجع الحدث كما هو
-      console.warn('PII redaction failed:', error);
-      return event;
+    // إزالة البيانات الحساسة
+    if (event.request?.headers) {
+      delete event.request.headers.authorization;
+      delete event.request.headers.cookie;
+      delete event.request.headers['x-api-key'];
     }
+
+    return event;
   },
 
   // التاجات الافتراضية

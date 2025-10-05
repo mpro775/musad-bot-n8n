@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model } from 'mongoose';
+
 import { Product, ProductDocument } from '../schemas/product.schema';
 
 @Injectable()
@@ -14,7 +15,7 @@ export class ProductsCron {
   ) {}
 
   @Cron(CronExpression.EVERY_10_MINUTES)
-  async disableExpiredOffers() {
+  async disableExpiredOffers(): Promise<void> {
     const now = new Date();
     const res = await this.productModel.updateMany(
       {

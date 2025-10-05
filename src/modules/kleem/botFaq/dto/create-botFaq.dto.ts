@@ -1,4 +1,6 @@
 // src/modules/kleem/botFaq/dto/create-botFaq.dto.ts
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsString,
   IsOptional,
@@ -8,8 +10,7 @@ import {
   IsIn,
   ArrayMaxSize,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MAX_LENGTH_FEEDBACK } from 'src/common/constants/common';
 
 export class CreateBotFaqDto {
   @ApiProperty({
@@ -27,15 +28,16 @@ export class CreateBotFaqDto {
 
   @ApiProperty({
     description: 'إجابة السؤال',
-    example: 'يمكنك إعادة تعيين كلمة المرور من خلال النقر على "نسيت كلمة المرور" في صفحة تسجيل الدخول.',
-    maxLength: 3000,
+    example:
+      'يمكنك إعادة تعيين كلمة المرور من خلال النقر على "نسيت كلمة المرور" في صفحة تسجيل الدخول.',
+    maxLength: MAX_LENGTH_FEEDBACK,
     required: true,
   })
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
-  @MaxLength(3000)
+  @MaxLength(MAX_LENGTH_FEEDBACK)
   answer: string;
 
   @ApiPropertyOptional({

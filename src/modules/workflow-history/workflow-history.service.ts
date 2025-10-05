@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+
 import { WorkflowHistory } from './schemas/workflow-history.schema';
 
 @Injectable()
@@ -11,12 +12,14 @@ export class WorkflowHistoryService {
   ) {}
 
   // إضافة نسخة جديدة
-  async create(historyData: Partial<WorkflowHistory>) {
+  async create(
+    historyData: Partial<WorkflowHistory>,
+  ): Promise<WorkflowHistory> {
     return this.workflowHistoryModel.create(historyData);
   }
 
   // جلب كل النسخ لتاجر أو ورك فلو
-  async findAllByWorkflow(workflowId: string) {
+  async findAllByWorkflow(workflowId: string): Promise<WorkflowHistory[]> {
     return this.workflowHistoryModel
       .find({ workflowId })
       .sort({ version: -1 })
@@ -24,7 +27,10 @@ export class WorkflowHistoryService {
   }
 
   // جلب نسخة محددة
-  async findVersion(workflowId: string, version: number) {
+  async findVersion(
+    workflowId: string,
+    version: number,
+  ): Promise<WorkflowHistory | null> {
     return this.workflowHistoryModel.findOne({ workflowId, version }).lean();
   }
 }

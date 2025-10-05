@@ -1,7 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { OrdersService } from '../orders.service';
-import { OrdersRepository } from '../repositories/orders.repository';
+import { Test, type TestingModule } from '@nestjs/testing';
+
 import { LeadsService } from '../../leads/leads.service';
+import { OrdersService } from '../orders.service';
+
+import type { OrdersRepository } from '../repositories/orders.repository';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -41,7 +43,7 @@ describe('OrdersService', () => {
 
     const result = await service.create(dto);
     expect(result).toEqual({ id: '1' });
-    expect(repo.create).toHaveBeenCalled();
+    expect(repo.create.bind(repo)).toHaveBeenCalled();
   });
 
   it('should return all orders', async () => {

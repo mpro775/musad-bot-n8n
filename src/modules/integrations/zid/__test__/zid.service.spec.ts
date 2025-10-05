@@ -1,15 +1,17 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { ZidService, ZidOAuthTokenResponse } from '../../zid/zid.service';
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { Types } from 'mongoose';
+import { of } from 'rxjs';
+
 import {
   ZID_INTEGRATION_REPOSITORY,
   ZID_MERCHANT_REPOSITORY,
 } from '../../zid/tokens';
-import { IntegrationRepository } from '../../zid/repositories/integration.repository';
-import { MerchantRepository } from '../../zid/repositories/merchant.repository';
-import { HttpService } from '@nestjs/axios';
-import { ConfigService } from '@nestjs/config';
-import { of } from 'rxjs';
-import { Types } from 'mongoose';
+import { ZidService, type ZidOAuthTokenResponse } from '../../zid/zid.service';
+
+import type { IntegrationRepository } from '../../zid/repositories/integration.repository';
+import type { MerchantRepository } from '../../zid/repositories/merchant.repository';
 
 describe('ZidService', () => {
   let service: ZidService;
@@ -106,7 +108,7 @@ describe('ZidService', () => {
     (httpMock.post as any).mockReturnValue(of({ data: tokenResp }));
 
     const tok = await service.getValidAccessToken(merchantId);
-    expect(integRepo.upsertZid).toHaveBeenCalled();
+    expect(integRepo.upsertZid.bind(integRepo)).toHaveBeenCalled();
     expect(tok).toBe('tokenB');
   });
 

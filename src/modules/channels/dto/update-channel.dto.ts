@@ -1,6 +1,12 @@
 // src/modules/channels/dto/update-channel.dto.ts
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class UpdateChannelDto {
   @ApiPropertyOptional()
@@ -14,8 +20,10 @@ export class UpdateChannelDto {
   @IsBoolean()
   enabled?: boolean;
 
-  @ApiPropertyOptional({ description: 'إعدادات الويب شات مثل الألوان والمكان …' })
+  @ApiPropertyOptional({
+    description: 'إعدادات الويب شات مثل الألوان والمكان …',
+  })
   @IsOptional()
   @IsObject()
-  widgetSettings?: Record<string, any>;
+  widgetSettings?: Record<string, unknown>;
 }

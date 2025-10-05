@@ -1,8 +1,5 @@
-import { Types } from 'mongoose';
-import {
-  ChatWidgetSettings,
-  ChatWidgetSettingsDocument,
-} from '../schema/chat-widget.schema';
+import type { ChatWidgetSettings } from '../schema/chat-widget.schema';
+import type { Types } from 'mongoose';
 
 export interface ChatWidgetRepository {
   // أساسيات

@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+
 import { BotRuntimeSettings } from '../botRuntimeSettings.schema';
+
 import { SettingsRepository } from './settings.repository';
 
 @Injectable()
@@ -16,17 +18,22 @@ export class SettingsMongoRepository implements SettingsRepository {
   }
 
   async create(data: Partial<BotRuntimeSettings>): Promise<BotRuntimeSettings> {
-    const doc = await this.model.create(data as any);
-    return doc.toObject() as any;
+    const doc = await this.model.create(
+      data as unknown as Partial<BotRuntimeSettings>,
+    );
+    return doc.toObject() as unknown as BotRuntimeSettings;
   }
 
   async findOneAndUpdate(
     patch: Partial<BotRuntimeSettings>,
   ): Promise<BotRuntimeSettings> {
     const doc = await this.model
-      .findOneAndUpdate({}, patch as any, { upsert: true, new: true })
+      .findOneAndUpdate({}, patch as unknown as Partial<BotRuntimeSettings>, {
+        upsert: true,
+        new: true,
+      })
       .lean<BotRuntimeSettings>()
       .exec();
-    return doc!;
+    return doc;
   }
 }

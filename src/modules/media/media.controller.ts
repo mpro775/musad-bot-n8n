@@ -1,10 +1,30 @@
-import { Controller, Post, Body, UseGuards, UseInterceptors, UploadedFile, Res, Param, Delete, Get } from '@nestjs/common';
-import { MediaService } from './media.service';
-import { MediaHandlerDto } from './dto/media-handler.dto';
-import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import {
+  Controller,
+  Post,
+  Body,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  Res,
+  Param,
+  Get,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiConsumes,
+  ApiBody,
+  ApiBearerAuth,
+  ApiParam,
+} from '@nestjs/swagger';
 import { Response } from 'express';
+
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+
+import { MediaHandlerDto } from './dto/media-handler.dto';
+import { MediaService } from './media.service';
 
 @ApiTags('الوسائط')
 @ApiBearerAuth()
@@ -15,9 +35,9 @@ export class MediaController {
   @Post('upload')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('file'))
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'رفع ملف وسائط',
-    description: 'رفع ملف وسائط جديد إلى الخادم' 
+    description: 'رفع ملف وسائط جديد إلى الخادم',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -27,18 +47,18 @@ export class MediaController {
         file: {
           type: 'string',
           format: 'binary',
-          description: 'الملف المراد رفعه'
+          description: 'الملف المراد رفعه',
         },
         sessionId: {
           type: 'string',
-          description: 'معرف الجلسة (اختياري)'
+          description: 'معرف الجلسة (اختياري)',
         },
         channel: {
           type: 'string',
-          description: 'قناة الاتصال (whatsapp, telegram, etc.)'
-        }
-      }
-    }
+          description: 'قناة الاتصال (whatsapp, telegram, etc.)',
+        },
+      },
+    },
   })
   @ApiResponse({ status: 201, description: 'تم رفع الملف بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -46,26 +66,25 @@ export class MediaController {
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
     @Body() mediaHandlerDto: MediaHandlerDto,
-    @Res() res: Response
-  ) {
+    @Res() res: Response,
+  ): Promise<void> {
     if (!file) {
       throw new Error('No file uploaded');
     }
     const result = await this.mediaService.handleMedia(mediaHandlerDto);
-    return res.status(201).json(result);
+    res.status(201).json(result);
   }
 
   @Get('file/:id')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'تحميل ملف وسائط',
-    description: 'تحميل ملف وسائط بواسطة المعرف' 
+    description: 'تحميل ملف وسائط بواسطة المعرف',
   })
   @ApiParam({ name: 'id', description: 'معرف الملف' })
   @ApiResponse({ status: 200, description: 'تم جلب الملف بنجاح' })
   @ApiResponse({ status: 404, description: 'الملف غير موجود' })
-  async getFile(@Param('id') id: string, @Res() res: Response) {
+  getFile(@Param('id') id: string, @Res() res: Response): void {
     // Implementation here
     return res.sendFile(id, { root: './uploads' });
   }
-
 }

@@ -1,8 +1,7 @@
-import { Types } from 'mongoose';
-import { UserDocument } from '../../users/schemas/user.schema';
-import { MerchantDocument } from '../../merchants/schemas/merchant.schema';
-import { EmailVerificationTokenDocument } from '../schemas/email-verification-token.schema';
-import { PasswordResetTokenDocument } from '../schemas/password-reset-token.schema';
+import type { UserDocument } from '../../users/schemas/user.schema';
+import type { EmailVerificationTokenDocument } from '../schemas/email-verification-token.schema';
+import type { PasswordResetTokenDocument } from '../schemas/password-reset-token.schema';
+import type { Types } from 'mongoose';
 
 export interface AuthRepository {
   // Users

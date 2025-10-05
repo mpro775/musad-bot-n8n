@@ -1,19 +1,29 @@
 // src/modules/public/public-router.controller.ts
-import { Controller, Get, Param, NotFoundException, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Param,
+  NotFoundException,
+  UseGuards,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Model, Types } from 'mongoose';
-import { Merchant, MerchantDocument } from '../merchants/schemas/merchant.schema';
+import { Public } from 'src/common/decorators/public.decorator';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+
 import {
   ChatWidgetSettings,
   ChatWidgetSettingsDocument,
 } from '../chat/schema/chat-widget.schema';
 import {
+  Merchant,
+  MerchantDocument,
+} from '../merchants/schemas/merchant.schema';
+import {
   Storefront,
   StorefrontDocument,
 } from '../storefront/schemas/storefront.schema';
-import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { Public } from 'src/common/decorators/public.decorator';
 
 @ApiTags('Public Router')
 @UseGuards(JwtAuthGuard)
@@ -42,7 +52,12 @@ export class PublicRouterController {
     summary: 'Resolve slug',
     description: 'معلومات عامة وروابط جاهزة',
   })
-  async getSummary(@Param('slug') slug: string) {
+  async getSummary(@Param('slug') slug: string): Promise<{
+    merchant: { id: Types.ObjectId; name: string; slug: string };
+    urls: { store: string; chat: string; legacyStore: string };
+    embedModes: string[];
+    theme: { primaryColor?: string; secondaryColor?: string };
+  }> {
     const { merchant } = await this.resolve(slug);
 
     // اجلب/أنشئ المتجر والودجت حتى يكون عندك بيانات أكيدة للعرض
@@ -112,7 +127,9 @@ export class PublicRouterController {
   @Get(':slug/storefront')
   @Public()
   @ApiOperation({ summary: 'Get Storefront by slug' })
-  async getStore(@Param('slug') slug: string) {
+  async getStore(
+    @Param('slug') slug: string,
+  ): Promise<Storefront & { _id: unknown }> {
     const { merchant } = await this.resolve(slug);
 
     const store = await this.stores
@@ -142,7 +159,9 @@ export class PublicRouterController {
   @Get(':slug/chat')
   @Public()
   @ApiOperation({ summary: 'Get Chat Widget by slug' })
-  async getChat(@Param('slug') slug: string) {
+  async getChat(
+    @Param('slug') slug: string,
+  ): Promise<ChatWidgetSettings & { _id: unknown }> {
     const { merchant } = await this.resolve(slug);
 
     const widget = await this.widgets

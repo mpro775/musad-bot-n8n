@@ -1,9 +1,9 @@
-import { Types } from 'mongoose';
+import type { Types } from 'mongoose';
 
 export type IntegrationEntity = {
   _id: Types.ObjectId;
   merchantId: Types.ObjectId | string;
-  provider: 'zid' | string;
+  provider: 'zid';
   accessToken?: string;
   refreshToken?: string;
   tokenType?: string;

@@ -1,4 +1,7 @@
 // src/modules/support/support.controller.ts
+import { randomUUID } from 'crypto';
+import { extname } from 'path';
+
 import {
   BadRequestException,
   Body,
@@ -11,20 +14,24 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { randomUUID } from 'crypto';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { diskStorage } from 'multer';
+import { Public } from 'src/common/decorators/public.decorator';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+
 import { CreateContactDto } from './dto/create-contact.dto';
 import { SupportService } from './support.service';
-import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { Public } from 'src/common/decorators/public.decorator';
 
 // عدّل المسار حسب مشروعك:
 // import { Public } from 'src/common/decorators/public.decorator';
+
+// ثوابت لتجنب الأرقام السحرية
+const KB = 1024;
+const DEFAULT_MAX_FILES = 5;
+const DEFAULT_MAX_FILE_SIZE_MB = 5;
 
 function allowedMime(mime: string) {
   const allow = (
@@ -77,12 +84,21 @@ export class SupportController {
   })
   @UseInterceptors(
     FileFieldsInterceptor(
-      [{ name: 'files', maxCount: Number(process.env.SUPPORT_MAX_FILES || 5) }],
+      [
+        {
+          name: 'files',
+          maxCount: Number(process.env.SUPPORT_MAX_FILES || DEFAULT_MAX_FILES),
+        },
+      ],
       {
         storage,
         limits: {
           fileSize:
-            Number(process.env.SUPPORT_MAX_FILE_SIZE_MB || 5) * 1024 * 1024,
+            Number(
+              process.env.SUPPORT_MAX_FILE_SIZE_MB || DEFAULT_MAX_FILE_SIZE_MB,
+            ) *
+            KB *
+            KB,
         },
         fileFilter: (req, file, cb) => {
           if (!allowedMime(file.mimetype))
@@ -95,14 +111,24 @@ export class SupportController {
   async contact(
     @Body('payload') raw: string,
     @UploadedFiles() files: { files?: Express.Multer.File[] },
-    @Req() req: any,
-  ) {
+    @Req()
+    req: Request & {
+      ips?: string[];
+      ip?: string;
+      headers?: { 'user-agent'?: string };
+    },
+  ): Promise<{
+    id: unknown;
+    ticketNumber: unknown;
+    status: unknown;
+    createdAt: Date;
+  }> {
     if (!raw) throw new BadRequestException('payload required');
 
     let dto: CreateContactDto;
     try {
       dto = plainToInstance(CreateContactDto, JSON.parse(raw));
-    } catch (e) {
+    } catch {
       throw new BadRequestException('invalid JSON payload');
     }
 
@@ -112,17 +138,15 @@ export class SupportController {
     const uploaded = files?.files ?? [];
 
     const created = await this.service.create(dto, uploaded, {
-      ip:
-        (Array.isArray((req as any).ips) && (req as any).ips[0]) ||
-        (req as any).ip,
-      userAgent: (req as any).headers?.['user-agent'],
+      ip: (Array.isArray(req.ips) && req.ips[0]) || req.ip,
+      userAgent: req.headers?.['user-agent'],
     });
 
     return {
       id: created._id,
-      ticketNumber: (created as any).ticketNumber,
-      status: (created as any).status,
-      createdAt: (created as any).createdAt || new Date(),
+      ticketNumber: (created as { ticketNumber?: unknown }).ticketNumber,
+      status: (created as { status?: unknown }).status,
+      createdAt: (created as { createdAt?: Date }).createdAt || new Date(),
     };
   }
   @Post('contact/merchant')
@@ -131,12 +155,21 @@ export class SupportController {
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileFieldsInterceptor(
-      [{ name: 'files', maxCount: Number(process.env.SUPPORT_MAX_FILES || 5) }],
+      [
+        {
+          name: 'files',
+          maxCount: Number(process.env.SUPPORT_MAX_FILES || DEFAULT_MAX_FILES),
+        },
+      ],
       {
         storage,
         limits: {
           fileSize:
-            Number(process.env.SUPPORT_MAX_FILE_SIZE_MB || 5) * 1024 * 1024,
+            Number(
+              process.env.SUPPORT_MAX_FILE_SIZE_MB || DEFAULT_MAX_FILE_SIZE_MB,
+            ) *
+            KB *
+            KB,
         },
         fileFilter: (req, file, cb) => {
           if (!allowedMime(file.mimetype))
@@ -150,7 +183,12 @@ export class SupportController {
     @Body('payload') raw: string,
     @UploadedFiles() files: { files?: Express.Multer.File[] },
     @Req() req: Request & { user?: { userId: string; merchantId: string } },
-  ) {
+  ): Promise<{
+    id: unknown;
+    ticketNumber: unknown;
+    status: unknown;
+    createdAt: Date;
+  }> {
     if (!raw) throw new BadRequestException('payload required');
     let dto: CreateContactDto;
     try {
@@ -162,11 +200,16 @@ export class SupportController {
     if (errs.length) throw new BadRequestException(errs);
 
     const uploaded = files?.files ?? [];
+    const reqAny = req as Request & {
+      ips?: unknown[];
+      ip?: unknown;
+      headers?: { 'user-agent'?: unknown };
+    };
     const created = await this.service.create(dto, uploaded, {
       ip:
-        (Array.isArray((req as any).ips) && (req as any).ips[0]) ||
-        (req as any).ip,
-      userAgent: (req as any).headers?.['user-agent'],
+        (Array.isArray(reqAny.ips) && (reqAny.ips[0] as string)) ||
+        (reqAny.ip as string),
+      userAgent: reqAny.headers?.['user-agent'] as string,
       merchantId: req.user?.merchantId,
       userId: req.user?.userId,
       source: 'merchant',
@@ -174,9 +217,9 @@ export class SupportController {
 
     return {
       id: created._id,
-      ticketNumber: (created as any).ticketNumber,
-      status: (created as any).status,
-      createdAt: (created as any).createdAt || new Date(),
+      ticketNumber: (created as { ticketNumber?: unknown }).ticketNumber,
+      status: (created as { status?: unknown }).status,
+      createdAt: (created as { createdAt?: Date }).createdAt || new Date(),
     };
   }
 }

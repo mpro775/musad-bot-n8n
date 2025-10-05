@@ -1,16 +1,18 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { AppModule } from './app.module';
+// src/app.module.spec.ts
+describe('AppModule (compile)', () => {
+  it('should compile the Nest testing module', async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.APP_MINIMAL_BOOT = '1';
+    jest.resetModules(); // مهم قبل import
 
-describe('AppModule', () => {
-  let moduleRef: TestingModule;
+    const { Test } = await import('@nestjs/testing');
+    const { AppModule } = await import('./app.module');
 
-  beforeEach(async () => {
-    moduleRef = await Test.createTestingModule({
+    const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-  });
 
-  it('should be defined', () => {
     expect(moduleRef).toBeDefined();
+    await moduleRef.close(); // يمنع "Jest did not exit..."
   });
 });

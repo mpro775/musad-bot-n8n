@@ -1,12 +1,12 @@
 // src/common/error-management.module.ts
 import { Module, Global, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+
+import { ErrorMonitoringController } from './controllers/error-monitoring.controller';
+import { AllExceptionsFilter } from './filters/all-exceptions.filter';
+import { ErrorLoggingInterceptor } from './interceptors/error-logging.interceptor';
 import { ErrorManagementService } from './services/error-management.service';
 import { SentryService } from './services/sentry.service';
-import { ErrorLoggingInterceptor } from './interceptors/error-logging.interceptor';
-import { PerformanceTrackingInterceptor } from './interceptors/performance-tracking.interceptor';
-import { AllExceptionsFilter } from './filters/all-exceptions.filter';
-import { ErrorMonitoringController } from './controllers/error-monitoring.controller';
 
 @Global()
 @Module({
@@ -15,7 +15,6 @@ import { ErrorMonitoringController } from './controllers/error-monitoring.contro
     SentryService,
     ErrorManagementService,
     ErrorLoggingInterceptor,
-    PerformanceTrackingInterceptor,
     AllExceptionsFilter,
   ],
   controllers: [ErrorMonitoringController],
@@ -23,7 +22,6 @@ import { ErrorMonitoringController } from './controllers/error-monitoring.contro
     SentryService,
     ErrorManagementService,
     ErrorLoggingInterceptor,
-    PerformanceTrackingInterceptor,
     AllExceptionsFilter,
   ],
 })
@@ -33,13 +31,13 @@ export class ErrorManagementModule implements OnModuleInit, OnModuleDestroy {
     private readonly errorManagementService: ErrorManagementService,
   ) {}
 
-  onModuleInit() {
+  onModuleInit(): void {
     // تهيئة Sentry عند بدء التطبيق
     this.sentryService.initialize();
   }
 
-  async onModuleDestroy() {
+  onModuleDestroy(): void {
     // إغلاق Sentry عند إيقاف التطبيق
-    await this.errorManagementService.shutdown();
+    this.errorManagementService.shutdown();
   }
 }

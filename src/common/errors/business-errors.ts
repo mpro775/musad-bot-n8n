@@ -1,8 +1,10 @@
 // src/common/errors/business-errors.ts
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { DomainError } from './domain-error';
+import { HttpStatus, Injectable } from '@nestjs/common';
+
 import { ERROR_CODES } from '../constants/error-codes';
 import { TranslationService } from '../services/translation.service';
+
+import { DomainError } from './domain-error';
 
 /** أخطاء الأعمال المتخصصة */
 export class BusinessError extends DomainError {
@@ -10,7 +12,7 @@ export class BusinessError extends DomainError {
     code: string,
     message: string,
     status: number = HttpStatus.BAD_REQUEST,
-    details?: any,
+    details?: Record<string, unknown>,
   ) {
     super(code, message, status, details);
   }
@@ -169,7 +171,7 @@ export class InsufficientBalanceError extends BusinessError {
 export class ExternalServiceError extends BusinessError {
   constructor(
     serviceName: string,
-    originalError?: any,
+    originalError?: Record<string, unknown>,
     private readonly translationService?: TranslationService,
   ) {
     super(

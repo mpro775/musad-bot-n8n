@@ -1,5 +1,7 @@
 // src/modules/storefront/dto/create-storefront.dto.ts
 
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
 import {
   IsNotEmpty,
   IsOptional,
@@ -14,8 +16,7 @@ import {
   MaxLength,
   ArrayMaxSize,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { MAX_SLUG_LENGTH } from 'src/modules/merchants/constants/merchant.constants';
 
 export class BannerDto {
   @ApiPropertyOptional({
@@ -126,7 +127,7 @@ export class CreateStorefrontDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(50)
+  @MaxLength(MAX_SLUG_LENGTH)
   @Matches(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, {
     message: 'slug غير صالح (a-z, 0-9 و- فقط، 3–50)',
   })
@@ -139,7 +140,7 @@ export class CreateStorefrontDto {
   @IsOptional()
   @IsString({ message: 'يجب أن يكون اللون الداكن نصيًا' })
   @Transform(({ value }) =>
-    typeof value === 'string' ? value.toUpperCase() : value,
+    typeof value === 'string' ? value.toUpperCase() : (value as string),
   )
   @Matches(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, {
     message: 'لون HEX غير صالح',

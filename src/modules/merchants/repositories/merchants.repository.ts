@@ -1,13 +1,13 @@
-import { MerchantDocument } from '../schemas/merchant.schema';
-import {
+import type {
   CreateMerchantDto,
   UpdateMerchantDto,
   QuickConfigDto,
   OnboardingBasicDto,
 } from '../dto';
-import { QuickConfig } from '../schemas/quick-config.schema';
-import { MerchantStatusResponse } from '../types/types';
-import { Types } from 'mongoose';
+import type { MerchantDocument } from '../schemas/merchant.schema';
+import type { QuickConfig } from '../schemas/quick-config.schema';
+import type { MerchantStatusResponse } from '../types/types';
+import type { Types } from 'mongoose';
 
 export interface MerchantsRepository {
   create(createDto: CreateMerchantDto): Promise<MerchantDocument>;
@@ -24,7 +24,7 @@ export interface MerchantsRepository {
     id: string,
     actor: { userId: string; role: string },
     reason?: string,
-  ): Promise<{ message: string; at?: Date }>;
+  ): Promise<{ message: string; at: Date }>;
   restore(
     id: string,
     actor: { userId: string; role: string },

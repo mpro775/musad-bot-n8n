@@ -3,8 +3,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { ProductSetupConfig } from './schemas/product-setup-config.schema';
+
 import { ProductSetupConfigDto } from './dto/product-setup-config.dto';
+import { ProductSetupConfig } from './schemas/product-setup-config.schema';
 
 @Injectable()
 export class ProductSetupConfigService {
@@ -13,7 +14,10 @@ export class ProductSetupConfigService {
     private readonly configModel: Model<ProductSetupConfig>,
   ) {}
 
-  async saveOrUpdate(merchantId: string, dto: ProductSetupConfigDto) {
+  async saveOrUpdate(
+    merchantId: string,
+    dto: ProductSetupConfigDto,
+  ): Promise<ProductSetupConfig> {
     return this.configModel.findOneAndUpdate(
       { merchantId: merchantId },
       { ...dto, merchantId },
@@ -21,7 +25,9 @@ export class ProductSetupConfigService {
     );
   }
 
-  async getByMerchantId(merchantId: string) {
+  async getByMerchantId(
+    merchantId: string,
+  ): Promise<ProductSetupConfig | null> {
     return this.configModel.findOne({
       merchantId: merchantId,
     });

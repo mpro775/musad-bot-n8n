@@ -1,5 +1,6 @@
 // src/modules/merchants/dto/onboarding-response.dto.ts
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
 import { MerchantDocument } from '../../schemas/merchant.schema';
 
 class WebhookInfo {
@@ -7,7 +8,7 @@ class WebhookInfo {
   hookUrl: string;
 
   @ApiProperty()
-  telegramResponse: any;
+  telegramResponse: unknown;
 }
 
 export class OnboardingResponseDto {

@@ -1,21 +1,33 @@
 // src/modules/auth/strategies/jwt.strategy.ts
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { ConfigService } from '@nestjs/config';
+
+import type { JwtPayload } from '../services/token.service';
 import type { Request } from 'express';
 
-type Role = 'ADMIN' | 'MERCHANT' | 'MEMBER';
-export interface JwtPayload {
-  userId: string;
-  role: Role;
-  merchantId?: string | null;
-  iat?: number;
+const COOKIE_KEYS = ['accessToken', 'access_token', 'token'] as const;
+type CookieKey = (typeof COOKIE_KEYS)[number];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
+function getStringCookie(cookies: unknown, key: CookieKey): string | null {
+  if (!isRecord(cookies)) return null;
+  const val = cookies[key];
+  return typeof val === 'string' && val.length > 0 ? val : null;
+}
 function cookieExtractor(req: Request): string | null {
-  const c = req.cookies || {};
-  return c['accessToken'] || c['access_token'] || c['token'] || null;
+  // قد تكون req.cookies غير معرّفة أو ذات نوع غير نصّي
+  const cookies: unknown = (req as { cookies?: unknown }).cookies ?? null;
+
+  for (const key of COOKIE_KEYS) {
+    const value = getStringCookie(cookies, key);
+    if (value !== null) return value;
+  }
+  return null;
 }
 
 @Injectable()
@@ -39,7 +51,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   // يُحقن الناتج في req.user
-  async validate(payload: any) {
+  validate(payload: JwtPayload): {
+    userId: string;
+    role: string;
+    merchantId: string | null;
+    iat?: number;
+  } {
     const userId = payload.userId ?? payload.sub; // 👈 دعم الحالتين
     return {
       userId,

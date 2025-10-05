@@ -1,12 +1,27 @@
 // src/modules/webhooks/chat-webhooks-unified.controller.ts
-import { Body, Controller, HttpCode, Param, Post, Req } from '@nestjs/common';
-import { Public } from 'src/common/decorators/public.decorator';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Param,
+  Post,
+  Req,
+  UseInterceptors,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiBody } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { Public } from 'src/common/decorators/public.decorator';
+
 import { SlugResolverService } from '../public/slug-resolver.service';
+
+import { WebhookLoggingInterceptor } from './interceptors/webhook-logging.interceptor';
 import { WebhooksController } from './webhooks.controller';
+
+import type { Request } from 'express';
 
 @ApiTags('Webhooks (Unified Slug)')
 @Public()
+@UseInterceptors(WebhookLoggingInterceptor)
 @Controller('webhooks/chat')
 export class ChatWebhooksUnifiedController {
   constructor(
@@ -17,7 +32,12 @@ export class ChatWebhooksUnifiedController {
   /** استقبال رسائل الويب-شات عبر slug واحد لكل الأوضاع (bubble/iframe/bar/conversational) */
   @Post('incoming/:slug')
   @HttpCode(200)
-
+  @Throttle({
+    default: {
+      ttl: parseInt(process.env.WEBHOOKS_INCOMING_TTL || '10'),
+      limit: parseInt(process.env.WEBHOOKS_INCOMING_LIMIT || '1'),
+    },
+  })
   @ApiOperation({ summary: 'Inbound via public slug (all webchat modes)' })
   @ApiParam({ name: 'slug', example: 'acme-store' })
   @ApiBody({
@@ -35,34 +55,36 @@ export class ChatWebhooksUnifiedController {
   })
   async incomingBySlug(
     @Param('slug') slug: string,
-    @Body() body: any,
-    @Req() req: any,
-  ) {
-    const { merchantId } = await this.slugResolver.resolve(slug);
-  
-    const channel = body?.channel ?? 'webchat'; // ✅ مهم جداً
-  
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request,
+  ): Promise<void> {
+    const { merchantId } = (await this.slugResolver.resolve(slug)) as {
+      merchantId: string;
+    };
+
+    // channel يجب أن يكون string
+    const channel = typeof body.channel === 'string' ? body.channel : 'webchat';
+
     const patched = {
       merchantId,
-      channel,                 // ✅ أضفناها
+      channel,
       provider: 'webchat',
-      channelId: 'slug:' + slug,
-      sessionId: body?.sessionId,
-      user: body?.user,
-      text: body?.text,
-      payload: body?.payload,
+      channelId: `slug:${slug}`,
+      sessionId:
+        typeof body.sessionId === 'string' ? body.sessionId : undefined,
+      user: body.user,
+      text: typeof body.text === 'string' ? body.text : undefined,
+      payload: body.payload,
       raw: body,
       metadata: {
-        embedMode: body?.embedMode ?? 'bubble',
+        embedMode:
+          typeof body.embedMode === 'string' ? body.embedMode : 'bubble',
         source: 'slug-endpoint',
       },
     };
-  
-    // مرّر نفس الـ merchantId المستخرج من السلاج كـ param،
-    // والـ patched كـ body:
-    return this.webhooks.handleIncoming(patched.merchantId, patched, req);
-  }
 
+    await this.webhooks.handleIncoming(merchantId, patched, req);
+  }
   /** ردود البوت/النظام عبر slug موحّد */
   @Post('reply/:slug')
   @ApiOperation({ summary: 'Bot/system reply via public slug' })
@@ -77,20 +99,25 @@ export class ChatWebhooksUnifiedController {
       },
     },
   })
-  async replyBySlug(@Param('slug') slug: string, @Body() body: any) {
-    const { merchantId } = await this.slugResolver.resolve(slug);
+  async replyBySlug(
+    @Param('slug') slug: string,
+    @Body() body: Record<string, unknown>,
+  ): Promise<void> {
+    const { merchantId } = (await this.slugResolver.resolve(slug)) as {
+      merchantId: string;
+    };
 
     // نوجّه المناداة لمنتهىك الحالي الموحد
-    return this.webhooks.handleBotReply(merchantId, {
-      sessionId: body?.sessionId,
-      text: body?.text,
+    await this.webhooks.handleBotReply(merchantId, {
+      sessionId: body?.sessionId as string,
+      text: body?.text as string,
       channel: 'webchat',
       metadata: { ...(body?.metadata || {}), via: 'slug-endpoint' },
     });
   }
   @Post('incoming/:slug/ping')
   @Public()
-  async ping(@Param('slug') slug: string) {
+  async ping(@Param('slug') slug: string): Promise<{ ok: boolean }> {
     await this.slugResolver.resolve(slug); // يتأكد أن slug صحيح
     return { ok: true };
   }

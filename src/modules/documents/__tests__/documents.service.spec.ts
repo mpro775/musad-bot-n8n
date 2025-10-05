@@ -1,7 +1,9 @@
-import { Test } from '@nestjs/testing';
-import { DocumentsService } from '../documents.service';
-import { DocumentsRepository } from '../repositories/documents.repository';
 import { getQueueToken } from '@nestjs/bull';
+import { Test } from '@nestjs/testing';
+
+import { DocumentsService } from '../documents.service';
+
+import type { DocumentsRepository } from '../repositories/documents.repository';
 
 describe('DocumentsService', () => {
   let service: DocumentsService;
@@ -54,14 +56,14 @@ describe('DocumentsService', () => {
     const res = await service.uploadFile('m1', file);
 
     expect((service as any).minio.fPutObject).toHaveBeenCalled();
-    expect(repo.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        merchantId: 'm1',
-        filename: 'file.pdf',
-        fileType: 'application/pdf',
-        status: 'pending',
-      }),
-    );
+    const expectedCall = expect.objectContaining({
+      merchantId: 'm1',
+      filename: 'file.pdf',
+      fileType: 'application/pdf',
+      status: 'pending',
+    });
+    const createCall = expect(repo.create.bind(repo));
+    createCall.toHaveBeenCalledWith(expectedCall);
     expect(queue.add).toHaveBeenCalledWith('process', {
       docId: 'doc1',
       merchantId: 'm1',
@@ -95,6 +97,7 @@ describe('DocumentsService', () => {
       process.env.MINIO_BUCKET!,
       'k',
     );
-    expect(repo.deleteByIdForMerchant).toHaveBeenCalledWith('d1', 'm1');
+    const deleteCall = expect(repo.deleteByIdForMerchant.bind(repo));
+    deleteCall.toHaveBeenCalledWith('d1', 'm1');
   });
 });

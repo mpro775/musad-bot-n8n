@@ -16,15 +16,18 @@ import {
   ApiParam,
   ApiBody,
 } from '@nestjs/swagger';
-import { OrdersService } from './orders.service';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { Public } from '../../common/decorators/public.decorator';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+
 import {
   ApiSuccessResponse,
   ApiCreatedResponse as CommonApiCreatedResponse,
 } from '../../common';
+import { Public } from '../../common/decorators/public.decorator';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TranslationService } from '../../common/services/translation.service';
+
+import { CreateOrderDto } from './dto/create-order.dto';
+import { OrdersService } from './orders.service';
+import { Order } from './schemas/order.schema';
 
 /**
  * وحدة تحكم الطلبات
@@ -80,7 +83,7 @@ export class OrdersController {
       },
     },
   })
-  async create(@Body() dto: CreateOrderDto) {
+  async create(@Body() dto: CreateOrderDto): Promise<Order> {
     return this.ordersService.create(dto);
   }
 
@@ -95,16 +98,24 @@ export class OrdersController {
     status: 401,
     description: 'orders.responses.error.unauthorized',
   })
-  async findAll() {
+  async findAll(): Promise<Order[]> {
     return this.ordersService.findAll();
   }
 
   @Public()
   @Get('mine/:merchantId/:sessionId')
+  async findMineBySession(
+    @Param('merchantId') merchantId: string,
+    @Param('sessionId') sessionId: string,
+  ): Promise<Order[]> {
+    return this.ordersService.findMine(merchantId, sessionId);
+  }
+  @Public()
+  @Get('mine/:merchantId/:sessionId')
   async findMine(
     @Param('merchantId') merchantId: string,
     @Param('sessionId') sessionId: string,
-  ) {
+  ): Promise<Order[]> {
     return this.ordersService.findMine(merchantId, sessionId);
   }
   // جلب طلب محدد بالتفصيل
@@ -128,7 +139,7 @@ export class OrdersController {
     status: 404,
     description: 'orders.responses.error.notFound',
   })
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string): Promise<Order | null> {
     return this.ordersService.findOne(id);
   }
 
@@ -146,7 +157,10 @@ export class OrdersController {
     status: 404,
     description: 'orders.responses.error.notFound',
   })
-  async updateStatus(@Param('id') id: string, @Body('status') status: string) {
+  async updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: string,
+  ): Promise<Order | null> {
     return this.ordersService.updateStatus(id, status);
   }
   @Public()
@@ -162,7 +176,7 @@ export class OrdersController {
   async findByCustomer(
     @Param('merchantId') merchantId: string,
     @Param('phone') phone: string,
-  ) {
+  ): Promise<Order[]> {
     // ابحث عن كل الطلبات لهذا العميل بناءً على رقم الجوال (أو حتى sessionId إذا متاح)
     return this.ordersService.findByCustomer(merchantId, phone);
   }

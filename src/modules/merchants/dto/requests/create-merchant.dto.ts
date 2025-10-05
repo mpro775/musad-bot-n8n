@@ -1,3 +1,4 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsString,
@@ -15,14 +16,20 @@ import {
   IsBoolean,
   Matches,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { I18nMessage } from '../../../../common/validators/i18n-validator';
 
+import { I18nMessage } from '../../../../common/validators/i18n-validator';
+import {
+  MAX_DESCRIPTION_LENGTH,
+  MAX_EXCHANGE_POLICY_LENGTH,
+  MAX_RETURN_POLICY_LENGTH,
+  MAX_SHIPPING_POLICY_LENGTH,
+} from '../../constants';
 import { AddressDto } from '../shared/address.dto';
 import { SubscriptionPlanDto } from '../shared/subscription-plan.dto';
-import { QuickConfigDto } from './quick-config.dto';
 import { WorkingHourDto } from '../shared/working-hours.dto';
+
 import { AdvancedTemplateDto } from './advanced-template.dto';
+import { QuickConfigDto } from './quick-config.dto';
 
 /**
  * بيانات إنشاء تاجر جديد
@@ -120,7 +127,7 @@ export class CreateMerchantDto {
   })
   @IsOptional()
   @IsString(I18nMessage('validation.string'))
-  @MaxLength(1000, I18nMessage('validation.maxLength'))
+  @MaxLength(MAX_DESCRIPTION_LENGTH, I18nMessage('validation.maxLength'))
   businessDescription?: string;
 
   @ApiPropertyOptional({
@@ -188,7 +195,7 @@ export class CreateMerchantDto {
   })
   @IsOptional()
   @IsString(I18nMessage('validation.string'))
-  @MaxLength(2000, I18nMessage('validation.maxLength'))
+  @MaxLength(MAX_RETURN_POLICY_LENGTH, I18nMessage('validation.maxLength'))
   returnPolicy?: string;
 
   @ApiPropertyOptional({
@@ -211,7 +218,7 @@ export class CreateMerchantDto {
   })
   @IsOptional()
   @IsString(I18nMessage('validation.string'))
-  @MaxLength(2000, I18nMessage('validation.maxLength'))
+  @MaxLength(MAX_EXCHANGE_POLICY_LENGTH, I18nMessage('validation.maxLength'))
   exchangePolicy?: string;
 
   @ApiPropertyOptional({
@@ -221,12 +228,14 @@ export class CreateMerchantDto {
   })
   @IsOptional()
   @IsString(I18nMessage('validation.string'))
-  @MaxLength(2000, I18nMessage('validation.maxLength'))
+  @MaxLength(MAX_SHIPPING_POLICY_LENGTH, I18nMessage('validation.maxLength'))
   shippingPolicy?: string;
 
   @IsOptional()
   @Transform(({ value }) =>
-    typeof value === 'string' && value.trim() === '' ? undefined : value,
+    typeof value === 'string' && value.trim() === ''
+      ? undefined
+      : (value as string),
   )
   @Matches(
     /^[a-z](?:[a-z0-9-]{1,48}[a-z0-9])$/i,

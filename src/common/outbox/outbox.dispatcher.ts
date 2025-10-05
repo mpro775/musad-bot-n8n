@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { OutboxService } from './outbox.service';
+
 import { RabbitService } from '../../infra/rabbit/rabbit.service';
+
+import { OutboxService } from './outbox.service';
 
 @Injectable()
 export class OutboxDispatcher {
@@ -14,7 +16,7 @@ export class OutboxDispatcher {
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
-  async reap() {
+  async reap(): Promise<void> {
     await this.outbox.recoverStuckPublishing();
   }
 

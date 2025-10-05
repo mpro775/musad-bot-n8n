@@ -1,11 +1,20 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
-import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { MerchantsRepository } from '../repositories/merchants.repository';
-import { PromptBuilderService } from './prompt-builder.service';
-import { TranslationService } from '../../../common/services/translation.service';
-import { MerchantStatusResponse } from '../types/types';
+import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Cache } from 'cache-manager';
+
+import { TranslationService } from '../../../common/services/translation.service';
+import { MerchantsRepository } from '../repositories/merchants.repository';
+import { MerchantDocument } from '../schemas/merchant.schema';
+import { MerchantStatusResponse } from '../types/types';
+
+import { PromptBuilderService } from './prompt-builder.service';
+
+interface StoreContext {
+  merchantId: string;
+  name?: string;
+  description?: string;
+}
 
 @Injectable()
 export class MerchantCacheService {
@@ -28,9 +37,9 @@ export class MerchantCacheService {
     return this.config.get<number>('vars.cache.merchantStatusTtlMs')!;
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<MerchantDocument> {
     const cacheKey = `merchant:${id}`;
-    const cached = await this.cache.get(cacheKey);
+    const cached = await this.cache.get<MerchantDocument>(cacheKey);
     if (cached) return cached;
 
     const merchant = await this.repo.findOne(id);
@@ -66,14 +75,14 @@ export class MerchantCacheService {
 
     const m = await this.repo.findOne(id);
     const tpl = await this.promptBuilder.compileTemplate(m);
-    (m as any).finalPromptTemplate = tpl;
-    await (m as any).save?.();
+    m.finalPromptTemplate = tpl;
+    await m.save?.();
 
     await this.cache.set(key, tpl, this.ttlPrompt());
     return tpl;
   }
 
-  async invalidate(merchantId: string) {
+  async invalidate(merchantId: string): Promise<void> {
     await Promise.all([
       this.cache.del(`merchant:${merchantId}`),
       this.cache.del(`merchant:status:${merchantId}`),
@@ -81,13 +90,12 @@ export class MerchantCacheService {
     ]);
   }
 
-  async getStoreContext(merchantId: string): Promise<any> {
+  async getStoreContext(merchantId: string): Promise<StoreContext> {
     const merchant = await this.findOne(merchantId);
-    const doc = merchant as any;
     return {
-      merchantId: doc._id,
-      name: doc.name,
-      description: doc.description,
+      merchantId: String(merchant._id),
+      name: merchant.name,
+      description: merchant.businessDescription,
       // توسعة لاحقًا بما يلزم
     };
   }

@@ -6,9 +6,9 @@ import {
   Get,
   Query,
   Delete,
-  HttpCode,
   Req,
 } from '@nestjs/common';
+import { UseGuards } from '@nestjs/common/decorators/core/use-guards.decorator';
 import {
   ApiTags,
   ApiOperation,
@@ -18,10 +18,12 @@ import {
   ApiBearerAuth,
   ApiQuery,
 } from '@nestjs/swagger';
-import { KnowledgeService } from './knowledge.service';
-import { RolesGuard } from '../../common/guards/roles.guard';
+
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { UseGuards } from '@nestjs/common/decorators/core/use-guards.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
+
+import { KnowledgeService } from './knowledge.service';
+import { SourceUrlEntity } from './repositories/source-url.repository';
 
 @ApiTags('المعرفة - ربط المواقع')
 @ApiBearerAuth()
@@ -56,8 +58,8 @@ export class KnowledgeController {
   async uploadUrls(
     @Param('merchantId') merchantId: string,
     @Body('urls') urls: string[],
-    @Req() req: any,                           // ⬅️ جديد
-  ) {
+    @Req() req: Request & { user: { userId: string } }, // ⬅️ جديد
+  ): Promise<{ success: boolean; message: string }> {
     // مرّر userId لصاحب العملية لغايات الإشعار
     return this.svc.addUrls(merchantId, urls, req.user?.userId);
   }
@@ -70,7 +72,12 @@ export class KnowledgeController {
   @ApiResponse({ status: 200, description: 'تم استرجاع حالة الروابط بنجاح' })
   @ApiResponse({ status: 401, description: 'غير مصرح' })
   @ApiResponse({ status: 404, description: 'التاجر غير موجود' })
-  async getUrlsStatus(@Param('merchantId') merchantId: string) {
+  async getUrlsStatus(@Param('merchantId') merchantId: string): Promise<{
+    total: number;
+    pending: number;
+    completed: number;
+    failed: number;
+  }> {
     return this.svc.getUrlsStatus(merchantId);
   }
   @Get()
@@ -82,7 +89,16 @@ export class KnowledgeController {
   @ApiResponse({ status: 200, description: 'تم استرجاع الروابط بنجاح' })
   @ApiResponse({ status: 401, description: 'غير مصرح' })
   @ApiResponse({ status: 404, description: 'التاجر غير موجود' })
-  async getUrls(@Param('merchantId') merchantId: string) {
+  async getUrls(
+    @Param('merchantId') merchantId: string,
+  ): Promise<
+    Array<
+      Pick<
+        SourceUrlEntity,
+        '_id' | 'url' | 'status' | 'errorMessage' | 'createdAt'
+      >
+    >
+  > {
     return this.svc.getUrls(merchantId);
   }
   // حذف واحد باستخدام id
@@ -98,7 +114,7 @@ export class KnowledgeController {
   async deleteOneById(
     @Param('merchantId') merchantId: string,
     @Param('id') id: string,
-  ) {
+  ): Promise<{ success: boolean; deleted: number; url: string }> {
     return this.svc.deleteById(merchantId, id);
   }
 
@@ -117,7 +133,7 @@ export class KnowledgeController {
     @Param('merchantId') merchantId: string,
     @Query('url') url?: string,
     @Query('all') all?: string,
-  ) {
+  ): Promise<unknown> | { success: boolean; message: string } {
     if (all === 'true') return this.svc.deleteAll(merchantId);
     if (url) return this.svc.deleteByUrl(merchantId, url);
     return { success: false, message: 'حدد url أو all=true' };

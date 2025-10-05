@@ -6,24 +6,42 @@
   Inject,
   forwardRef,
 } from '@nestjs/common';
+import { AxiosError } from 'axios';
 
-import templateJson from './workflow-template.json';
-
-import { WorkflowHistoryService } from '../workflow-history/workflow-history.service';
 import { MerchantsService } from '../merchants/merchants.service';
-import { N8N_CLIENT } from './tokens';
+import { WorkflowHistoryService } from '../workflow-history/workflow-history.service';
+
 import {
   N8nClientRepository,
   WorkflowCreatePayload,
 } from './repositories/n8n-client.repository';
+import { N8N_CLIENT } from './tokens';
 import { WorkflowDefinition } from './types';
+import templateJson from './workflow-template.json';
 
-function setWebhookPath(raw: any, merchantId: string) {
-  const hook = Array.isArray(raw?.nodes)
-    ? raw.nodes.find((n: any) => n?.type === 'n8n-nodes-base.webhook')
-    : undefined;
-  if (hook?.parameters) {
-    hook.parameters.path = `ai-agent-${merchantId}`;
+function setWebhookPath(raw: unknown, merchantId: string) {
+  if (!raw || typeof raw !== 'object' || !('nodes' in raw)) return;
+
+  const nodes = (raw as { nodes: unknown[] }).nodes;
+  if (!Array.isArray(nodes)) return;
+
+  const hook = nodes.find((n: unknown) => {
+    return (
+      n &&
+      typeof n === 'object' &&
+      'type' in n &&
+      n.type === 'n8n-nodes-base.webhook'
+    );
+  });
+
+  if (
+    hook &&
+    typeof hook === 'object' &&
+    'parameters' in hook &&
+    hook.parameters &&
+    typeof hook.parameters === 'object'
+  ) {
+    (hook.parameters as { path: string }).path = `ai-agent-${merchantId}`;
   }
 }
 
@@ -61,10 +79,13 @@ function sanitizeTemplate(raw: unknown): WorkflowCreatePayload {
 
     let credentials: Record<string, { name: string }> | undefined;
     if (isObj(credsRaw)) {
-      const entries = Object.entries(credsRaw)
-        .filter(([, v]) => isCred(v))
-        .map(([k, v]) => [k, { name: (v as { name: string }).name }]);
-      if (entries.length) credentials = Object.fromEntries(entries);
+      const validEntries = Object.entries(credsRaw).filter(([, v]) =>
+        isCred(v),
+      ) as [string, { name: string }][];
+      const entries = validEntries.map(([k, v]) => [k, { name: v.name }]);
+      credentials = entries.length
+        ? (Object.fromEntries(entries) as Record<string, { name: string }>)
+        : undefined;
     }
 
     return {
@@ -106,17 +127,19 @@ export class N8nWorkflowService {
     private readonly n8n: N8nClientRepository,
   ) {}
 
-  private wrapError(err: any, action: string): never {
+  private wrapError(err: unknown, action: string): never {
     // أخلي الرسالة موحدة كما كانت
     const status =
-      err?.status ?? err?.response?.status ?? HttpStatus.INTERNAL_SERVER_ERROR;
-    const message = err?.message ?? 'Unknown error';
+      (err as AxiosError)?.status ??
+      (err as AxiosError)?.response?.status ??
+      HttpStatus.INTERNAL_SERVER_ERROR;
+    const message = (err as AxiosError)?.message ?? 'Unknown error';
     throw new HttpException(`n8n API ${action} failed: ${message}`, status);
   }
 
   /** إنشاء workflow جديد للتاجر */
   async createForMerchant(merchantId: string): Promise<string> {
-    const raw = JSON.parse(JSON.stringify(templateJson));
+    const raw = JSON.parse(JSON.stringify(templateJson)) as { name: string };
     raw.name = `wf-${merchantId}`;
     setWebhookPath(raw, merchantId);
 
@@ -126,7 +149,7 @@ export class N8nWorkflowService {
     try {
       await this.n8n.setActive(wfId, true);
     } catch (e) {
-      this.logger.warn(`activate failed`, e as any);
+      this.logger.warn(`activate failed`, e);
     }
 
     await this.merchants.update(merchantId, { workflowId: wfId });
@@ -212,7 +235,7 @@ export class N8nWorkflowService {
     createdBy: string,
   ): Promise<string> {
     const source = await this.get(sourceId);
-    const raw = JSON.parse(JSON.stringify(source));
+    const raw = JSON.parse(JSON.stringify(source)) as { name: string };
 
     raw.name = `wf-${targetMerchantId}`;
     setWebhookPath(raw, targetMerchantId);
@@ -223,7 +246,7 @@ export class N8nWorkflowService {
     try {
       await this.n8n.setActive(wfId, true);
     } catch (e) {
-      this.logger.warn(`activate failed`, e as any);
+      this.logger.warn(`activate failed`, e);
     }
 
     await this.merchants.update(targetMerchantId, { workflowId: wfId });

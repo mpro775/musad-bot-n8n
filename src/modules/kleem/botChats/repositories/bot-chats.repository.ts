@@ -1,5 +1,5 @@
-import { FilterQuery, PipelineStage, Types } from 'mongoose';
-import { BotChatSession } from '../schemas/botChats.schema';
+import type { BotChatSession } from '../schemas/botChats.schema';
+import type { FilterQuery, PipelineStage, Types } from 'mongoose';
 
 export type AppendMessage = {
   role: 'user' | 'bot';
@@ -35,7 +35,7 @@ export interface BotChatRepository {
     limit: number,
   ): Promise<{ data: BotChatSessionLean[]; total: number }>;
 
-  aggregate(pipeline: PipelineStage[]): Promise<any[]>;
+  aggregate(pipeline: PipelineStage[]): Promise<unknown[]>;
 
   getFrequentBadBotReplies(
     limit: number,

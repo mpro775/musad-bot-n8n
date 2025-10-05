@@ -1,14 +1,15 @@
 // src/common/config/common.module.ts
 import { Module, Global } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+
 import {
   AllExceptionsFilter,
   WsAllExceptionsFilter,
   ResponseInterceptor,
   LoggingInterceptor,
-  AuthGuard,
 } from '../index';
+import { RedisLockService } from '../locks';
 import { EnvironmentValidatorService } from '../services/environment-validator.service';
 import { TranslationService } from '../services/translation.service';
 
@@ -47,6 +48,7 @@ import { TranslationService } from '../services/translation.service';
       useClass: EnvironmentValidatorService,
     },
     TranslationService,
+    RedisLockService,
 
     // Global Guards (اختياري - يمكن إزالته إذا كنت تريد تطبيقه يدوياً)
     // {
@@ -54,6 +56,11 @@ import { TranslationService } from '../services/translation.service';
     //   useClass: AuthGuard,
     // },
   ],
-  exports: [JwtModule, 'EnvironmentValidatorService', TranslationService],
+  exports: [
+    JwtModule,
+    'EnvironmentValidatorService',
+    TranslationService,
+    RedisLockService,
+  ],
 })
 export class CommonModule {}

@@ -1,6 +1,7 @@
 // ---------------------------
 // File: src/modules/messaging/message.service.ts
 // ---------------------------
+
 import {
   Injectable,
   NotFoundException,
@@ -8,17 +9,18 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ClientSession, Types } from 'mongoose';
+
+import { GeminiService } from '../ai/gemini.service';
+import { ChatGateway } from '../chat/chat.gateway';
+
 import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
-import { removeStopwords, ara, eng } from 'stopword';
-import { ChatGateway } from '../chat/chat.gateway';
-import { GeminiService } from '../ai/gemini.service';
-import { MESSAGE_SESSION_REPOSITORY } from './tokens';
 import {
   MessageItem,
   MessageRepository,
   MessageSessionEntity,
 } from './repositories/message.repository';
+import { MESSAGE_SESSION_REPOSITORY } from './tokens';
 
 @Injectable()
 export class MessageService {
@@ -29,14 +31,17 @@ export class MessageService {
     private readonly geminiService: GeminiService,
   ) {}
 
-  async createOrAppend(dto: CreateMessageDto, session?: ClientSession) {
+  async createOrAppend(
+    dto: CreateMessageDto,
+    session?: ClientSession,
+  ): Promise<MessageSessionEntity> {
     const toInsert: MessageItem[] = dto.messages.map((m) => ({
       _id: new Types.ObjectId(),
-      role: m.role,
+      role: m.role as 'user' | 'bot' | 'agent',
       text: m.text,
       metadata: m.metadata || {},
       timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
-      keywords: removeStopwords(m.text.split(/\s+/), [...ara, ...eng]),
+      keywords: m.text.split(/\s+/).filter((word) => word.length > 2),
     }));
 
     const lastMsg = toInsert[toInsert.length - 1];
@@ -67,7 +72,15 @@ export class MessageService {
       );
     }
 
-    if (lastMsg) this.chatGateway.sendMessageToSession(dto.sessionId, lastMsg);
+    if (lastMsg) {
+      const outgoingMessage = {
+        id: String(lastMsg._id),
+        text: lastMsg.text,
+        role: lastMsg.role === 'bot' ? 'system' : lastMsg.role,
+        merchantId: dto.merchantId,
+      } as const;
+      this.chatGateway.sendMessageToSession(dto.sessionId, outgoingMessage);
+    }
     return doc;
   }
 
@@ -75,7 +88,7 @@ export class MessageService {
     slug: string,
     sessionId: string,
     channel: 'webchat',
-  ) {
+  ): Promise<MessageSessionEntity | null> {
     return this.messagesRepo.findByWidgetSlugAndSession(
       slug,
       sessionId,
@@ -90,7 +103,7 @@ export class MessageService {
     rating: 0 | 1,
     feedback?: string,
     merchantId?: string,
-  ) {
+  ): Promise<{ status: string }> {
     const ok = await this.messagesRepo.updateMessageRating({
       sessionId,
       messageId,
@@ -120,7 +133,10 @@ export class MessageService {
     return { status: 'ok' };
   }
 
-  async findBySession(sessionId: string, merchantId: string) {
+  async findBySession(
+    sessionId: string,
+    merchantId: string,
+  ): Promise<MessageSessionEntity | null> {
     return this.messagesRepo.findBySession(merchantId, sessionId);
   }
 
@@ -134,7 +150,7 @@ export class MessageService {
     sessionId: string,
     handoverToAgent: boolean,
     merchantId: string,
-  ) {
+  ): Promise<void> {
     await this.messagesRepo.setHandover(sessionId, merchantId, handoverToAgent);
   }
 
@@ -142,7 +158,10 @@ export class MessageService {
     id: string,
     dto: UpdateMessageDto,
   ): Promise<MessageSessionEntity> {
-    const updated = await this.messagesRepo.updateById(id, dto as any);
+    const updated = await this.messagesRepo.updateById(
+      id,
+      dto as Partial<MessageSessionEntity>,
+    );
     if (!updated) throw new NotFoundException(`Session ${id} not found`);
     return updated;
   }
@@ -152,7 +171,10 @@ export class MessageService {
     return { deleted };
   }
 
-  async getFrequentBadBotReplies(merchantId: string, limit = 10) {
+  async getFrequentBadBotReplies(
+    merchantId: string,
+    limit = 10,
+  ): Promise<Array<{ text: string; count: number; feedbacks: string[] }>> {
     return this.messagesRepo.aggregateFrequentBadBotReplies(merchantId, limit);
   }
 

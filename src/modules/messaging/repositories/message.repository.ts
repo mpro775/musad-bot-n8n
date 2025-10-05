@@ -1,11 +1,11 @@
-import { ClientSession, Types } from 'mongoose';
-import { MessageSession } from '../schemas/message.schema';
+import type { MessageSession } from '../schemas/message.schema';
+import type { ClientSession, Types } from 'mongoose';
 
 export type MessageItem = {
   _id: Types.ObjectId;
-  role: 'user' | 'bot' | string;
+  role: 'user' | 'bot' | 'agent';
   text: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   timestamp: Date;
   keywords?: string[];
   rating?: 0 | 1;

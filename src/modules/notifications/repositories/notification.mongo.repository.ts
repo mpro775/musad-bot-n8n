@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
+
 import {
   Notification,
   NotificationDocument,
 } from '../schemas/notification.schema';
+
 import {
   NotificationCreateInput,
   NotificationEntity,
@@ -29,7 +31,7 @@ export class NotificationMongoRepository implements NotificationRepository {
       body: input.body,
       data: input.data,
       severity: input.severity ?? 'info',
-    } as any);
+    } as unknown);
     return doc.toObject() as NotificationEntity;
   }
 

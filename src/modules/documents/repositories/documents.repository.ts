@@ -1,5 +1,5 @@
-import { Types, HydratedDocument } from 'mongoose';
-import { DocumentSchemaClass } from '../schemas/document.schema';
+import type { DocumentSchemaClass } from '../schemas/document.schema';
+import type { Types, HydratedDocument } from 'mongoose';
 
 export interface DocumentsRepository {
   create(
@@ -9,7 +9,7 @@ export interface DocumentsRepository {
     id: string | Types.ObjectId,
     merchantId: string | Types.ObjectId,
   ): Promise<HydratedDocument<DocumentSchemaClass> | null>;
-  listByMerchant(merchantId: string | Types.ObjectId): Promise<any[]>; // lean
+  listByMerchant(merchantId: string | Types.ObjectId): Promise<unknown[]>; // lean
   deleteByIdForMerchant(
     id: string | Types.ObjectId,
     merchantId: string | Types.ObjectId,

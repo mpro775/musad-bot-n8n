@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsArray,
   IsEnum,
@@ -10,7 +11,6 @@ import {
   IsDate,
   IsNotEmpty,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 
 export class MessageContentDto {
   @ApiProperty({
@@ -42,7 +42,7 @@ export class MessageContentDto {
   })
   @IsOptional()
   @IsObject()
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export class UpdateMessageDto {
@@ -68,7 +68,7 @@ export class UpdateMessageDto {
   })
   @IsOptional()
   @IsObject()
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 
   @ApiPropertyOptional({
     description: 'استبدال كامل لمحتوى الرسائل في الجلسة',

@@ -1,3 +1,4 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsEnum,
@@ -8,34 +9,31 @@ import {
   MinLength,
   MaxLength,
   ArrayMaxSize,
-  ArrayMinSize
+  ArrayMinSize,
 } from 'class-validator';
-import { 
-  ApiProperty, 
-  ApiPropertyOptional,
-  ApiHideProperty
-} from '@nestjs/swagger';
-
+const MAX_TEMPLATE_LENGTH_Kaleem = 10000;
 export class CreateBotPromptDto {
-  @IsEnum(['system', 'user'], { 
-    message: 'النوع يجب أن يكون إما system أو user' 
+  @IsEnum(['system', 'user'], {
+    message: 'النوع يجب أن يكون إما system أو user',
   })
   @ApiProperty({
     description: 'نوع البرومبت',
     enum: ['system', 'user'],
-    example: 'system'
+    example: 'system',
   })
   type: 'system' | 'user';
 
   @IsString()
   @IsNotEmpty({ message: 'محتوى البرومبت مطلوب' })
   @MinLength(10, { message: 'يجب أن يكون طول المحتوى 10 أحرف على الأقل' })
-  @MaxLength(10000, { message: 'يجب ألا يتجاوز المحتوى 10000 حرف' })
+  @MaxLength(MAX_TEMPLATE_LENGTH_Kaleem, {
+    message: 'يجب ألا يتجاوز المحتوى 10000 حرف',
+  })
   @ApiProperty({
     description: 'محتوى البرومبت',
     minLength: 10,
-    maxLength: 10000,
-    example: 'أنت مساعد ذكي يساعد المستخدمين في الإجابة على استفساراتهم.'
+    maxLength: MAX_TEMPLATE_LENGTH_Kaleem,
+    example: 'أنت مساعد ذكي يساعد المستخدمين في الإجابة على استفساراتهم.',
   })
   content: string;
 
@@ -45,7 +43,7 @@ export class CreateBotPromptDto {
   @ApiPropertyOptional({
     description: 'اسم البرومبت (اختياري)',
     maxLength: 100,
-    example: 'البرومبت الأساسي'
+    example: 'البرومبت الأساسي',
   })
   name?: string;
 
@@ -58,7 +56,7 @@ export class CreateBotPromptDto {
   @ApiPropertyOptional({
     description: 'وسوم للتصنيف والبحث',
     type: [String],
-    example: ['افتراضي', 'دعم فني', 'مبيعات']
+    example: ['افتراضي', 'دعم فني', 'مبيعات'],
   })
   tags?: string[];
 
@@ -67,7 +65,7 @@ export class CreateBotPromptDto {
   @ApiPropertyOptional({
     description: 'حالة تفعيل البرومبت',
     default: false,
-    example: false
+    example: false,
   })
   active: boolean = false;
 }

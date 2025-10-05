@@ -1,6 +1,14 @@
 // src/modules/webhooks/dto/bot-reply.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsObject,
+  IsIn,
+} from 'class-validator';
+
+import { PublicChannel } from '../types/channels';
 
 export class BotReplyDto {
   @ApiProperty({
@@ -19,6 +27,9 @@ export class BotReplyDto {
   @IsNotEmpty()
   text: string;
 
+  @IsIn(['whatsapp', 'telegram', 'webchat'])
+  channel!: PublicChannel;
+
   @ApiProperty({
     description: 'بيانات إضافية اختياريّة (مثلاً أزرار تفاعلية)',
     type: Object,
@@ -26,5 +37,5 @@ export class BotReplyDto {
   })
   @IsOptional()
   @IsObject()
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }

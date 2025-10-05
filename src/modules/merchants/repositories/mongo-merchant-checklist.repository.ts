@@ -1,11 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
-import { Merchant, MerchantDocument } from '../schemas/merchant.schema';
-import {
-  Product,
-  ProductDocument,
-} from '../../products/schemas/product.schema';
+import { Model, RootFilterQuery, Types } from 'mongoose';
+
 import {
   Category,
   CategoryDocument,
@@ -15,6 +11,12 @@ import {
   ChannelDocument,
   ChannelProvider,
 } from '../../channels/schemas/channel.schema';
+import {
+  Product,
+  ProductDocument,
+} from '../../products/schemas/product.schema';
+import { Merchant, MerchantDocument } from '../schemas/merchant.schema';
+
 import { MerchantChecklistRepository } from './merchant-checklist.repository';
 
 @Injectable()
@@ -32,10 +34,31 @@ export class MongoMerchantChecklistRepository
     private readonly channelModel: Model<ChannelDocument>,
   ) {}
 
-  async findMerchantLean(merchantId: string) {
+  async findMerchantLean(
+    merchantId: string,
+  ): Promise<
+    | (Pick<
+        MerchantDocument,
+        | '_id'
+        | 'logoUrl'
+        | 'addresses'
+        | 'publicSlug'
+        | 'publicSlugEnabled'
+        | 'quickConfig'
+        | 'skippedChecklistItems'
+        | 'productSourceConfig'
+        | 'workingHours'
+        | 'returnPolicy'
+        | 'exchangePolicy'
+        | 'shippingPolicy'
+      > &
+        Record<string, unknown>)
+    | null
+  > {
     return this.merchantModel
       .findById(merchantId)
       .select([
+        '_id',
         'logoUrl',
         'addresses',
         'publicSlug',
@@ -48,10 +71,28 @@ export class MongoMerchantChecklistRepository
         'exchangePolicy',
         'shippingPolicy',
       ])
-      .lean();
+      .lean() as Promise<
+      | (Pick<
+          MerchantDocument,
+          | '_id'
+          | 'logoUrl'
+          | 'addresses'
+          | 'publicSlug'
+          | 'publicSlugEnabled'
+          | 'quickConfig'
+          | 'skippedChecklistItems'
+          | 'productSourceConfig'
+          | 'workingHours'
+          | 'returnPolicy'
+          | 'exchangePolicy'
+          | 'shippingPolicy'
+        > &
+          Record<string, unknown>)
+      | null
+    >;
   }
 
-  async countProducts(merchantId: string | Types.ObjectId) {
+  async countProducts(merchantId: string | Types.ObjectId): Promise<number> {
     const _id =
       typeof merchantId === 'string'
         ? new Types.ObjectId(merchantId)
@@ -59,7 +100,7 @@ export class MongoMerchantChecklistRepository
     return this.productModel.countDocuments({ merchantId: _id });
   }
 
-  async countCategories(merchantId: string | Types.ObjectId) {
+  async countCategories(merchantId: string | Types.ObjectId): Promise<number> {
     const _id =
       typeof merchantId === 'string'
         ? new Types.ObjectId(merchantId)
@@ -70,8 +111,12 @@ export class MongoMerchantChecklistRepository
   async getDefaultOrEnabledOrAnyChannel(
     merchantId: string,
     provider: ChannelProvider,
-  ) {
-    const q: any = {
+  ): Promise<
+    | (Pick<ChannelDocument, 'enabled' | 'status' | 'isDefault'> &
+        Record<string, unknown>)
+    | null
+  > {
+    const q: RootFilterQuery<ChannelDocument> = {
       merchantId: new Types.ObjectId(merchantId),
       provider,
       deletedAt: null,

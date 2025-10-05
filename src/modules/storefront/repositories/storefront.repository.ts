@@ -1,9 +1,9 @@
-import { Types } from 'mongoose';
-import { Storefront } from '../schemas/storefront.schema';
+import type { Storefront } from '../schemas/storefront.schema';
+import type { Types } from 'mongoose';
 
 export type StorefrontEntity = Storefront & {
   _id: Types.ObjectId;
-  banners?: Array<{ image?: string; [k: string]: any }>;
+  banners?: Array<{ image?: string; [k: string]: unknown }>;
   brandDark?: string;
   slug?: string;
 };

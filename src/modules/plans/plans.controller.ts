@@ -9,17 +9,8 @@ import {
   Param,
   Body,
   UseGuards,
-  Request,
   Query,
 } from '@nestjs/common';
-import { PlansService } from './plans.service';
-import { CreatePlanDto } from './dto/create-plan.dto';
-import { UpdatePlanDto } from './dto/update-plan.dto';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { ParseObjectIdPipe } from '../../common/pipes/parse-objectid.pipe';
-import { QueryPlansDto } from './dto/query-plans.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -33,6 +24,18 @@ import {
   ApiNotFoundResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+
+import { Roles } from '../../common/decorators/roles.decorator';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { ParseObjectIdPipe } from '../../common/pipes/parse-objectid.pipe';
+
+import { CreatePlanDto } from './dto/create-plan.dto';
+import { QueryPlansDto } from './dto/query-plans.dto';
+import { UpdatePlanDto } from './dto/update-plan.dto';
+import { PlansService } from './plans.service';
+import { PlanEntity } from './repositories/plan.repository';
+import { Plan } from './schemas/plan.schema';
 
 @ApiTags('الخطط')
 @Controller('plans')
@@ -51,7 +54,7 @@ export class PlansController {
       example: {
         _id: '...',
         name: 'Pro Monthly',
-        priceCents: 2900,
+        priceCents: 100,
         currency: 'USD',
         durationDays: 30,
       },
@@ -60,7 +63,7 @@ export class PlansController {
   @ApiUnauthorizedResponse({ description: 'Unauthorized' })
   @ApiForbiddenResponse({ description: 'Insufficient role' })
   @ApiBadRequestResponse({ description: 'Invalid payload' })
-  create(@Body() dto: CreatePlanDto) {
+  create(@Body() dto: CreatePlanDto): Promise<PlanEntity> {
     return this.plansService.create(dto);
   }
 
@@ -74,7 +77,7 @@ export class PlansController {
           {
             _id: '...',
             name: 'Pro',
-            priceCents: 2900,
+            priceCents: 100,
             currency: 'USD',
             durationDays: 30,
             isActive: true,
@@ -87,7 +90,9 @@ export class PlansController {
       },
     },
   })
-  findAll(@Query() q: QueryPlansDto) {
+  findAll(
+    @Query() q: QueryPlansDto,
+  ): Promise<{ items: PlanEntity[]; total: number }> {
     return this.plansService.findAllPaged(q);
   }
 
@@ -96,7 +101,7 @@ export class PlansController {
   @ApiOperation({ summary: 'جلب خطة حسب المعرّف' })
   @ApiOkResponse({ description: 'تم الإرجاع' })
   @ApiNotFoundResponse({ description: 'Plan not found' })
-  findOne(@Param('id', ParseObjectIdPipe) id: string) {
+  findOne(@Param('id', ParseObjectIdPipe) id: string): Promise<Plan> {
     return this.plansService.findOne(id);
   }
 
@@ -114,7 +119,7 @@ export class PlansController {
   update(
     @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: UpdatePlanDto,
-  ) {
+  ): Promise<Plan> {
     return this.plansService.update(id, dto);
   }
 
@@ -128,7 +133,9 @@ export class PlansController {
   @ApiUnauthorizedResponse({ description: 'Unauthorized' })
   @ApiForbiddenResponse({ description: 'Insufficient role' })
   @ApiNotFoundResponse({ description: 'Plan not found' })
-  remove(@Param('id', ParseObjectIdPipe) id: string) {
+  remove(
+    @Param('id', ParseObjectIdPipe) id: string,
+  ): Promise<{ message: string }> {
     return this.plansService.remove(id);
   }
 
@@ -140,7 +147,7 @@ export class PlansController {
   setActive(
     @Param('id', ParseObjectIdPipe) id: string,
     @Body('isActive') isActive: boolean,
-  ) {
+  ): Promise<PlanEntity | null> {
     return this.plansService.toggleActive(id, isActive);
   }
 
@@ -149,7 +156,9 @@ export class PlansController {
   @Roles('ADMIN')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'أرشفة خطة (soft delete)' })
-  archive(@Param('id', ParseObjectIdPipe) id: string) {
+  archive(
+    @Param('id', ParseObjectIdPipe) id: string,
+  ): Promise<PlanEntity | null> {
     return this.plansService.archive(id);
   }
 }

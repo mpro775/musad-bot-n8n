@@ -4,12 +4,15 @@ import {
   NotFoundException,
   Inject,
 } from '@nestjs/common';
-import { Types } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
+import { Types } from 'mongoose';
 
-import { ProductsRepository } from '../repositories/products.repository';
-import { GetProductsDto } from '../dto/get-products.dto';
+import { PaginationResult } from '../../../common/dto/pagination.dto';
 import { TranslationService } from '../../../common/services/translation.service';
+import { GetProductsDto } from '../dto/get-products.dto';
+import { ProductsRepository } from '../repositories/products.repository';
+import { ProductDocument } from '../schemas/product.schema';
+import { ProductLean } from '../types';
 
 @Injectable()
 export class ProductQueriesService {
@@ -20,7 +23,7 @@ export class ProductQueriesService {
     private readonly config: ConfigService,
   ) {}
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<ProductDocument> {
     if (!Types.ObjectId.isValid(id))
       throw new BadRequestException(
         this.translationService.translate('validation.mongoId'),
@@ -33,12 +36,20 @@ export class ProductQueriesService {
     return product;
   }
 
-  async findAllByMerchant(merchantId: Types.ObjectId) {
+  async findAllByMerchant(merchantId: Types.ObjectId): Promise<ProductLean[]> {
     return this.repo.findAllByMerchant(merchantId);
   }
 
+  async listByMerchant(
+    merchantId: string,
+    dto: GetProductsDto,
+  ): Promise<PaginationResult<ProductLean>> {
+    const mId = new Types.ObjectId(merchantId);
+    return this.repo.list(mId, dto);
+  }
+
   // بحث نصّي بسيط داخل الكتالوج (غير المتجهي)
-  async searchCatalog(merchantId: string, q: string) {
+  async searchCatalog(merchantId: string, q: string): Promise<ProductLean[]> {
     const mId = new Types.ObjectId(merchantId);
     const topN = this.config.get<number>('vars.products.heuristicTopN')!;
     const prim = await this.repo.searchHeuristics(mId, q, topN);
@@ -47,12 +58,18 @@ export class ProductQueriesService {
     try {
       const txt = await this.repo.searchText(mId, q, topN);
       if (txt.length) return txt;
-    } catch {}
+    } catch {
+      return [];
+    }
     return [];
   }
 
   // بحث مع pagination (حسب الـ dto.limit)
-  async searchProducts(merchantId: string, query: string, dto: GetProductsDto) {
+  async searchProducts(
+    merchantId: string,
+    query: string,
+    dto: GetProductsDto,
+  ): Promise<PaginationResult<ProductLean>> {
     const mId = new Types.ObjectId(merchantId);
     const limit =
       dto.limit || this.config.get<number>('vars.products.searchDefaultLimit')!;
@@ -67,7 +84,7 @@ export class ProductQueriesService {
       return {
         items: heuristicResults,
         meta: {
-          nextCursor: null,
+          nextCursor: undefined,
           hasMore: false,
           count: heuristicResults.length,
         },
@@ -80,7 +97,7 @@ export class ProductQueriesService {
       return {
         items: textResults,
         meta: {
-          nextCursor: null,
+          nextCursor: undefined,
           hasMore: false,
           count: textResults.length,
         },
@@ -88,7 +105,7 @@ export class ProductQueriesService {
     } catch {
       return {
         items: [],
-        meta: { nextCursor: null, hasMore: false, count: 0 },
+        meta: { nextCursor: undefined, hasMore: false, count: 0 },
       };
     }
   }

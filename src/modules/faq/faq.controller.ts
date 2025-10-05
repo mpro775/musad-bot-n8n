@@ -17,6 +17,7 @@ import {
   ApiResponse,
   ApiQuery,
 } from '@nestjs/swagger';
+
 import { FaqService } from './faq.service';
 
 @ApiTags('الأسئلة الشائعة')
@@ -51,7 +52,12 @@ export class FaqController {
   uploadFaqs(
     @Param('merchantId') merchantId: string,
     @Body() faqs: { question: string; answer: string }[],
-  ) {
+  ): Promise<{
+    success: boolean;
+    queued: number;
+    message: string;
+    ids: string[];
+  }> {
     return this.svc.createMany(merchantId, faqs);
   }
 
@@ -61,13 +67,13 @@ export class FaqController {
   list(
     @Param('merchantId') merchantId: string,
     @Query('includeDeleted') includeDeleted?: string,
-  ) {
+  ): Promise<unknown> {
     return this.svc.list(merchantId, includeDeleted === 'true');
   }
 
   @Get('status')
   @ApiOperation({ summary: 'حالة التدريب/الفهرسة للأسئلة الشائعة' })
-  status(@Param('merchantId') merchantId: string) {
+  status(@Param('merchantId') merchantId: string): Promise<unknown> {
     return this.svc.getStatus(merchantId);
   }
 
@@ -77,7 +83,7 @@ export class FaqController {
     @Param('merchantId') merchantId: string,
     @Param('faqId') faqId: string,
     @Body() body: { question?: string; answer?: string },
-  ) {
+  ): Promise<unknown> {
     return this.svc.updateOne(merchantId, faqId, body);
   }
 
@@ -93,7 +99,7 @@ export class FaqController {
     @Param('merchantId') merchantId: string,
     @Param('faqId') faqId: string,
     @Query('hard') hard?: string,
-  ) {
+  ): Promise<unknown> {
     return hard === 'true'
       ? this.svc.hardDelete(merchantId, faqId)
       : this.svc.softDelete(merchantId, faqId);
@@ -107,7 +113,7 @@ export class FaqController {
     @Param('merchantId') merchantId: string,
     @Query('all') all: string,
     @Query('hard') hard?: string,
-  ) {
+  ): Promise<unknown> | { success: boolean; message: string } {
     if (all !== 'true') return { success: false, message: 'حدد all=true' };
     return this.svc.deleteAll(merchantId, hard === 'true');
   }

@@ -3,23 +3,27 @@
 // + ChatMediaService (رفع إلى MinIO) — بدون أي I/O حقيقي.
 // Arrange–Act–Assert
 
-import { faker } from '@faker-js/faker';
-import { Test, TestingModule } from '@nestjs/testing';
-import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import axios from 'axios';
-import * as fsPromises from 'fs/promises';
 import * as fsSync from 'fs';
-import Tesseract from 'tesseract.js';
-import pdfParse from 'pdf-parse';
-import mammoth from 'mammoth';
-import * as xlsx from 'xlsx';
-import * as mime from 'mime-types';
-import { Response } from 'express';
+import * as fsPromises from 'fs/promises';
+import { unlink as unlinkNodeFs } from 'node:fs/promises';
 
-import { MediaService } from '../media.service';
-import { MediaController } from '../media.controller';
-import { MediaHandlerDto, MediaType } from '../dto/media-handler.dto';
+import { ConfigService } from '@nestjs/config';
+import { Test, type TestingModule } from '@nestjs/testing';
+import axios from 'axios';
+import { type DeepMockProxy, mockDeep } from 'jest-mock-extended';
+import mammoth from 'mammoth';
+import * as mime from 'mime-types';
+import pdfParse from 'pdf-parse';
+import Tesseract from 'tesseract.js';
+import * as xlsx from 'xlsx';
+
 import { ChatMediaService } from '../chat-media.service';
+import { MediaType } from '../dto/media-handler.dto';
+import { MediaController } from '../media.controller';
+import { MediaService } from '../media.service';
+
+import type { MediaHandlerDto } from '../dto/media-handler.dto';
+import type { Response } from 'express';
 
 // ====== Mocks ======
 jest.mock('axios', () => ({
@@ -76,7 +80,6 @@ jest.mock('minio', () => ({
 jest.mock('node:fs/promises', () => ({
   unlink: jest.fn(),
 }));
-import { unlink as unlinkNodeFs } from 'node:fs/promises';
 
 // ====== Helpers ======
 const setDateNow = (value: number) => {
@@ -88,7 +91,7 @@ describe('MediaService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new MediaService();
+    service = new MediaService(new ConfigService());
     setDateNow(1_700_000_000_000); // ثابت لتوليد اسم الملف المؤقت
   });
 
@@ -109,31 +112,45 @@ describe('MediaService', () => {
 
     (axios.post as any).mockResolvedValue({
       data: {
-        results: { channels: [{ alternatives: [{ transcript: 'hello world' }] }] },
+        results: {
+          channels: [{ alternatives: [{ transcript: 'hello world' }] }],
+        },
       },
     });
 
     const res = await service.handleMedia(dto);
 
-    expect((axios.get as any)).toHaveBeenCalledWith(dto.fileUrl, { responseType: 'arraybuffer' });
-    expect(fsPromises.writeFile).toHaveBeenCalledWith('/tmp/media-1700000000000.mp3', expect.any(Buffer));
+    expect(axios.get.bind(axios)).toHaveBeenCalledWith(dto.fileUrl, {
+      responseType: 'arraybuffer',
+    });
+    expect(fsPromises.writeFile).toHaveBeenCalledWith(
+      '/tmp/media-1700000000000.mp3',
+      expect.any(Buffer),
+    );
     // التحقق من استدعاء Deepgram برأس Authorization و Content-Type
-    const postArgs = (axios.post as any).mock.calls[0];
+    const postArgs = axios.post.bind(axios).mock.calls[0];
     expect(postArgs[0]).toBe('https://api.deepgram.com/v1/listen');
     expect(postArgs[2].headers.Authorization).toMatch(/^Token\s+/);
     expect(postArgs[2].headers['Content-Type']).toBe('audio/mpeg');
 
     expect(res.text).toBe('hello world');
-    expect(fsPromises.unlink).toHaveBeenCalledWith('/tmp/media-1700000000000.mp3');
+    expect(fsPromises.unlink).toHaveBeenCalledWith(
+      '/tmp/media-1700000000000.mp3',
+    );
   });
 
   it('AUDIO: يعيد رسالة فشل عند عدم وجود transcript', async () => {
-    const dto: MediaHandlerDto = { type: MediaType.VOICE, fileUrl: 'http://x/file.ogg' };
-    (axios.get as any).mockResolvedValue({ data: new Uint8Array([0]) });
+    const dto: MediaHandlerDto = {
+      type: MediaType.VOICE,
+      fileUrl: 'http://x/file.ogg',
+    };
+    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([0]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
     (fsSync.readFileSync as jest.Mock).mockReturnValue(Buffer.from('O'));
     (mime.lookup as jest.Mock).mockReturnValue('audio/ogg');
-    (axios.post as any).mockResolvedValue({ data: { results: { channels: [{ alternatives: [{ transcript: '' }] }] } } });
+    axios.post.bind(axios).mockResolvedValue({
+      data: { results: { channels: [{ alternatives: [{ transcript: '' }] }] } },
+    });
 
     const res = await service.handleMedia(dto);
 
@@ -142,12 +159,15 @@ describe('MediaService', () => {
   });
 
   it('AUDIO: يعيد رسالة خطأ عند فشل الاتصال بـ Deepgram', async () => {
-    const dto: MediaHandlerDto = { type: MediaType.AUDIO, fileUrl: 'http://x/f.mp3' };
-    (axios.get as any).mockResolvedValue({ data: new Uint8Array([1]) });
+    const dto: MediaHandlerDto = {
+      type: MediaType.AUDIO,
+      fileUrl: 'http://x/f.mp3',
+    };
+    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([1]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
     (fsSync.readFileSync as jest.Mock).mockReturnValue(Buffer.from('AUDIO'));
     (mime.lookup as jest.Mock).mockReturnValue('audio/mpeg');
-    (axios.post as any).mockRejectedValue(new Error('dg down'));
+    axios.post.bind(axios).mockRejectedValue(new Error('dg down'));
 
     const res = await service.handleMedia(dto);
     expect(res.text).toBe('[خطأ في تحويل الصوت للنص]');
@@ -155,23 +175,34 @@ describe('MediaService', () => {
   });
 
   it('IMAGE/PHOTO: يستخدم Tesseract ويعيد النص المستخرج', async () => {
-    const dto: MediaHandlerDto = { type: MediaType.IMAGE, fileUrl: 'http://x/img.jpg' };
-    (axios.get as any).mockResolvedValue({ data: new Uint8Array([9, 9]) });
+    const dto: MediaHandlerDto = {
+      type: MediaType.IMAGE,
+      fileUrl: 'http://x/img.jpg',
+    };
+    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([9, 9]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
     (Tesseract as any).recognize.mockResolvedValue({ data: { text: 'مرحبا' } });
 
     const res = await service.handleMedia(dto);
 
-    expect((Tesseract as any).recognize).toHaveBeenCalledWith('/tmp/media-1700000000000.jpg', 'ara+eng');
+    expect((Tesseract as any).recognize.bind(Tesseract)).toHaveBeenCalledWith(
+      '/tmp/media-1700000000000.jpg',
+      'ara+eng',
+    );
     expect(res.text).toBe('نص الصورة: مرحبا');
     expect(fsPromises.unlink).toHaveBeenCalled();
   });
 
   it('IMAGE: يعيد رسالة خطأ عند فشل Tesseract', async () => {
-    const dto: MediaHandlerDto = { type: MediaType.PHOTO, fileUrl: 'http://x/p.png' };
-    (axios.get as any).mockResolvedValue({ data: new Uint8Array([1]) });
+    const dto: MediaHandlerDto = {
+      type: MediaType.PHOTO,
+      fileUrl: 'http://x/p.png',
+    };
+    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([1]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
-    (Tesseract as any).recognize.mockRejectedValue(new Error('ocr fail'));
+    (Tesseract as any).recognize
+      .bind(Tesseract)
+      .mockRejectedValue(new Error('ocr fail'));
 
     const res = await service.handleMedia(dto);
     expect(res.text).toBe('[خطأ في استخراج نص من الصورة]');
@@ -184,7 +215,7 @@ describe('MediaService', () => {
       fileUrl: 'http://x/doc.pdf',
       mimeType: 'application/pdf',
     };
-    (axios.get as any).mockResolvedValue({ data: new Uint8Array([1]) });
+    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([1]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
     (fsSync.readFileSync as jest.Mock).mockReturnValue(Buffer.from('%PDF-1.7'));
     (pdfParse as jest.Mock).mockResolvedValue({ text: 'PDF TEXT' });
@@ -202,11 +233,14 @@ describe('MediaService', () => {
     const dto: MediaHandlerDto = {
       type: MediaType.DOCUMENT,
       fileUrl: 'http://x/doc.docx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     };
-    (axios.get as any).mockResolvedValue({ data: new Uint8Array([1]) });
+    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([1]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
-    (mammoth as any).extractRawText.mockResolvedValueOnce({ value: 'Hello from Word' });
+    (mammoth as any).extractRawText.mockResolvedValueOnce({
+      value: 'Hello from Word',
+    });
     let res = await service.handleMedia(dto);
     expect(res.text).toBe('Hello from Word');
 
@@ -219,19 +253,28 @@ describe('MediaService', () => {
     const dto: MediaHandlerDto = {
       type: MediaType.DOCUMENT,
       fileUrl: 'http://x/file.xlsx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     };
     (axios.get as any).mockResolvedValue({ data: new Uint8Array([1]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
-    (xlsx.readFile as jest.Mock).mockReturnValue({ SheetNames: ['S1', 'S2'], Sheets: { S1: {}, S2: {} } });
-    (xlsx.utils.sheet_to_csv as jest.Mock).mockReturnValueOnce('a,b\n').mockReturnValueOnce('c,d\n');
+    (xlsx.readFile as jest.Mock).mockReturnValue({
+      SheetNames: ['S1', 'S2'],
+      Sheets: { S1: {}, S2: {} },
+    });
+    (xlsx.utils.sheet_to_csv as jest.Mock)
+      .mockReturnValueOnce('a,b\n')
+      .mockReturnValueOnce('c,d\n');
 
     const res = await service.handleMedia(dto);
     expect(res.text).toBe('a,b\nc,d\n');
   });
 
   it('نوع غير مدعوم: يُعيد رسالة "[نوع ملف غير مدعوم]"', async () => {
-    const dto: MediaHandlerDto = { type: MediaType.TEXT, fileUrl: 'http://x/file.bin' };
+    const dto: MediaHandlerDto = {
+      type: MediaType.TEXT,
+      fileUrl: 'http://x/file.bin',
+    };
     (axios.get as any).mockResolvedValue({ data: new Uint8Array([1]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
 
@@ -269,25 +312,35 @@ describe('MediaController', () => {
   });
 
   it('POST /media/upload: يُرجع 201 مع نتيجة handleMedia عند وجود ملف', async () => {
-    const dto: MediaHandlerDto = { type: MediaType.IMAGE, fileUrl: 'http://x/a.jpg' };
+    const dto: MediaHandlerDto = {
+      type: MediaType.IMAGE,
+      fileUrl: 'http://x/a.jpg',
+    };
     const out = { text: 'ok' };
     svc.handleMedia.mockResolvedValue(out as any);
 
     await controller.uploadFile({} as any, dto, res);
 
-    expect(svc.handleMedia).toHaveBeenCalledWith(dto);
-    expect((res.status as any)).toHaveBeenCalledWith(201);
-    expect((res.json as any)).toHaveBeenCalledWith(out);
+    expect(svc.handleMedia.bind(svc)).toHaveBeenCalledWith(dto);
+    expect(res.status.bind(res)).toHaveBeenCalledWith(201);
+    expect(res.json.bind(res)).toHaveBeenCalledWith(out);
   });
 
   it('POST /media/upload: يرمي خطأ عند عدم وجود ملف', async () => {
-    const dto: MediaHandlerDto = { type: MediaType.IMAGE, fileUrl: 'http://x/a.jpg' };
-    await expect(controller.uploadFile(undefined as any, dto, res)).rejects.toThrow('No file uploaded');
+    const dto: MediaHandlerDto = {
+      type: MediaType.IMAGE,
+      fileUrl: 'http://x/a.jpg',
+    };
+    await expect(
+      controller.uploadFile(undefined as any, dto, res),
+    ).rejects.toThrow('No file uploaded');
   });
 
-  it('GET /media/file/:id: يستدعي sendFile بالجذر الصحيح', async () => {
-    await controller.getFile('x.png', res);
-    expect((res.sendFile as any)).toHaveBeenCalledWith('x.png', { root: './uploads' });
+  it('GET /media/file/:id: يستدعي sendFile بالجذر الصحيح', () => {
+    controller.getFile('x.png', res);
+    expect(res.sendFile.bind(res)).toHaveBeenCalledWith('x.png', {
+      root: './uploads',
+    });
   });
 });
 
@@ -321,7 +374,12 @@ describe('ChatMediaService', () => {
     (unlinkNodeFs as jest.Mock).mockResolvedValue(undefined);
     fPutObjectMock.mockResolvedValue(undefined);
 
-    const out = await service.uploadChatMedia('m_1', '/tmp/tmp-1.png', 'image.png', 'image/png');
+    const out = await service.uploadChatMedia(
+      'm_1',
+      '/tmp/tmp-1.png',
+      'image.png',
+      'image/png',
+    );
 
     const expectedKey = `chat-media/m_1/1700000111000-image.png`;
     expect(fPutObjectMock).toHaveBeenCalledWith(
@@ -330,8 +388,16 @@ describe('ChatMediaService', () => {
       '/tmp/tmp-1.png',
       { 'Content-Type': 'image/png' },
     );
-    expect(presignedUrlMock).toHaveBeenCalledWith('GET', 'bucket1', expectedKey, 7 * 24 * 60 * 60);
+    expect(presignedUrlMock).toHaveBeenCalledWith(
+      'GET',
+      'bucket1',
+      expectedKey,
+      7 * 24 * 60 * 60,
+    );
     expect(unlinkNodeFs).toHaveBeenCalledWith('/tmp/tmp-1.png');
-    expect(out).toEqual({ storageKey: expectedKey, presignedUrl: 'https://signed.example.com/file' });
+    expect(out).toEqual({
+      storageKey: expectedKey,
+      presignedUrl: 'https://signed.example.com/file',
+    });
   });
 });

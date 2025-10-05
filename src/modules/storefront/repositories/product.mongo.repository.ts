@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+
 import {
   Product,
   ProductDocument,
 } from '../../products/schemas/product.schema';
+
 import {
   ProductEntity,
   StorefrontProductRepository,
@@ -40,7 +42,7 @@ export class StorefrontProductMongoRepository
     await this.model
       .updateMany(
         { merchantId: new Types.ObjectId(merchantId) },
-        { $set: set as any },
+        { $set: set as Record<string, unknown> },
       )
       .exec();
   }

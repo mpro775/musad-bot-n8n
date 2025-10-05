@@ -1,3 +1,6 @@
+import { unlink } from 'node:fs/promises';
+
+import { HttpService } from '@nestjs/axios';
 import {
   BadRequestException,
   Injectable,
@@ -5,17 +8,43 @@ import {
   Inject,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
 import * as Minio from 'minio';
-import { unlink } from 'node:fs/promises';
+import { Types } from 'mongoose';
+import { firstValueFrom } from 'rxjs';
 
 import { CreateContactDto } from './dto/create-contact.dto';
-import { SUPPORT_REPOSITORY } from './tokens';
 import {
   SupportRepository,
   SupportTicketEntity,
 } from './repositories/support.repository';
+import { SUPPORT_REPOSITORY } from './tokens';
+
+// ثوابت لتجنب الأرقام السحرية
+const BASE_36 = 36;
+const RANDOM_MAX = 999;
+const MAX_FILENAME_LENGTH = 180;
+const PRESIGNED_URL_EXPIRY = 3600; // 1 hour in seconds
+
+// أنواع للـ attachments
+interface Attachment {
+  originalName: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  storage: 'minio';
+  url: string;
+}
+
+// نوع للـ reCAPTCHA response
+interface RecaptchaResponse {
+  success: boolean;
+}
+
+// نوع موسع للـ CreateContactDto مع الحقول الإضافية
+interface ExtendedCreateContactDto extends CreateContactDto {
+  website?: string;
+  recaptchaToken?: string;
+}
 
 @Injectable()
 export class SupportService {
@@ -29,8 +58,8 @@ export class SupportService {
   ) {}
 
   private generateTicketNumber() {
-    const a = Date.now().toString(36).toUpperCase();
-    const b = Math.floor(Math.random() * 999)
+    const a = Date.now().toString(BASE_36).toUpperCase();
+    const b = Math.floor(Math.random() * RANDOM_MAX)
       .toString()
       .padStart(3, '0');
     return `KT-${a}-${b}`;
@@ -47,7 +76,9 @@ export class SupportService {
   }
 
   private sanitizeName(name: string) {
-    return (name || 'file').replace(/[^\w.\-]+/g, '_').slice(0, 180);
+    return (name || 'file')
+      .replace(/[^\w.-]/g, '_')
+      .slice(0, MAX_FILENAME_LENGTH);
   }
 
   private async publicOrSignedUrl(bucket: string, key: string) {
@@ -57,17 +88,23 @@ export class SupportService {
       ''
     ).replace(/\/+$/, '');
     if (cdn) return `${cdn}/${bucket}/${key}`;
-    return await this.minio.presignedGetObject(bucket, key, 3600);
+    return await this.minio.presignedGetObject(
+      bucket,
+      key,
+      PRESIGNED_URL_EXPIRY,
+    );
   }
 
-  async verifyRecaptcha(token?: string) {
+  async verifyRecaptcha(token?: string): Promise<boolean> {
     const secret = process.env.RECAPTCHA_SECRET;
     if (!secret) return true;
     if (!token) return false;
     try {
       const url = 'https://www.google.com/recaptcha/api/siteverify';
       const { data } = await firstValueFrom(
-        this.http.post(url, null, { params: { secret, response: token } }),
+        this.http.post<RecaptchaResponse>(url, null, {
+          params: { secret, response: token },
+        }),
       );
       return !!data?.success;
     } catch {
@@ -89,7 +126,7 @@ export class SupportService {
       | 'message'
       | 'status'
     > & { createdAt?: Date },
-  ) {
+  ): Promise<void> {
     const title = `🎫 New Ticket: ${ticket.ticketNumber}`;
     const text = [
       `*Name:* ${ticket.name}`,
@@ -161,7 +198,7 @@ export class SupportService {
     const bucket = process.env.MINIO_BUCKET!;
     await this.ensureBucket(bucket);
 
-    const attachments: any[] = [];
+    const attachments: Attachment[] = [];
     for (const f of files) {
       const safe = this.sanitizeName(f.originalname || 'file');
       const key = `support/${ticketNumber}/${Date.now()}-${safe}`;
@@ -172,11 +209,16 @@ export class SupportService {
             'Content-Type': f.mimetype,
             'Cache-Control': 'private, max-age=0, no-store',
           });
-        } else if ((f as any).path) {
-          await this.minio.fPutObject(bucket, key, (f as any).path, {
-            'Content-Type': f.mimetype,
-            'Cache-Control': 'private, max-age=0, no-store',
-          });
+        } else if ((f as Express.Multer.File & { path?: string }).path) {
+          await this.minio.fPutObject(
+            bucket,
+            key,
+            (f as Express.Multer.File & { path?: string }).path,
+            {
+              'Content-Type': f.mimetype,
+              'Cache-Control': 'private, max-age=0, no-store',
+            },
+          );
         } else {
           throw new Error('Empty file');
         }
@@ -184,21 +226,19 @@ export class SupportService {
         const url = await this.publicOrSignedUrl(bucket, key);
         attachments.push({
           originalName: f.originalname,
+          filename: safe,
           mimeType: f.mimetype,
           size: f.size,
           storage: 'minio' as const,
-          storageKey: key,
           url,
         });
       } catch (e) {
-        this.logger.error(
-          `Failed to upload support attachment: ${safe}`,
-          e as any,
-        );
+        this.logger.error(`Failed to upload support attachment: ${safe}`, e);
         throw new InternalServerErrorException('SUPPORT_UPLOAD_FAILED');
       } finally {
-        if ((f as any).path) {
-          await unlink((f as any).path).catch(() => null);
+        const filePath = (f as Express.Multer.File & { path?: string }).path;
+        if (filePath) {
+          await unlink(filePath).catch(() => null);
         }
       }
     }
@@ -215,28 +255,44 @@ export class SupportService {
       userId?: string;
       source?: 'landing' | 'merchant';
     },
-  ) {
-    if ((dto as any).website) throw new BadRequestException('Spam detected');
+  ): Promise<SupportTicketEntity> {
+    const extendedDto = dto as ExtendedCreateContactDto;
+    if (extendedDto.website) throw new BadRequestException('Spam detected');
 
-    const ok = await this.verifyRecaptcha((dto as any).recaptchaToken);
+    const ok = await this.verifyRecaptcha(extendedDto.recaptchaToken);
     if (!ok) throw new BadRequestException('reCAPTCHA failed');
 
     const ticketNumber = this.generateTicketNumber();
     const attachments = await this.uploadFilesToMinio(ticketNumber, files);
 
     const created = await this.repo.create({
-      ...(dto as any),
+      ...dto,
       ticketNumber,
       status: 'open',
       source: meta?.source || 'landing',
       ip: meta?.ip,
       userAgent: meta?.userAgent,
       attachments,
-      merchantId: meta?.merchantId,
-      createdBy: meta?.userId,
+      merchantId: meta?.merchantId
+        ? new Types.ObjectId(meta.merchantId)
+        : undefined,
+      createdBy: meta?.userId ? new Types.ObjectId(meta.userId) : undefined,
     });
 
-    this.notifyChannels(created as any).catch(() => undefined);
+    this.notifyChannels(
+      created as Pick<
+        SupportTicketEntity,
+        | '_id'
+        | 'ticketNumber'
+        | 'name'
+        | 'email'
+        | 'phone'
+        | 'topic'
+        | 'subject'
+        | 'message'
+        | 'status'
+      > & { createdAt?: Date },
+    ).catch(() => undefined);
     return created;
   }
 }

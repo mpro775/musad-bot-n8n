@@ -1,5 +1,5 @@
-import { Types } from 'mongoose';
-import { Webhook } from '../schemas/webhook.schema';
+import type { Webhook } from '../schemas/webhook.schema';
+import type { ClientSession, Types } from 'mongoose';
 
 export type WebhookEntity = Webhook & {
   _id: Types.ObjectId;
@@ -11,6 +11,6 @@ export type WebhookEntity = Webhook & {
 export interface WebhookRepository {
   createOne(
     data: Pick<WebhookEntity, 'eventType' | 'payload' | 'receivedAt'>,
-    opts?: { session?: any },
+    opts?: { session?: ClientSession },
   ): Promise<WebhookEntity>;
 }

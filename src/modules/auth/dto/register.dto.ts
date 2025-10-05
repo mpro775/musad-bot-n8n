@@ -1,6 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { MIN_PASSWORD_LENGTH } from 'src/common/constants/common';
 import { Match } from 'src/common/decorators/match.decorator';
+
 import { I18nMessage } from '../../../common/validators/i18n-validator';
 
 export class RegisterDto {
@@ -17,13 +19,13 @@ export class RegisterDto {
     example: 'securePass',
   })
   @IsString(I18nMessage('validation.string'))
-  @MinLength(6, I18nMessage('validation.minLength'))
+  @MinLength(MIN_PASSWORD_LENGTH, I18nMessage('validation.minLength'))
   @IsNotEmpty(I18nMessage('validation.required'))
   password: string;
 
   @ApiProperty({ description: 'تأكيد كلمة المرور', example: 'securePass' })
   @IsString(I18nMessage('validation.string'))
-  @MinLength(6, I18nMessage('validation.minLength'))
+  @MinLength(MIN_PASSWORD_LENGTH, I18nMessage('validation.minLength'))
   @IsNotEmpty(I18nMessage('validation.required'))
   @Match('password', { message: 'كلمتا المرور غير متطابقتين' })
   confirmPassword: string;
