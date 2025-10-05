@@ -33,7 +33,7 @@ import {
   ErrorManagementModule,
 } from './common';
 import { CacheModule } from './common/cache/cache.module';
-import varsConfig from './common/config/vars.config';
+import { varsConfig } from './common/config/vars.config';
 import { NonceController } from './common/controllers/nonce.controller';
 import { IdempotencyGuard } from './common/guards/idempotency.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -47,7 +47,7 @@ import { OutboxModule } from './common/outbox/outbox.module';
 import { DatabaseConfigModule } from './config/database.config';
 import { RedisConfig } from './config/redis.config';
 import { RedisModule } from './config/redis.module';
-import configuration from './configuration';
+import { configuration } from './configuration';
 import { DispatchersModule } from './infra/dispatchers/dispatchers.module';
 import { RabbitModule } from './infra/rabbit/rabbit.module';
 import { AmqpMetrics, AmqpMetricsProviders } from './metrics/amqp.metrics';
@@ -87,6 +87,7 @@ import { WorkflowHistoryModule } from './modules/workflow-history/workflow-histo
 import { AiReplyWorkerModule } from './workers/ai-reply.worker.module';
 import { WebhookDispatcherWorkerModule } from './workers/webhook-dispatcher.worker.module';
 
+import type { ConfigFactory } from '@nestjs/config';
 import type {
   IncomingMessage,
   ServerResponse,
@@ -249,7 +250,7 @@ const getHeader = (req: IncomingMessage, name: string): string | undefined => {
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET'),
+        secret: config.get<string>('JWT_SECRET')!,
         signOptions: { expiresIn: '7d' },
       }),
       inject: [ConfigService],
@@ -258,7 +259,7 @@ const getHeader = (req: IncomingMessage, name: string): string | undefined => {
     // Config
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [configuration, varsConfig],
+      load: [configuration, varsConfig] as ConfigFactory[],
     }),
 
     // i18n
@@ -299,8 +300,8 @@ const getHeader = (req: IncomingMessage, name: string): string | undefined => {
           redis: {
             host: parsed.hostname,
             port: parseInt(parsed.port, 10),
-            password: parsed.password || undefined,
-            tls: parsed.protocol === 'rediss:' ? {} : undefined,
+            password: parsed.password || '',
+            tls: parsed.protocol === 'rediss:' ? {} : {},
           },
         };
       },
