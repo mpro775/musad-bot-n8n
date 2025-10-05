@@ -5,7 +5,7 @@ import { SENTRY_PRODUCTION_SAMPLE_RATE } from '../constants/common';
 
 import type { Event } from '@sentry/node';
 
-export default registerAs('sentry', () => ({
+export const sentryConfig = registerAs('sentry', () => ({
   dsn: process.env.SENTRY_DSN,
   environment: process.env.NODE_ENV || 'development',
   release: process.env.APP_VERSION || '1.0.0',

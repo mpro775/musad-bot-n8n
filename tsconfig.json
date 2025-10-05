@@ -1,5 +1,5 @@
 {
-  "include": ["src/**/*", "scripts/**/*", "test/**/*"],
+  "include": ["src/**/*", "scripts/**/*", "test/**/*", "src/types"],
   "compilerOptions": {
     "module": "commonjs",
     "declaration": true,
@@ -11,6 +11,8 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "typeRoots": ["src/types", "./node_modules/@types"],
+
     "incremental": true,
     "resolveJsonModule": true,
     "esModuleInterop": true,

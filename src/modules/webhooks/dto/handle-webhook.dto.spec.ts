@@ -20,7 +20,7 @@ function hasKey<T extends string>(
   obj: Record<string, unknown>,
   key: T,
 ): obj is Record<T, unknown> & Record<string, unknown> {
-  return Object.prototype.hasOwnProperty.call(obj, key) as boolean;
+  return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
 describe('HandleWebhookDto', () => {
@@ -670,7 +670,7 @@ describe('HandleWebhookDto', () => {
       // These should be type-safe assignments
       dto.eventType = 'string-value';
       dto.payload = { key: 'value' };
-      dto.payload = undefined;
+      dto.payload = undefined as unknown as Record<string, unknown>;
 
       expect(typeof dto.eventType).toBe('string');
     });

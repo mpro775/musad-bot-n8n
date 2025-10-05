@@ -1,34 +1,46 @@
-// CSRF protection configuration
-import csurfLib from '@dr.pogodin/csurf';
-import cookieParserLib from 'cookie-parser';
+import csurf, { type CsrfOptions } from '@dr.pogodin/csurf';
+import cookieParser from 'cookie-parser';
 
 import type { INestApplication } from '@nestjs/common';
-import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import type {
+  Request as CoreRequest,
+  Response as CoreResponse,
+  NextFunction as CoreNext,
+  RequestHandler as CoreHandler,
+  ParamsDictionary,
+} from 'express-serve-static-core';
+import type { ParsedQs } from 'qs';
 
-type CsrfOptions = {
-  cookie?:
-    | boolean
-    | {
-        httpOnly?: boolean;
-        sameSite?: 'strict' | 'lax' | 'none';
-        secure?: boolean;
-        path?: string;
-        domain?: string;
-        maxAge?: number;
-      };
-};
+type RequestHandler = CoreHandler<
+  ParamsDictionary,
+  unknown, // ResBody
+  unknown, // ReqBody
+  ParsedQs, // ReqQuery
+  Record<string, unknown> // Locals
+>;
 
-// ✅ بدون any
-const csurf: (options?: CsrfOptions) => RequestHandler =
-  csurfLib as unknown as (options?: CsrfOptions) => RequestHandler;
-
-// عرف النوع للـ cookieParser
-const cookieParser: (secret?: string) => RequestHandler = cookieParserLib as (
-  secret?: string,
-) => RequestHandler;
+type Request = CoreRequest<
+  ParamsDictionary,
+  unknown,
+  unknown,
+  ParsedQs,
+  Record<string, unknown>
+>;
+type Response = CoreResponse<unknown, Record<string, unknown>>;
+type NextFunction = CoreNext;
 
 const CSRF_BYPASS_PREFIXES = ['/webhooks', '/docs', '/integrations/n8n'];
 const CSRF_BYPASS_EXACT = ['/docs-json', '/health', '/metrics'];
+
+interface CsrfRequest extends Request {
+  csrfToken(): string;
+  // ملاحظة: cookie-parser يضيف secret?: string — لا نجعلها مطلوبة
+  secret?: string;
+}
+
+function hasCsrfToken(req: Request): req is CsrfRequest {
+  return typeof (req as Partial<CsrfRequest>).csrfToken === 'function';
+}
 
 function isCsrfBypassPath(pathname: string): boolean {
   return (
@@ -37,41 +49,33 @@ function isCsrfBypassPath(pathname: string): boolean {
   );
 }
 
-/** شكل الطلب عندما يضيف csurf الدالة csrfToken */
-interface CsrfRequest extends Request {
-  csrfToken(): string;
-}
-
-function hasCsrfToken(req: Request): req is CsrfRequest {
-  return typeof (req as Partial<CsrfRequest>).csrfToken === 'function';
-}
-
 export function configureCsrf(app: INestApplication): void {
-  const cookieSecret: string | undefined = process.env.COOKIE_SECRET;
+  const cookieSecret = process.env.COOKIE_SECRET; // string | undefined
+
+  // ✅ cookieParser يقبل secret اختياريًا
   app.use(cookieParser(cookieSecret));
 
-  const csrfMw: RequestHandler = csurf({
+  const csrfOptions: CsrfOptions = {
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
-      // بإمكانك إضافة path/domain/maxAge هنا لأن النوع صار مضبوط
-      // path: '/',
     },
-  });
+  };
+
+  // ✅ النوع مضبوط RequestHandler من نفس المصدر
+  const csrfMw = csurf(csrfOptions) as unknown as RequestHandler;
 
   app.use('/api', (req: Request, res: Response, next: NextFunction) => {
     const pathname = req.path ?? '';
-    if (isCsrfBypassPath(pathname)) {
-      next();
-      return;
-    }
-    csrfMw(req, res, next);
+    if (isCsrfBypassPath(pathname)) return next();
+    return csrfMw(req, res, next);
   });
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (hasCsrfToken(req)) {
-      res.setHeader('X-CSRF-Token', req.csrfToken());
+      const r = req as CsrfRequest;
+      res.setHeader('X-CSRF-Token', r.csrfToken());
     }
     next();
   });

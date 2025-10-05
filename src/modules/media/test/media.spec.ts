@@ -128,7 +128,7 @@ describe('MediaService', () => {
       expect.any(Buffer),
     );
     // التحقق من استدعاء Deepgram برأس Authorization و Content-Type
-    const postArgs = axios.post.bind(axios).mock.calls[0];
+    const postArgs = (axios.post as jest.Mock).mock.calls[0];
     expect(postArgs[0]).toBe('https://api.deepgram.com/v1/listen');
     expect(postArgs[2].headers.Authorization).toMatch(/^Token\s+/);
     expect(postArgs[2].headers['Content-Type']).toBe('audio/mpeg');
@@ -144,11 +144,11 @@ describe('MediaService', () => {
       type: MediaType.VOICE,
       fileUrl: 'http://x/file.ogg',
     };
-    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([0]) });
+    (axios.get as jest.Mock).mockResolvedValue({ data: new Uint8Array([0]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
     (fsSync.readFileSync as jest.Mock).mockReturnValue(Buffer.from('O'));
     (mime.lookup as jest.Mock).mockReturnValue('audio/ogg');
-    axios.post.bind(axios).mockResolvedValue({
+    (axios.post as jest.Mock).mockResolvedValue({
       data: { results: { channels: [{ alternatives: [{ transcript: '' }] }] } },
     });
 
@@ -163,11 +163,11 @@ describe('MediaService', () => {
       type: MediaType.AUDIO,
       fileUrl: 'http://x/f.mp3',
     };
-    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([1]) });
+    (axios.get as jest.Mock).mockResolvedValue({ data: new Uint8Array([1]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
     (fsSync.readFileSync as jest.Mock).mockReturnValue(Buffer.from('AUDIO'));
     (mime.lookup as jest.Mock).mockReturnValue('audio/mpeg');
-    axios.post.bind(axios).mockRejectedValue(new Error('dg down'));
+    (axios.post as jest.Mock).mockRejectedValue(new Error('dg down'));
 
     const res = await service.handleMedia(dto);
     expect(res.text).toBe('[خطأ في تحويل الصوت للنص]');
@@ -179,7 +179,9 @@ describe('MediaService', () => {
       type: MediaType.IMAGE,
       fileUrl: 'http://x/img.jpg',
     };
-    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([9, 9]) });
+    (axios.get as jest.Mock).mockResolvedValue({
+      data: new Uint8Array([9, 9]),
+    });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
     (Tesseract as any).recognize.mockResolvedValue({ data: { text: 'مرحبا' } });
 
@@ -198,7 +200,7 @@ describe('MediaService', () => {
       type: MediaType.PHOTO,
       fileUrl: 'http://x/p.png',
     };
-    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([1]) });
+    (axios.get as jest.Mock).mockResolvedValue({ data: new Uint8Array([1]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
     (Tesseract as any).recognize
       .bind(Tesseract)
@@ -215,7 +217,7 @@ describe('MediaService', () => {
       fileUrl: 'http://x/doc.pdf',
       mimeType: 'application/pdf',
     };
-    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([1]) });
+    (axios.get as jest.Mock).mockResolvedValue({ data: new Uint8Array([1]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
     (fsSync.readFileSync as jest.Mock).mockReturnValue(Buffer.from('%PDF-1.7'));
     (pdfParse as jest.Mock).mockResolvedValue({ text: 'PDF TEXT' });
@@ -236,7 +238,7 @@ describe('MediaService', () => {
       mimeType:
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     };
-    axios.get.bind(axios).mockResolvedValue({ data: new Uint8Array([1]) });
+    (axios.get as jest.Mock).mockResolvedValue({ data: new Uint8Array([1]) });
     (fsPromises.writeFile as jest.Mock).mockResolvedValue(undefined);
     (mammoth as any).extractRawText.mockResolvedValueOnce({
       value: 'Hello from Word',

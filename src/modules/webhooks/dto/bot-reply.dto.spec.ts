@@ -276,10 +276,11 @@ describe('BotReplyDto', () => {
 
       const dto = plainToClass(BotReplyDto, complexData);
 
-      expect(dto.metadata?.ai.model).toBe('gpt-4');
-      expect(dto.metadata?.ai.tokens.total).toBe(225);
-      expect(dto.metadata?.processing.steps).toHaveLength(3);
-      expect(dto.metadata?.business.features.personalization).toBe(true);
+      const metadata = dto.metadata as any; // Type assertion for test
+      expect(metadata?.ai.model).toBe('gpt-4');
+      expect(metadata?.ai.tokens.total).toBe(225);
+      expect(metadata?.processing.steps).toHaveLength(3);
+      expect(metadata?.business.features.personalization).toBe(true);
     });
 
     it('should handle empty metadata object', () => {
@@ -433,7 +434,7 @@ describe('BotReplyDto', () => {
       dto.sessionId = 'string-value';
       dto.text = 'string-value';
       dto.metadata = { key: 'value' };
-      dto.metadata = undefined;
+      dto.metadata = undefined as unknown as Record<string, unknown>;
 
       expect(typeof dto.sessionId).toBe('string');
       expect(typeof dto.text).toBe('string');

@@ -12,15 +12,15 @@ import {
 
 class WhatsAppQrMessageKeyDto {
   @IsString()
-  id: string;
+  id!: string;
 
   @IsBoolean()
   @IsOptional()
-  fromMe?: boolean;
+  fromMe?: boolean = false;
 
   @IsString()
   @IsOptional()
-  remoteJid?: string;
+  remoteJid?: string = '';
 
   @IsString()
   @IsOptional()
@@ -60,7 +60,7 @@ class WhatsAppQrMessageContentDto {
 class WhatsAppQrMessageDto {
   @ValidateNested()
   @Type(() => WhatsAppQrMessageKeyDto)
-  key: WhatsAppQrMessageKeyDto;
+  key!: WhatsAppQrMessageKeyDto;
 
   @IsString()
   @IsOptional()

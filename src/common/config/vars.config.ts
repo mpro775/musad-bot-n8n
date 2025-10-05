@@ -109,7 +109,7 @@ const getCacheConfig = () => ({
   ), // 5 minutes
 });
 
-export default registerAs('vars', () => ({
+export const varsConfig = registerAs('vars', () => ({
   rabbit: getRabbitConfig(),
   chat: getChatConfig(),
   embeddings: getEmbeddingsConfig(),
