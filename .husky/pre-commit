@@ -1,1 +1,10 @@
-npx husky add .husky/pre-commit "npx lint-staged"
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# شغّل lint-staged عبر مدير الحزم الذي تستخدمه
+# لو تستعمل npm:
+npx lint-staged
+# لو pnpm:
+# pnpm lint-staged
+# لو yarn:
+# yarn lint-staged
