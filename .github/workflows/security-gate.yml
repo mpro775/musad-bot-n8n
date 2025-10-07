@@ -28,7 +28,7 @@ jobs:
         continue-on-error: false
 
       - name: Upload audit results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: security-audit-results
@@ -60,7 +60,7 @@ jobs:
         continue-on-error: false
 
       - name: Upload dependency check results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dependency-check-results
@@ -96,7 +96,7 @@ jobs:
         continue-on-error: false
 
       - name: Upload security scan results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: security-scan-results
@@ -133,7 +133,7 @@ jobs:
           done
 
       - name: Upload license check results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: license-check-results
@@ -164,7 +164,7 @@ jobs:
         run: npm ci
 
       - name: Run Snyk security scan
-        uses: snyk/actions/node@master
+        uses: snyk/actions/node@v0.4.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -172,7 +172,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Snyk results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: snyk-scan-results
@@ -182,7 +182,7 @@ jobs:
           retention-days: 30
 
       - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: snyk.sarif
@@ -203,14 +203,14 @@ jobs:
         run: docker build -t kaleem-api:test .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: kaleem-api:test
           format: 'sarif'
           output: 'trivy-results.sarif'
 
       - name: Upload Trivy results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: container-security-results
@@ -220,7 +220,7 @@ jobs:
           retention-days: 30
 
       - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: trivy-results.sarif
@@ -246,8 +246,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
+          pattern: '*-results'
+          merge-multiple: true
           path: ./security-artifacts
 
       - name: Generate security summary report
@@ -286,7 +288,7 @@ jobs:
           echo "Security gate checks completed. All critical security requirements must pass before deployment." >> security-summary.md
 
       - name: Upload security summary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: security-summary-report
@@ -321,9 +323,16 @@ jobs:
 
     steps:
       - name: Download security summary
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: security-summary-report
+
+      - name: Download all results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-results'
+          merge-multiple: true
+          path: ./security-artifacts
 
       - name: Validate security gate
         id: validation

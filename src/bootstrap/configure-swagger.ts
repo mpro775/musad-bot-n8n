@@ -6,7 +6,7 @@ import { I18nService } from 'nestjs-i18n';
 import { i18nizeSwagger } from './i18nize-swagger';
 
 import type { INestApplication } from '@nestjs/common';
-import type { OpenAPIObject } from '@nestjs/swagger';
+import type { OpenAPIObject, SwaggerCustomOptions } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 
 // HTTP status constants
@@ -52,23 +52,27 @@ function buildSwaggerDoc(
 }
 
 function protectSwaggerWithJwt(app: INestApplication): void {
-  app.use('/api/docs*', (req: Request, res: Response, next: NextFunction) => {
-    const h = req.headers.authorization;
-    if (!h?.startsWith('Bearer ')) {
-      return res
-        .status(HTTP_UNAUTHORIZED)
-        .json({ success: false, code: 'UNAUTHORIZED_DOCS_ACCESS' });
-    }
-    try {
-      const jwt = app.get(JwtService);
-      jwt.verify(h.split(' ')[1], { secret: process.env.JWT_SECRET });
-      next();
-    } catch {
-      return res
-        .status(HTTP_FORBIDDEN)
-        .json({ success: false, code: 'INVALID_JWT_DOCS_ACCESS' });
-    }
-  });
+  app.use(
+    '/api/docs*',
+    (req: Request, res: Response, next: NextFunction): void => {
+      const h = req.headers.authorization;
+      if (!h?.startsWith('Bearer ')) {
+        res
+          .status(HTTP_UNAUTHORIZED)
+          .json({ success: false, code: 'UNAUTHORIZED_DOCS_ACCESS' });
+        return;
+      }
+      try {
+        const jwt = app.get(JwtService);
+        jwt.verify(h.split(' ')[1], { secret: process.env.JWT_SECRET! });
+        next();
+      } catch {
+        res
+          .status(HTTP_FORBIDDEN)
+          .json({ success: false, code: 'INVALID_JWT_DOCS_ACCESS' });
+      }
+    },
+  );
 }
 
 function setupSwaggerUI(
@@ -90,7 +94,7 @@ function setupSwaggerUI(
       ? undefined
       : 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
   };
-  SwaggerModule.setup('api/docs', app, doc, opts);
+  SwaggerModule.setup('api/docs', app, doc, opts as SwaggerCustomOptions);
 }
 
 export function configureSwagger(app: INestApplication): void {

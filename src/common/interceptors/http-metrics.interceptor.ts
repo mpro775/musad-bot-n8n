@@ -90,7 +90,13 @@ function formatErrorForLog(error: unknown): {
   stack?: string;
 } {
   if (error instanceof Error) {
-    return { message: error.message, stack: error.stack };
+    const result: { message: string; stack?: string } = {
+      message: error.message,
+    };
+    if (error.stack) {
+      result.stack = error.stack;
+    }
+    return result;
   }
   return { message: String(error) };
 }

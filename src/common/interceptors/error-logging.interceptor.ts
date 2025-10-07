@@ -98,7 +98,14 @@ function buildMeta(req: RequestWithMeta): ErrorMeta {
   const userId = getUserIdFromAuth(req) ?? getUserIdFromJwt(req);
   const merchantId = getMerchantIdFromAuth(req) ?? getMerchantIdFromJwt(req);
 
-  return { userId, merchantId, requestId, url, method, ip, userAgent };
+  const meta: ErrorMeta = { url, method, ip };
+
+  if (userId) meta.userId = userId;
+  if (merchantId) meta.merchantId = merchantId;
+  if (requestId) meta.requestId = requestId;
+  if (userAgent) meta.userAgent = userAgent;
+
+  return meta;
 }
 
 // -----------------------------------------------------------------------------

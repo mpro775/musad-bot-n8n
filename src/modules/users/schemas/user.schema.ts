@@ -56,26 +56,26 @@ export class User {
     lowercase: true,
     trim: true,
   })
-  email?: string;
+  email!: string;
 
   // لا تُرجع كلمة السر افتراضياً
   @Prop({ required: true, select: false })
-  password?: string;
+  password!: string;
 
   @Prop({ default: true })
-  firstLogin?: boolean;
+  firstLogin!: boolean;
 
   @Prop({ required: true, trim: true })
-  name?: string;
+  name!: string;
 
   @Prop()
-  phone?: string;
+  phone!: string;
 
   @Prop({ type: String, enum: UserRole, default: UserRole.MEMBER })
-  role?: UserRole;
+  role!: UserRole;
 
   @Prop({ default: false })
-  emailVerified?: boolean;
+  emailVerified!: boolean;
 
   @Prop()
   emailVerificationCode?: string;
@@ -183,7 +183,7 @@ UserSchema.index(
 UserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password!, salt);
+  this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
@@ -193,5 +193,5 @@ UserSchema.methods.comparePassword = function (
   candidate: string,
 ) {
   // ملاحظة: بما أن password عليه select:false، عند الاستعلام استخدم .select('+password')
-  return bcrypt.compare(candidate, this.password!);
+  return bcrypt.compare(candidate, this.password);
 };

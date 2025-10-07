@@ -63,7 +63,7 @@ const MINUTES_15 = 15 * SECONDS_PER_MINUTE; // 15m
 const DAYS_7 = 7 * 24 * SECONDS_PER_MINUTE * 60; // 7d
 
 // ========== Local DTOs (لطلبات بسيطة داخل هذا الكنترولر) ==========
-class RefreshRequestDto {
+export class RefreshRequestDto {
   @ApiPropertyOptional({
     description: 'Refresh token (optional if cookie set)',
   })
@@ -72,7 +72,7 @@ class RefreshRequestDto {
   refreshToken?: string;
 }
 
-class LogoutRequestDto {
+export class LogoutRequestDto {
   @ApiPropertyOptional({
     description: 'Refresh token (optional if cookie set)',
   })

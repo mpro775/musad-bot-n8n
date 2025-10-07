@@ -14,14 +14,15 @@ export class RedisConfig {
 
     const parsed = new URL(url);
 
-    this.connection = {
+    const connection: Partial<RedisOptions> = {
       host: parsed.hostname,
       port: parseInt(parsed.port, 10),
-      // Username موجود قبل النقطتين في الـ URL
-      username: parsed.username || undefined,
-      password: parsed.password || undefined,
-      // Render يستخدم TLS
-      tls: parsed.protocol === 'rediss:' ? {} : undefined,
     };
+
+    if (parsed.username) connection.username = parsed.username;
+    if (parsed.password) connection.password = parsed.password;
+    if (parsed.protocol === 'rediss:') connection.tls = {};
+
+    this.connection = connection as RedisOptions;
   }
 }

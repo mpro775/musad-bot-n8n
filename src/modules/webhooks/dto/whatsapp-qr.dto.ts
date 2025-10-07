@@ -109,6 +109,10 @@ class WhatsAppQrInstanceDto {
 class WhatsAppQrEventDto {
   @IsString()
   @IsOptional()
+  type?: string;
+
+  @IsString()
+  @IsOptional()
   status?: string;
 }
 
